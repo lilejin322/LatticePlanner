@@ -1,0 +1,2 @@
+class BackupTrajectoryGenerator:
+    pass

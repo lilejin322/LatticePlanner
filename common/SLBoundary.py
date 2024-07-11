@@ -1,0 +1,2 @@
+class SLBoundary:
+    pass
