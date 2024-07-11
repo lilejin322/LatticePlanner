@@ -26,3 +26,7 @@ FLAGS_default_reference_line_width = 1
 FLAGS_longitudinal_acceleration_upper_bound = 3
 
 FLAGS_longitudinal_acceleration_lower_bound = 4
+
+FLAGS_numerical_epsilon = 1e-6
+
+FLAGS_bound_buffer = 0.1
