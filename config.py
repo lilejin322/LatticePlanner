@@ -30,3 +30,9 @@ FLAGS_longitudinal_acceleration_lower_bound = 4
 FLAGS_numerical_epsilon = 1e-6
 
 FLAGS_bound_buffer = 0.1
+
+FLAGS_lateral_optimization = True
+
+FLAGS_max_s_lateral_optimization = 1
+
+FLAGS_default_delta_s_lateral_optimization = 0.1

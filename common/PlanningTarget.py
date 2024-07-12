@@ -1,0 +1,2 @@
+class PlanningTarget:
+    pass
