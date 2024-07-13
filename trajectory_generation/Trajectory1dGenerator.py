@@ -1,7 +1,6 @@
 from typing import List, Tuple, Any
 import numpy as np
 from common.Curve1d import Curve1d
-from trajectory_generation.LatticeTrajectory1d import LatticeTrajectory1d
 from behavior.PathTimeGraph import PathTimeGraph
 from behavior.PredictionQuerier import PredictionQuerier
 from common.PlanningTarget import PlanningTarget
