@@ -13,7 +13,7 @@ class LatticeTrajectory1d:
         """
         Constructor
 
-        :param trajectory1d: List of Curve1d
+        :param trajectory1d: Curve1d instance
         """
 
         self.trajectory1d = trajectory1d

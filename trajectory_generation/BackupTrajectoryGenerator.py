@@ -32,7 +32,7 @@ class BackupTrajectoryGenerator:
         self.init_relative_time = init_relative_time
         self.collision_checker = collision_checker
         self.trajectory1d_generator = trajectory1d_generator
-        self.trajectory_pair_pqueue: List[Tuple[Curve1d, Curve1d]] = []
+        self.trajectory_pair_pqueue: List[Tuple[float, Tuple[Curve1d, Curve1d]]] = []
         self.GenerateTrajectory1dPairs(init_s, init_d)
 
     def GenerateTrajectory1dPairs(self, init_s: List[float], init_d: List[float]) -> None:
@@ -66,7 +66,8 @@ class BackupTrajectoryGenerator:
     
         for lon in lon_trajectories:
             for lat in lat_trajectories:
-                heapq.heappush(self.trajectory_pair_pqueue, (CostComparator(lon, lat), (lon, lat)))
+                # Note that in C++, the priority queue is a max heap, so we need to negate the cost
+                heapq.heappush(self.trajectory_pair_pqueue, (-CostComparator(lon, lat), (lon, lat)))
 
     def GenerateTrajectory(self, discretized_ref_points: List[PathPoint]) -> DiscretizedTrajectory:
         """
@@ -78,7 +79,8 @@ class BackupTrajectoryGenerator:
         """
 
         while len(self.trajectory_pair_pqueue) > 1:
-            top_pair: Tuple[Curve1d, Curve1d] = heapq.heappop(self.trajectory_pair_pqueue)
+            # Note that trajectory_pair_pqueue is List[Tuple[weight, Tuple[Curve1d, Curve1d]]]
+            top_pair: Tuple[Curve1d, Curve1d] = heapq.heappop(self.trajectory_pair_pqueue)[1]
             trajectory: DiscretizedTrajectory = TrajectoryCombiner.Combine(discretized_ref_points, top_pair[0],\
                                                                            top_pair[1], self.init_relative_time)
             if not self.collision_checker.InCollision(trajectory):
