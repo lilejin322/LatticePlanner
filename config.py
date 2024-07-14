@@ -15,6 +15,8 @@ EGO_VEHICLE_WIDTH = 1
 
 EGO_BACK_EDGE_TO_CENTER = 0.5
 
+FRONT_EDGE_TO_CENTER = 0.5
+
 FLAGS_lon_collision_buffer = 1
 
 FLAGS_lat_collision_buffer = 1
@@ -84,3 +86,15 @@ FLAGS_weight_lateral_offset = 1
 FLAGS_weight_lateral_derivative = 1
 
 FLAGS_weight_lateral_second_order_derivative = 1
+
+FLAGS_num_velocity_sample = 1
+
+FLAGS_polynomial_minimal_param = 1
+
+FLAGS_min_velocity_sample_gap = 1
+
+FLAGS_time_min_density = 1
+
+FLAGS_default_lon_buffer = 1
+
+FLAGS_num_sample_follow_per_timestamp = 1
