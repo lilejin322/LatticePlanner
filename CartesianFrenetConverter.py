@@ -2,6 +2,10 @@ import math
 from typing import List, Tuple
 
 class CartesianFrenetConverter:
+    """
+    CartesianFrenetConverter class
+    Note that this class should not be instantiated. All methods should be called in a static context.
+    """
 
     @staticmethod
     def cartesian_to_frenet(rs:float, rx:float, ry:float, rtheta:float, rkappa:float, rdkappa:float,
