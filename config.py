@@ -72,3 +72,15 @@ FLAGS_lon_collision_yield_buffer = 1
 FLAGS_lon_collision_overtake_buffer = 1
 
 FLAGS_comfort_acceleration_factor = 1
+
+FLAGS_lateral_third_order_derivative_max = 0.1
+
+FLAGS_weight_lateral_obstacle_distance = 1
+
+FLAGS_enable_osqp_debug = True
+
+FLAGS_weight_lateral_offset = 1
+
+FLAGS_weight_lateral_derivative = 1
+
+FLAGS_weight_lateral_second_order_derivative = 1

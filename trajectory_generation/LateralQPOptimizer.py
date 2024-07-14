@@ -23,9 +23,15 @@ class LateralQPOptimizer:
         self._opt_d_pprime: List[float] = []
     
     @abstractmethod
-    def optimize(d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
+    def optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
         """
         virtual function to be implemented in class LateralOSQPOptimizer
+
+        :param List[float] d_state: d state
+        :param float delta_s: delta s
+        :param List[Tuple[float, float]] d_bounds: d bounds
+        :returns: whether optimization is successful
+        :rtype: bool
         """
 
         pass
