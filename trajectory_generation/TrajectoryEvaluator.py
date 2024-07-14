@@ -20,13 +20,6 @@ from common.trajectory1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccel
 from trajectory_generation import PiecewiseBrakingTrajectoryGenerator
 from common.SpeedPoint import SpeedPoint
 
-# normal use
-PairCost = Tuple[Tuple[Curve1d, Curve1d], float]
-Trajectory1d = Curve1d
-
-# auto tuning
-PairCostWithComponents = Tuple[Tuple[Curve1d, Curve1d], Tuple[List[float], float]]
-
 class TrajectoryEvaluator:
     """
     TrajectoryEvaluator class
@@ -139,14 +132,14 @@ class TrajectoryEvaluator:
         # in C++ the priority queue is a max heap, so we need to negate the cost
         return -cost
     
-    def Evaluate(self, planning_target: PlanningTarget, lon_trajectory: Trajectory1d, lat_trajectory: Trajectory1d, \
+    def Evaluate(self, planning_target: PlanningTarget, lon_trajectory: Curve1d, lat_trajectory: Curve1d, \
                 cost_components = List[float]) -> float:
         """
         Evaluate the trajectory pair
 
         :param PlanningTarget planning_target: the planning target
-        :param Trajectory1d lon_trajectory: the longitudinal trajectory
-        :param Trajectory1d lat_trajectory: the lateral trajectory
+        :param Curve1d lon_trajectory: the longitudinal trajectory
+        :param Curve1d lat_trajectory: the lateral trajectory
         :param List[float] cost_components: the cost components
         :returns: the cost of the trajectory pair
         :rtype: float
@@ -192,11 +185,11 @@ class TrajectoryEvaluator:
                       lat_comfort_cost * FLAGS_weight_lat_comfort)
         return total_cost
     
-    def LatOffSetCost(self, lat_trajectory: Trajectory1d, s_values: List[float]) -> float:
+    def LatOffSetCost(self, lat_trajectory: Curve1d, s_values: List[float]) -> float:
         """
         Compute the lateral offset cost
 
-        :param Trajectory1d lat_trajectory: the lateral trajectory
+        :param Curve1d lat_trajectory: the lateral trajectory
         :param List[float] s_values: the s values
         :returns: the lateral offset cost
         :rtype: float
@@ -216,12 +209,12 @@ class TrajectoryEvaluator:
                 cost_abs_sum += abs(cost) * FLAGS_weight_same_side_offset
         return cost_sqr_sum / (cost_abs_sum + FLAGS_numerical_epsilon)
 
-    def LatComfortCost(self, lon_trajectory: Trajectory1d, lat_trajectory: Trajectory1d) -> float:
+    def LatComfortCost(self, lon_trajectory: Curve1d, lat_trajectory: Curve1d) -> float:
         """
         Compute the lateral comfort cost
 
-        :param Trajectory1d lon_trajectory: the longitudinal trajectory
-        :param Trajectory1d lat_trajectory: the lateral trajectory
+        :param Curve1d lon_trajectory: the longitudinal trajectory
+        :param Curve1d lat_trajectory: the lateral trajectory
         :returns: the lateral comfort cost
         :rtype: float
         """
@@ -241,11 +234,11 @@ class TrajectoryEvaluator:
             t += FLAGS_trajectory_time_resolution
         return max_cost
 
-    def LonComfortCost(self, lon_trajectory: Trajectory1d) -> float:
+    def LonComfortCost(self, lon_trajectory: Curve1d) -> float:
         """
         Compute the longitudinal comfort cost
 
-        :param Trajectory1d lon_trajectory: the longitudinal trajectory
+        :param Curve1d lon_trajectory: the longitudinal trajectory
         :returns: the longitudinal comfort cost
         :rtype: float
         """
@@ -261,11 +254,11 @@ class TrajectoryEvaluator:
             t += FLAGS_trajectory_time_resolution
         return cost_sqr_sum / (cost_abs_sum + FLAGS_numerical_epsilon)
 
-    def LonObjectiveCost(lon_trajectory: Trajectory1d, planning_target: PlanningTarget, ref_s_dots: List[float]) -> float:
+    def LonObjectiveCost(lon_trajectory: Curve1d, planning_target: PlanningTarget, ref_s_dots: List[float]) -> float:
         """
         Compute the longitudinal objective cost
 
-        :param Trajectory1d lon_trajectory: the longitudinal trajectory
+        :param Curve1d lon_trajectory: the longitudinal trajectory
         :param PlanningTarget planning_target: the planning target
         :param List[float] ref_s_dots: the reference s dots
         :returns: the longitudinal objective cost
@@ -289,11 +282,11 @@ class TrajectoryEvaluator:
 
     # TODO(all): consider putting pointer of reference_line_info and frame
     # while constructing trajectory evaluator
-    def LonCollisionCost(self, lon_trajectory: Trajectory1d) -> float:
+    def LonCollisionCost(self, lon_trajectory: Curve1d) -> float:
         """
         Compute the longitudinal collision cost
 
-        :param Trajectory1d lon_trajectory: the longitudinal trajectory
+        :param Curve1d lon_trajectory: the longitudinal trajectory
         :returns: the longitudinal collision cost
         :rtype: float
         """
@@ -320,11 +313,11 @@ class TrajectoryEvaluator:
 
         return cost_sqr_sum / (cost_abs_sum + FLAGS_numerical_epsilon)
 
-    def CentripetalAccelerationCost(self, lon_trajectory: Trajectory1d) -> float:
+    def CentripetalAccelerationCost(self, lon_trajectory: Curve1d) -> float:
         """
         Compute the centripetal acceleration cost
 
-        :param Trajectory1d lon_trajectory: the longitudinal trajectory
+        :param Curve1d lon_trajectory: the longitudinal trajectory
         :returns: the centripetal acceleration cost
         :rtype: float
         """
@@ -379,7 +372,7 @@ class TrajectoryEvaluator:
             a_comfort: float = FLAGS_longitudinal_acceleration_upper_bound * FLAGS_comfort_acceleration_factor
             d_comfort: float = -FLAGS_longitudinal_acceleration_lower_bound * FLAGS_comfort_acceleration_factor
 
-            lon_ref_trajectory: Trajectory1d = PiecewiseBrakingTrajectoryGenerator.Generate(
+            lon_ref_trajectory: Curve1d = PiecewiseBrakingTrajectoryGenerator.Generate(
                                                planning_target.stop_point.s, self.init_s[0],
                                                planning_target.cruise_speed, self.init_s[1], a_comfort, d_comfort,
                                                FLAGS_trajectory_time_length + FLAGS_numerical_epsilon)
