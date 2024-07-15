@@ -81,9 +81,9 @@ class BackupTrajectoryGenerator:
         while len(self.trajectory_pair_pqueue) > 1:
             # Note that trajectory_pair_pqueue is List[Tuple[weight, Tuple[Curve1d, Curve1d]]]
             top_pair: Tuple[Curve1d, Curve1d] = heapq.heappop(self.trajectory_pair_pqueue)[1]
-            trajectory: DiscretizedTrajectory = TrajectoryCombiner.Combine(discretized_ref_points, top_pair[0],\
+            trajectory: DiscretizedTrajectory = TrajectoryCombiner.Combine(discretized_ref_points, top_pair[0],
                                                                            top_pair[1], self.init_relative_time)
             if not self.collision_checker.InCollision(trajectory):
                 return trajectory
-        top_pair:Tuple[Curve1d, Curve1d] = self.trajectory_pair_pqueue[0]
+        top_pair: Tuple[Curve1d, Curve1d] = self.trajectory_pair_pqueue[0]
         return TrajectoryCombiner.Combine(discretized_ref_points, top_pair[0], top_pair[1], self.init_relative_time)

@@ -39,8 +39,9 @@ class EndConditionSampler:
         self.path_time_graph = path_time_graph
         self.prediction_querier = prediction_querier
         self.feasible_region = FeasibleRegion(init_s)
-    
-    def SampleLatEndConditions(self) -> List[Tuple[List[float], float]]:
+
+    @staticmethod
+    def SampleLatEndConditions() -> List[Tuple[List[float], float]]:
         """
         Sample lateral end conditions
 

@@ -18,7 +18,7 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
         super(LateralOSQPOptimizer, self).__init__()
 
     @override
-    def optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
+    def Optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
         """
         Optimize function, override the base class function
 
@@ -33,7 +33,6 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
         P_indices: List[int] = []
         P_indptr: List[int] = []
         self.CalculateKernel(d_bounds, P_data, P_indices, P_indptr)
-        self.delta_s: float = delta_s
         num_var: int = len(d_bounds)
         kNumParam: int = 3 * num_var
         kNumConstraint: int = kNumParam + 3 * (num_var - 1) + 3
@@ -122,7 +121,7 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
         A_indptr.append(ind_p)
 
         # offset
-        q:float = [0.0] * kNumParam
+        q: List[float] = [0.0] * kNumParam
         for i in range(kNumParam):
             if i < num_var:
                 q[i] = -2.0 * FLAGS_weight_lateral_obstacle_distance * (d_bounds[i][0] + d_bounds[i][1])
@@ -150,7 +149,8 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
 
         return True
 
-    def CalculateKernel(self, d_bounds: List[Tuple[float, float]], P_data: List[float], P_indices: List[int], P_indptr: List[int]) -> None:
+    @staticmethod
+    def CalculateKernel(d_bounds: List[Tuple[float, float]], P_data: List[float], P_indices: List[int], P_indptr: List[int]) -> None:
         """
         Calculate kernel
 

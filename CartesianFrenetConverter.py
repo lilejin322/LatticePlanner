@@ -8,8 +8,9 @@ class CartesianFrenetConverter:
     """
 
     @staticmethod
-    def cartesian_to_frenet(rs:float, rx:float, ry:float, rtheta:float, rkappa:float, rdkappa:float,
-                            x:float, y:float, v:float, a:float, theta:float, kappa:float) -> Tuple[List[float], List[float]]:
+    def cartesian_to_frenet(rs: float, rx: float, ry: float, rtheta: float,
+                            rkappa: float, rdkappa: float, x: float, y: float,
+                            v: float, a: float, theta: float, kappa: float) -> Tuple[List[float], List[float]]:
         """
         Convert a Cartesian coordinate to a Frenet coordinate
 

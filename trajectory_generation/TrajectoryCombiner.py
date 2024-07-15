@@ -21,7 +21,7 @@ class TrajectoryCombiner:
         :param List[PathPoint] reference_line: the reference line
         :param Curve1d lon_trajectory: the longitudinal trajectory
         :param Curve1d lat_trajectory: the lateral trajectory
-        :param float relative_time: the relative time
+        :param float init_relative_time: the init relative time
         :returns: the combined trajectory
         :rtype: DiscretizedTrajectory
         """

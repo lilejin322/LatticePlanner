@@ -235,7 +235,8 @@ class TrajectoryEvaluator:
             t += FLAGS_trajectory_time_resolution
         return max_cost
 
-    def LonComfortCost(self, lon_trajectory: Curve1d) -> float:
+    @staticmethod
+    def LonComfortCost(lon_trajectory: Curve1d) -> float:
         """
         Compute the longitudinal comfort cost
 

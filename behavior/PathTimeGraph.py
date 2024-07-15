@@ -7,7 +7,7 @@ from common.SLBoundary import SLBoundary
 from common.STBoundary import STBoundary
 from common.STPoint import STPoint
 from logging import Logger
-from config import FLAGS_default_reference_line_width, FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution,\
+from config import FLAGS_default_reference_line_width, FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution, \
                    FLAGS_numerical_epsilon, EGO_VEHICLE_WIDTH, FLAGS_bound_buffer
 from common.TrajectoryPoint import TrajectoryPoint
 from shapely.geometry import Polygon

@@ -142,7 +142,8 @@ class Trajectory1dGenerator:
 
             lat_trajectory_bundle.append(PiecewiseJerkTrajectory1d(lateral_trajectory))
 
-    def GenerateTrajectory1DBundle(self, init_state: List[float], end_conditions: List[Tuple[List[float], float]], trajectory_bundle: List[Curve1d], order: int) -> None:
+    @staticmethod
+    def GenerateTrajectory1DBundle(init_state: List[float], end_conditions: List[Tuple[List[float], float]], trajectory_bundle: List[Curve1d], order: int) -> None:
         """
         Generate trajectory bundle
 

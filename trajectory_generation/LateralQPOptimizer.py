@@ -23,7 +23,7 @@ class LateralQPOptimizer:
         self._opt_d_pprime: List[float] = []
     
     @abstractmethod
-    def optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
+    def Optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
         """
         virtual function to be implemented in class LateralOSQPOptimizer
 
@@ -55,12 +55,12 @@ class LateralQPOptimizer:
             optimal_trajectory.AppendSegment(j, self._delta_s)
         return optimal_trajectory
 
-    def GetFrenetFramePath(self) -> FrenetFramePoint:
+    def GetFrenetFramePath(self) -> List[FrenetFramePoint]:
         """
         Get frenet frame path
 
         :returns: frenet frame path
-        :rtype: FrenetFramePoint
+        :rtype: List[FrenetFramePoint]
         """
 
         frenet_frame_path: List[FrenetFramePoint] = []

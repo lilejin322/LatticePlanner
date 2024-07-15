@@ -10,7 +10,7 @@ from logging import Logger
 from PathMatcher import PathMatcher
 from shapely.geometry import box
 from shapely.affinity import translate, rotate
-from config import EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, EGO_BACK_EDGE_TO_CENTER, FLAGS_trajectory_time_length,\
+from config import EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, EGO_BACK_EDGE_TO_CENTER, FLAGS_trajectory_time_length, \
                    FLAGS_lon_collision_buffer, FLAGS_lat_collision_buffer, FLAGS_trajectory_time_resolution, \
                    FLAGS_default_reference_line_width
 
