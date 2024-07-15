@@ -34,7 +34,7 @@ class LateralQPOptimizer:
         :rtype: bool
         """
 
-        pass
+        raise NotImplementedError
 
     def GetOptimalTrajectory(self) -> PiecewiseJerkTrajectory1d:
         """
