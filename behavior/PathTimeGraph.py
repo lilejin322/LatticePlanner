@@ -38,8 +38,8 @@ class PathTimeGraph:
         assert s_start < s_end, "s_start must be less than s_end"
         assert t_start < t_end, "t_start must be less than t_end"
 
-        self.path_range_ = (s_start, s_end)
-        self.time_range_ = (t_start, t_end)
+        self._path_range = (s_start, s_end)
+        self._time_range = (t_start, t_end)
         self.reference_line_info = reference_line_info
         self._init_d = init_d
         self.logger = Logger("PathTimeGraph")
@@ -117,8 +117,8 @@ class PathTimeGraph:
         left_width: float = FLAGS_default_reference_line_width * 0.5
         right_width: float = FLAGS_default_reference_line_width * 0.5
         left_width, right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
-        if (sl_boundary.start_s > self.path_range_[1] or
-                sl_boundary.end_s < self.path_range_[0] or
+        if (sl_boundary.start_s > self._path_range[1] or
+                sl_boundary.end_s < self._path_range[0] or
                 sl_boundary.start_l > left_width or
                 sl_boundary.end_l < -right_width):
             self.logger.debug(f"Obstacle [{obstacle_id}] is out of range.")
@@ -145,8 +145,8 @@ class PathTimeGraph:
         :param List[PathPoint] discretized_ref_points: discretized reference points.
         """
 
-        relative_time: float = self.time_range_[0]
-        while relative_time < self.time_range_[1]:
+        relative_time: float = self._time_range[0]
+        while relative_time < self._time_range[1]:
             point: TrajectoryPoint = obstacle.GetPointAtTime(relative_time)
             box: Polygon = obstacle.GetBoundingBox(point)
             sl_boundary: SLBoundary = self.ComputeObstacleBoundary(box.GetAllCorners(), discretized_ref_points)
@@ -156,8 +156,8 @@ class PathTimeGraph:
             left_width, right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
 
             # The obstacle is not shown on the region to be considered.
-            if (sl_boundary.start_s > self.path_range_[1] or
-                sl_boundary.end_s < self.path_range_[0] or
+            if (sl_boundary.start_s > self._path_range[1] or
+                sl_boundary.end_s < self._path_range[0] or
                 sl_boundary.start_l > left_width or
                 sl_boundary.end_l < -right_width):
                 if obstacle.Id in self.path_time_obstacle_map:
@@ -223,7 +223,7 @@ class PathTimeGraph:
         :rtype: List[Tuple[float, float]]
         """
 
-        assert self.time_range_[0] <= t <= self.time_range_[1], "Time t is out of the time range."
+        assert self._time_range[0] <= t <= self._time_range[1], "Time t is out of the time range."
         intervals: List[Tuple[float, float]] = []
         for pt_obstacle in self.path_time_obstacles:
             if t > pt_obstacle.max_t or t < pt_obstacle.min_t:
@@ -275,10 +275,10 @@ class PathTimeGraph:
         return intervals
 
     def get_path_range(self) -> Tuple[float, float]:
-        return self.path_range_
+        return self._path_range
 
     def get_time_range(self) -> Tuple[float, float]:
-        return self.time_range_
+        return self._time_range
 
     def GetObstacleSurroundingPoints(self, obstacle_id: str, s_dist: float, t_min_density: float) -> List[STPoint]:
         """
