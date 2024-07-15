@@ -1,7 +1,7 @@
 from typing import List, Tuple
 import heapq
 import math
-from common.Curve1d import Curve1d
+from common.curve1d.Curve1d import Curve1d
 from common.PlanningTarget import PlanningTarget
 from common.PathPoint import PathPoint
 from behavior.PathTimeGraph import PathTimeGraph

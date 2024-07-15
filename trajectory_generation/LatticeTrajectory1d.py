@@ -1,5 +1,5 @@
 from typing import List
-from common.Curve1d import Curve1d
+from common.curve1d.Curve1d import Curve1d
 
 # The initial C++ implementation is LatticeTrajectory1d as a subclass of Curve1d
 # I think this inheritance should be implemented in the future

@@ -1,7 +1,7 @@
 from typing import List
 from common.DiscretizedTrajectory import DiscretizedTrajectory
 from common.PathPoint import PathPoint
-from common.Curve1d import Curve1d
+from common.curve1d.Curve1d import Curve1d
 from common.TrajectoryPoint import TrajectoryPoint
 import PathMatcher
 import CartesianFrenetConverter

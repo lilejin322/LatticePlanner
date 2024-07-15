@@ -1,6 +1,8 @@
 from typing import List, Tuple, Any
 import numpy as np
-from common.Curve1d import Curve1d
+from common.curve1d.Curve1d import Curve1d
+from common.curve1d.QuarticPolynomialCurve1d import QuarticPolynomialCurve1d
+from common.curve1d.QuinticPolynomialCurve1d import QuinticPolynomialCurve1d
 from behavior.PathTimeGraph import PathTimeGraph
 from behavior.PredictionQuerier import PredictionQuerier
 from common.PlanningTarget import PlanningTarget
@@ -13,36 +15,6 @@ from trajectory_generation.LatticeTrajectory1d import LatticeTrajectory1d
 
 # A common function for trajectory bundles generation with 
 # a given initial state and end conditions
-
-class QuarticPolynomialCurve1d(Curve1d):
-    """
-    QuarticPolynomialCurve1d class
-    [Note] This data class has not been implemented yet.
-    """
-
-    def __init__(self, init_state: np.array, end_state: np.array, duration: float):
-        """
-        Constructor
-        """
-
-        super().__init__()
-        # Initialize with quartic polynomial parameters
-        raise NotImplementedError
-
-class QuinticPolynomialCurve1d(Curve1d):
-    """
-    QuinticPolynomialCurve1d class
-    [Note] This data class has not been implemented yet.
-    """
-
-    def __init__(self, init_state: np.array, end_state: np.array, duration: float):
-        """
-        Constructor
-        """
-
-        super().__init__()
-        # Initialize with quintic polynomial parameters
-        raise NotImplementedError
 
 class Trajectory1dGenerator:
     """
