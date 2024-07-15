@@ -42,7 +42,7 @@ class PathTimeGraph:
         self.path_range_ = (s_start, s_end)
         self.time_range_ = (t_start, t_end)
         self.reference_line_info = reference_line_info
-        self.init_d_ = init_d
+        self._init_d = init_d
         self.logger = Logger("PathTimeGraph")
 
         self.path_time_obstacle_map: Dict[str, STBoundary] = {}
@@ -369,8 +369,8 @@ class PathTimeGraph:
             left_width: float = FLAGS_default_reference_line_width / 2.0
             right_width: float = FLAGS_default_reference_line_width / 2.0
             left_width, right_width = self.reference_line_info.reference_line.GetLaneWidth(s_curr)
-            ego_d_lower: float = self.init_d_[0] - ego_width / 2.0
-            ego_d_upper: float = self.init_d_[0] + ego_width / 2.0
+            ego_d_lower: float = self._init_d[0] - ego_width / 2.0
+            ego_d_upper: float = self._init_d[0] + ego_width / 2.0
             bounds.append(min(-right_width, ego_d_lower - FLAGS_bound_buffer),
                           max(left_width, ego_d_upper + FLAGS_bound_buffer))
             discretized_path.append(s_curr)

@@ -15,16 +15,34 @@ from trajectory_generation.LatticeTrajectory1d import LatticeTrajectory1d
 # a given initial state and end conditions
 
 class QuarticPolynomialCurve1d(Curve1d):
+    """
+    QuarticPolynomialCurve1d class
+    [Note] This data class has not been implemented yet.
+    """
+
     def __init__(self, init_state: np.array, end_state: np.array, duration: float):
+        """
+        Constructor
+        """
+
         super().__init__()
         # Initialize with quartic polynomial parameters
-        pass
+        raise NotImplementedError
 
 class QuinticPolynomialCurve1d(Curve1d):
+    """
+    QuinticPolynomialCurve1d class
+    [Note] This data class has not been implemented yet.
+    """
+
     def __init__(self, init_state: np.array, end_state: np.array, duration: float):
+        """
+        Constructor
+        """
+
         super().__init__()
         # Initialize with quintic polynomial parameters
-        pass
+        raise NotImplementedError
 
 class Trajectory1dGenerator:
     """
@@ -162,8 +180,7 @@ class Trajectory1dGenerator:
         :param List[Curve1d] trajectory_bundle: trajectory bundle
         """
 
-        if trajectory_bundle is None:
-            raise ValueError("Trajectory bundle cannot be None")
+        assert trajectory_bundle is not None, "Trajectory bundle cannot be None"
 
         if not end_conditions:
             return

@@ -43,6 +43,7 @@ class LateralQPOptimizer:
         :returns: optimal trajectory
         :rtype: PiecewiseJerkTrajectory1d
         """
+
         assert self._opt_d and self._opt_d_prime and self._opt_d_pprime, "Optimal trajectory data cannot be empty"
 
         optimal_trajectory: PiecewiseJerkTrajectory1d = PiecewiseJerkTrajectory1d(self._opt_d[0],

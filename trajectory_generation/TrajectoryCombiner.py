@@ -10,6 +10,7 @@ import math
 class TrajectoryCombiner:
     """
     TrajectoryCombiner class
+    Note that this class should not be instantiated. All methods should be called in a static context.
     """
 
     @staticmethod
@@ -24,7 +25,7 @@ class TrajectoryCombiner:
         :returns: the combined trajectory
         :rtype: DiscretizedTrajectory
         """
-        
+
         combined_trajectory = DiscretizedTrajectory()
         
         s0: float = lon_trajectory.Evaluate(0, 0.0)

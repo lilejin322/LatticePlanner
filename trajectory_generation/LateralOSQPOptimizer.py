@@ -1,5 +1,5 @@
 from trajectory_generation.LateralQPOptimizer import LateralQPOptimizer
-from typing import List, Tuple
+from typing import List, Tuple, overload
 from config import FLAGS_lateral_third_order_derivative_max, FLAGS_weight_lateral_obstacle_distance, FLAGS_enable_osqp_debug, \
                    FLAGS_weight_lateral_offset, FLAGS_weight_lateral_derivative, FLAGS_weight_lateral_second_order_derivative
 from osqp import OSQP
@@ -17,6 +17,7 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
 
         super(LateralOSQPOptimizer, self).__init__()
 
+    @overload
     def optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
         """
         Optimize function, override the base class function

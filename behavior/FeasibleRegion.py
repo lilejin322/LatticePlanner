@@ -14,7 +14,7 @@ class FeasibleRegion:
         :param List[float] init_s: initial state
         """
 
-        self.init_s_: List[float] = init_s
+        self._init_s: List[float] = init_s
         v: float = init_s[1]
         assert v >= 0.0, "Velocity should be non-negative"
         max_deceleration = -FLAGS_longitudinal_acceleration_lower_bound
@@ -31,7 +31,7 @@ class FeasibleRegion:
         """
 
         assert t >= 0.0, "Time should be non-negative"
-        return (self.init_s_[0] + self.init_s_[1] * t +
+        return (self._init_s[0] + self._init_s[1] * t +
                 0.5 * FLAGS_longitudinal_acceleration_upper_bound * t * t)
 
     def SLower(self, t: float) -> float:
@@ -44,7 +44,7 @@ class FeasibleRegion:
         """
 
         if t < self.t_at_zero_speed_:
-            return (self.init_s_[0] + self.init_s_[1] * t +
+            return (self._init_s[0] + self._init_s[1] * t +
                     0.5 * FLAGS_longitudinal_acceleration_lower_bound * t * t)
         return self.s_at_zero_speed_
 
@@ -56,7 +56,7 @@ class FeasibleRegion:
         :returns: upper bound of v at time t
         :rtype: float
         """
-        return self.init_s_[1] + FLAGS_longitudinal_acceleration_upper_bound * t
+        return self._init_s[1] + FLAGS_longitudinal_acceleration_upper_bound * t
 
     def VLower(self, t: float) -> float:
         """
@@ -67,7 +67,7 @@ class FeasibleRegion:
         :rtype: float
         """
         if t < self.t_at_zero_speed_:
-            return self.init_s_[1] + FLAGS_longitudinal_acceleration_lower_bound * t
+            return self._init_s[1] + FLAGS_longitudinal_acceleration_lower_bound * t
         return 0.0
 
     def TLower(self, s: float) -> float:
@@ -78,10 +78,10 @@ class FeasibleRegion:
         :returns: lower bound of t at s
         :rtype: float
         """
-        assert s >= self.init_s_[0], "Position should be greater than or equal to initial position"
+        assert s >= self._init_s[0], "Position should be greater than or equal to initial position"
 
-        delta_s: float = s - self.init_s_[0]
-        v: float = self.init_s_[1]
+        delta_s: float = s - self._init_s[0]
+        v: float = self._init_s[1]
         a = FLAGS_longitudinal_acceleration_upper_bound
         t = (math.sqrt(v * v + 2.0 * a * delta_s) - v) / a
         return t
