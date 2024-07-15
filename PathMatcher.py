@@ -1,6 +1,7 @@
 from common.PathPoint import PathPoint
 import math
 from typing import List, Tuple
+import bisect
 
 class PathMatcher:
     """
@@ -53,7 +54,7 @@ class PathMatcher:
         return PathMatcher.NormalizeAngle(a)
 
     @staticmethod
-    def InterpoliateUsingLinearApproximation(p0: PathPoint, p1: PathPoint, s: float) -> PathPoint:
+    def InterpolateUsingLinearApproximation(p0: PathPoint, p1: PathPoint, s: float) -> PathPoint:
         """
         Interpoliate_Using_Linear_Approximation
 
@@ -98,7 +99,7 @@ class PathMatcher:
         dot: float = v0x * v1x + v0y * v1y
         delta_s: float = dot / v1_norm
 
-        return PathMatcher.InterpoliateUsingLinearApproximation(p0, p1, p0.s + delta_s)
+        return PathMatcher.InterpolateUsingLinearApproximation(p0, p1, p0.s + delta_s)
 
     @staticmethod
     def MatchToPath(reference_line: List[PathPoint], x: float, y: float) -> PathPoint:
@@ -133,6 +134,28 @@ class PathMatcher:
             return reference_line[index_start]
 
         return PathMatcher.FindProjectionPoint(reference_line[index_start], reference_line[index_end], x, y)
+
+    @staticmethod
+    def MatchToPathS(reference_line: List[PathPoint], s: float) -> PathPoint:
+        """
+        Match_To_Path_S
+
+        :param List[PathPoint] reference_line: reference line
+        :param float s: s
+        :returns: matched point
+        :rtype: PathPoint
+        """
+
+        comp = lambda point: point.s
+        index = bisect.bisect_left(reference_line, s, key=comp)
+        if index == 0:
+            return reference_line[0]
+        elif index == len(reference_line):
+            return reference_line[-1]
+        
+        # interpolate between it_lower - 1 and it_lower
+        # return interpolate(*(it_lower - 1), *it_lower, s);
+        return PathMatcher.InterpolateUsingLinearApproximation(reference_line[index - 1], reference_line[index], s)
 
     @staticmethod
     def GetPathFrenetCoordinate(reference_line: List[PathPoint], x: float, y: float) -> Tuple[float, float]:

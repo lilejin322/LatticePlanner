@@ -3,7 +3,7 @@ from common.DiscretizedTrajectory import DiscretizedTrajectory
 from common.PathPoint import PathPoint
 from common.curve1d.Curve1d import Curve1d
 from common.TrajectoryPoint import TrajectoryPoint
-import PathMatcher
+from PathMatcher import PathMatcher
 import CartesianFrenetConverter
 from config import FLAGS_numerical_epsilon, FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution
 import math
@@ -55,7 +55,7 @@ class TrajectoryCombiner:
             d_prime: float = lat_trajectory.Evaluate(1, relative_s)
             d_pprime: float = lat_trajectory.Evaluate(2, relative_s)
 
-            matched_ref_point: PathPoint = PathMatcher.MatchToPath(reference_line, s)
+            matched_ref_point: PathPoint = PathMatcher.MatchToPathS(reference_line, s)
 
             x: float = 0.0
             y: float = 0.0

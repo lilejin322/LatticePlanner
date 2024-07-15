@@ -7,15 +7,15 @@ from common.PathPoint import PathPoint
 from behavior.PathTimeGraph import PathTimeGraph
 from config import FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution, FLAGS_lattice_stop_buffer, \
                    FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_space_resolution, FLAGS_weight_lon_objective, \
-                    FLAGS_weight_lon_jerk, FLAGS_weight_lon_collision, FLAGS_weight_centripetal_acceleration, \
-                    FLAGS_weight_lat_offset, FLAGS_weight_lat_comfort, FLAGS_lat_offset_bound, FLAGS_weight_opposite_side_offset, \
-                    FLAGS_weight_same_side_offset, FLAGS_numerical_epsilon, FLAGS_longitudinal_jerk_upper_bound, FLAGS_weight_target_speed, \
-                    FLAGS_weight_dist_travelled, FLAGS_lon_collision_cost_std, FLAGS_lon_collision_yield_buffer, FLAGS_lon_collision_overtake_buffer, \
-                    FLAGS_comfort_acceleration_factor, FLAGS_longitudinal_acceleration_upper_bound, FLAGS_longitudinal_acceleration_lower_bound
+                   FLAGS_weight_lon_jerk, FLAGS_weight_lon_collision, FLAGS_weight_centripetal_acceleration, \
+                   FLAGS_weight_lat_offset, FLAGS_weight_lat_comfort, FLAGS_lat_offset_bound, FLAGS_weight_opposite_side_offset, \
+                   FLAGS_weight_same_side_offset, FLAGS_numerical_epsilon, FLAGS_longitudinal_jerk_upper_bound, FLAGS_weight_target_speed, \
+                   FLAGS_weight_dist_travelled, FLAGS_lon_collision_cost_std, FLAGS_lon_collision_yield_buffer, FLAGS_lon_collision_overtake_buffer, \
+                   FLAGS_comfort_acceleration_factor, FLAGS_longitudinal_acceleration_upper_bound, FLAGS_longitudinal_acceleration_lower_bound
 from common import ConstraintChecker1d
 from logging import Logger
 import numpy as np
-import PathMatcher
+from PathMatcher import PathMatcher
 from common.trajectory1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccelerationTrajectory1d
 from trajectory_generation import PiecewiseBrakingTrajectoryGenerator
 from common.SpeedPoint import SpeedPoint
@@ -50,7 +50,7 @@ class TrajectoryEvaluator:
         self.path_time_graph = path_time_graph
         self.reference_line = reference_line
         # Note that cost_queue is List[weight, Tuple[lon_trajectory, lat_trajectory]]
-        self.cost_queue :List[Tuple[float, Tuple[Curve1d, Curve1d]]]= []
+        self.cost_queue: List[Tuple[float, Tuple[Curve1d, Curve1d]]] = []
         start_time = 0.0
         end_time = FLAGS_trajectory_time_length
         self.path_time_intervals = self.path_time_graph.GetPathBlockingIntervals(
@@ -132,7 +132,7 @@ class TrajectoryEvaluator:
         # in C++ the priority queue is a max heap, so we need to negate the cost
         return -cost
     
-    def Evaluate(self, planning_target: PlanningTarget, lon_trajectory: Curve1d, lat_trajectory: Curve1d, \
+    def Evaluate(self, planning_target: PlanningTarget, lon_trajectory: Curve1d, lat_trajectory: Curve1d,
                 cost_components = List[float]) -> float:
         """
         Evaluate the trajectory pair
@@ -162,7 +162,7 @@ class TrajectoryEvaluator:
         centripetal_acc_cost: float = self.CentripetalAccelerationCost(lon_trajectory)
 
         # decides the longitudinal evaluation horizon for lateral trajectories
-        evaluation_horizon: float = min(FLAGS_speed_lon_decision_horizon, \
+        evaluation_horizon: float = min(FLAGS_speed_lon_decision_horizon,
                                         lon_trajectory.Evaluate(0, lon_trajectory.ParamLength))
         s_values: List[float] = [s for s in np.arange(0.0, evaluation_horizon, FLAGS_trajectory_space_resolution)]
 
@@ -184,8 +184,9 @@ class TrajectoryEvaluator:
                       lat_offset_cost * FLAGS_weight_lat_offset +
                       lat_comfort_cost * FLAGS_weight_lat_comfort)
         return total_cost
-    
-    def LatOffSetCost(self, lat_trajectory: Curve1d, s_values: List[float]) -> float:
+
+    @staticmethod
+    def LatOffSetCost(lat_trajectory: Curve1d, s_values: List[float]) -> float:
         """
         Compute the lateral offset cost
 
@@ -254,6 +255,7 @@ class TrajectoryEvaluator:
             t += FLAGS_trajectory_time_resolution
         return cost_sqr_sum / (cost_abs_sum + FLAGS_numerical_epsilon)
 
+    @staticmethod
     def LonObjectiveCost(lon_trajectory: Curve1d, planning_target: PlanningTarget, ref_s_dots: List[float]) -> float:
         """
         Compute the longitudinal objective cost
@@ -328,7 +330,7 @@ class TrajectoryEvaluator:
         while t < FLAGS_trajectory_time_length:
             s: float = lon_trajectory.Evaluate(0, t)
             v: float = lon_trajectory.Evaluate(1, t)
-            ref_point: PathPoint = PathMatcher.MatchToPath(self.reference_line, s)
+            ref_point: PathPoint = PathMatcher.MatchToPathS(self.reference_line, s)
             assert ref_point.has_kappa, "Reference point does not have kappa"
             centripetal_acc: float = v * v * ref_point.kappa
             centripetal_acc_sum += abs(centripetal_acc)

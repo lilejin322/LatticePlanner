@@ -68,7 +68,7 @@ class PredictionQuerier:
         v_x: float = v * cos(theta)
         v_y: float = v * sin(theta)
 
-        obstacle_point_on_ref_line = PathMatcher.MatchToPath(self.reference_line, s)
+        obstacle_point_on_ref_line = PathMatcher.MatchToPathS(self.reference_line, s)
 
         ref_theta = obstacle_point_on_ref_line.theta
 
