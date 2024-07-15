@@ -40,8 +40,8 @@ class CollisionChecker:
         self.logger = Logger("CollisionChecker")
 
     @staticmethod
-    def InCollision(obstacles: List[Obstacle], ego_trajectory: DiscretizedTrajectory, ego_length: float,
-                     ego_width: float, ego_back_edge_to_center: float) -> bool:
+    def StaticInCollision(obstacles: List[Obstacle], ego_trajectory: DiscretizedTrajectory, ego_length: float,
+                          ego_width: float, ego_back_edge_to_center: float) -> bool:
         """
         Check if the ego vehicle is in collision with the obstacles
 
@@ -127,7 +127,7 @@ class CollisionChecker:
         return False
 
     def BuildPredictedEnvironment(self, obstacles: List[Obstacle], ego_vehicle_s: float, ego_vehicle_d: float,
-                                    discretized_reference_line: List[PathPoint]):
+                                  discretized_reference_line: List[PathPoint]):
         """
         Build predicted environment
 
@@ -203,7 +203,7 @@ class CollisionChecker:
         return ego_vehicle_d < left_width and ego_vehicle_d > -right_width
 
     def IsObstacleBehindEgoVehicle(self, obstacle: Obstacle, ego_vehicle_s: float,
-                                       discretized_reference_line: List[PathPoint]) -> bool:
+                                   discretized_reference_line: List[PathPoint]) -> bool:
         """
         Check if the obstacle is behind the ego vehicle
 

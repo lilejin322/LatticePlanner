@@ -1,5 +1,4 @@
-from typing import List, Tuple, Dict, overload
-import numpy as np
+from typing import List, Tuple, Dict
 from common.Obstacle import Obstacle
 from common.ReferenceLineInfo import ReferenceLineInfo
 from common.PathPoint import PathPoint
@@ -51,7 +50,8 @@ class PathTimeGraph:
 
         self.SetUpObstacles(obstacles, discretized_ref_points)
 
-    def ComputeObstacleBoundary(self, vertices: List[Vec2d], discretized_ref_points: List[PathPoint]) -> SLBoundary:
+    @staticmethod
+    def ComputeObstacleBoundary(vertices: List[Vec2d], discretized_ref_points: List[PathPoint]) -> SLBoundary:
         """
         Compute the boundary of the obstacle in the s-l coordinate.
 
@@ -135,7 +135,7 @@ class PathTimeGraph:
             self.SetPathTimePoint(obstacle_id, sl_boundary.end_s, FLAGS_trajectory_time_length))
         self.static_obs_sl_boundaries.append(sl_boundary)
         self.logger.debug(f"ST-Graph mapping static obstacle: {obstacle_id}, start_s: {sl_boundary.start_s}, "
-              f"end_s: {sl_boundary.end_s}, start_l: {sl_boundary.start_l}, end_l: {sl_boundary.end_l}")
+                          f"end_s: {sl_boundary.end_s}, start_l: {sl_boundary.start_l}, end_l: {sl_boundary.end_l}")
 
     def SetDynamicObstacle(self, obstacle: Obstacle, discretized_ref_points: List[PathPoint]):
         """
@@ -179,7 +179,8 @@ class PathTimeGraph:
                 obstacle.Id, sl_boundary.end_s, relative_time)
             relative_time += FLAGS_trajectory_time_resolution
 
-    def SetPathTimePoint(self, obstacle_id: str, s: float, t: float) -> STPoint:
+    @staticmethod
+    def SetPathTimePoint(obstacle_id: str, s: float, t: float) -> STPoint:
         """
         Set a path-time point for the PathTimeGraph.
 
@@ -213,7 +214,7 @@ class PathTimeGraph:
             return True, self.path_time_obstacle_map[obstacle_id]
         return False, None
 
-    def GetPathBlockingIntervals(self, t: float) -> List[Tuple[float, float]]:
+    def GetPathBlockingIntervalsT(self, t: float) -> List[Tuple[float, float]]:
         """
         Get the path blocking intervals.
 
@@ -228,9 +229,9 @@ class PathTimeGraph:
             if t > pt_obstacle.max_t or t < pt_obstacle.min_t:
                 continue
             s_upper: float = self.lerp(pt_obstacle.upper_left_point.s, pt_obstacle.upper_left_point.t,
-                                  pt_obstacle.upper_right_point.s, pt_obstacle.upper_right_point.t, t)
+                                       pt_obstacle.upper_right_point.s, pt_obstacle.upper_right_point.t, t)
             s_lower: float = self.lerp(pt_obstacle.bottom_left_point.s, pt_obstacle.bottom_left_point.t,
-                                  pt_obstacle.bottom_right_point.s, pt_obstacle.bottom_right_point.t, t)
+                                       pt_obstacle.bottom_right_point.s, pt_obstacle.bottom_right_point.t, t)
             intervals.append((s_lower, s_upper))
         return intervals
 
@@ -254,8 +255,8 @@ class PathTimeGraph:
         x = x0 + r * (x1 - x0)
         return x
 
-    @overload
-    def GetPathBlockingIntervals(self, t_start: float, t_end: float, t_resolution: float) -> List[List[Tuple[float, float]]]:
+    def GetPathBlockingIntervals(self, t_start: float, t_end: float,
+                                 t_resolution: float) -> List[List[Tuple[float, float]]]:
         """
         Get the path blocking intervals.
 
@@ -269,7 +270,7 @@ class PathTimeGraph:
         intervals: List[List[Tuple[float, float]]] = []
         t = t_start
         while t <= t_end:
-            intervals.append(self.GetPathBlockingIntervals(t))
+            intervals.append(self.GetPathBlockingIntervalsT(t))
             t += t_resolution
         return intervals
 
@@ -385,7 +386,8 @@ class PathTimeGraph:
                 bounds[i] = (0.0, 0.0)
         return bounds
 
-    def UpdateLateralBoundsByObstacle(self, sl_boundary: SLBoundary, discretized_path: List[float],
+    @staticmethod
+    def UpdateLateralBoundsByObstacle(sl_boundary: SLBoundary, discretized_path: List[float],
                                       s_start: float, s_end: float, bounds: List[Tuple[float, float]]) -> None:
         """
         Update the lateral bounds by the obstacle.
