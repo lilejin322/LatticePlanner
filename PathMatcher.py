@@ -3,9 +3,10 @@ import math
 from typing import List, Tuple
 
 class PathMatcher:
-
-    def __init__(self):
-        pass
+    """
+    PathMatcher class
+    Note that this class should not be instantiated. All methods should be called in a static context.
+    """
 
     @staticmethod
     def NormalizeAngle(angle: float) -> float:

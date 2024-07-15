@@ -158,8 +158,8 @@ class LatticePlanner:
 
         # 6. first, evaluate the feasibility of the 1d trajectories according to
         # dynamic constraints.
-        #   second, evaluate the feasible longitudinal and lateral trajectory pairs
-        #   and sort them according to the cost.
+        # second, evaluate the feasible longitudinal and lateral trajectory pairs
+        # and sort them according to the cost.
 
         trajectory_evaluator = TrajectoryEvaluator(init_s, planning_target, lon_trajectory1d_bundle, lat_trajectory1d_bundle,
                                                         path_time_graph, reference_line)
