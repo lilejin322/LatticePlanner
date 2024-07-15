@@ -1,4 +1,3 @@
-from typing import List
 from common.curve1d.Curve1d import Curve1d
 
 # The initial C++ implementation is LatticeTrajectory1d as a subclass of Curve1d

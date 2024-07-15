@@ -1,5 +1,4 @@
-from typing import List, Tuple, Any
-import numpy as np
+from typing import List, Tuple
 from common.curve1d.Curve1d import Curve1d
 from common.curve1d.QuarticPolynomialCurve1d import QuarticPolynomialCurve1d
 from common.curve1d.QuinticPolynomialCurve1d import QuinticPolynomialCurve1d

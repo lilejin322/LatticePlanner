@@ -3,7 +3,7 @@ from math import cos, sin, fabs, atan2, pi
 from common.Obstacle import Obstacle
 from common.PathPoint import PathPoint
 from common.ReferenceLineInfo import ReferenceLineInfo
-from behavior import PathTimeGraph
+from behavior.PathTimeGraph import PathTimeGraph
 from common.DiscretizedTrajectory import DiscretizedTrajectory
 from common.TrajectoryPoint import TrajectoryPoint
 from logging import Logger

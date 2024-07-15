@@ -1,4 +1,3 @@
-from typing import List
 from common.curve1d.Curve1d import Curve1d
 from common.trajectory1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccelerationTrajectory1d
 import math

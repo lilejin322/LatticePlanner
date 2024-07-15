@@ -4,7 +4,7 @@ from common.PathPoint import PathPoint
 from common.curve1d.Curve1d import Curve1d
 from common.TrajectoryPoint import TrajectoryPoint
 from PathMatcher import PathMatcher
-import CartesianFrenetConverter
+from CartesianFrenetConverter import CartesianFrenetConverter
 from config import FLAGS_numerical_epsilon, FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution
 import math
 class TrajectoryCombiner:

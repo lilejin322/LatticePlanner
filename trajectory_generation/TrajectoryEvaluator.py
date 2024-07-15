@@ -12,12 +12,12 @@ from config import FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolutio
                    FLAGS_weight_same_side_offset, FLAGS_numerical_epsilon, FLAGS_longitudinal_jerk_upper_bound, FLAGS_weight_target_speed, \
                    FLAGS_weight_dist_travelled, FLAGS_lon_collision_cost_std, FLAGS_lon_collision_yield_buffer, FLAGS_lon_collision_overtake_buffer, \
                    FLAGS_comfort_acceleration_factor, FLAGS_longitudinal_acceleration_upper_bound, FLAGS_longitudinal_acceleration_lower_bound
-from common import ConstraintChecker1d
+from common.ConstraintChecker1d import ConstraintChecker1d
 from logging import Logger
 import numpy as np
 from PathMatcher import PathMatcher
 from common.trajectory1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccelerationTrajectory1d
-from trajectory_generation import PiecewiseBrakingTrajectoryGenerator
+from trajectory_generation.PiecewiseBrakingTrajectoryGenerator import PiecewiseBrakingTrajectoryGenerator
 from common.SpeedPoint import SpeedPoint
 
 class TrajectoryEvaluator:
