@@ -1,3 +1,0 @@
-class ErrorCode:
-
-    PLANNING_ERROR = "PLANNING_ERROR"
