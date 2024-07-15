@@ -1,4 +1,4 @@
-from typing import List, overload
+from typing import List
 from math import cos, sin, fabs, atan2, pi
 from common.Obstacle import Obstacle
 from common.PathPoint import PathPoint
@@ -86,7 +86,6 @@ class CollisionChecker:
                     return True
         return False
 
-    @overload
     def InCollision(self, discretized_trajectory: DiscretizedTrajectory) -> bool:
         """
         Check if the ego vehicle is in collision with the predicted bounding rectangles
@@ -222,6 +221,6 @@ class CollisionChecker:
 
         if (obstacle_reference_line_position[0] < ego_vehicle_s and
                 fabs(obstacle_reference_line_position[1]) < half_lane_width):
-            self.logger(f"Ignore obstacle [{obstacle.Id}]")
+            self.logger.warning(f"Ignore obstacle [{obstacle.Id}]")
             return True
         return False

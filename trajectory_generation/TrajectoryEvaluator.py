@@ -84,7 +84,7 @@ class TrajectoryEvaluator:
                 # we need to be very cautious about these things
                 heapq.heappush(self.cost_queue, (cost, (lon_trajectory, lat_trajectory)))
         
-        self.logger(f"Number of valid 1d trajectory pairs: {len(self.cost_queue)}")
+        self.logger.debug(f"Number of valid 1d trajectory pairs: {len(self.cost_queue)}")
     
     def has_more_trajectory_pairs(self) -> bool:
         """

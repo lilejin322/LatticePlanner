@@ -57,7 +57,7 @@ class CartesianFrenetConverter:
         return [s, s_prime, s_double_prime], [d, d_prime, d_double_prime]
 
     @staticmethod
-    def frenet_to_cartesian(rs: float, rx: float, ry: float, rtheta: float, rkappa: float, rdkappa: float, \
+    def frenet_to_cartesian(rs: float, rx: float, ry: float, rtheta: float, rkappa: float, rdkappa: float,
                             s_condition: List[float], d_condition: List[float]) -> Tuple[float, float, float, float, float, float]:
         """
         Convert a Frenet coordinate to a Cartesian coordinate
