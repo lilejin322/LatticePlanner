@@ -5,7 +5,7 @@ from common.PathPoint import PathPoint
 from common.ReferenceLineInfo import ReferenceLineInfo
 from behavior.PathTimeGraph import PathTimeGraph
 from common.DiscretizedTrajectory import DiscretizedTrajectory
-from common.TrajectoryPoint import TrajectoryPoint
+from protoclass.TrajectoryPoint import TrajectoryPoint
 from logging import Logger
 from PathMatcher import PathMatcher
 from shapely.geometry import box

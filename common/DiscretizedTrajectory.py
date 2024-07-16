@@ -1,5 +1,5 @@
 from common.ADCTrajectory import ADCTrajectory
-from common.TrajectoryPoint import TrajectoryPoint
+from protoclass.TrajectoryPoint import TrajectoryPoint
 from bisect import bisect_left
 from logging import Logger
 import math

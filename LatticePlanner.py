@@ -3,7 +3,7 @@ import time
 from typing import List, Optional, Tuple
 from common.PathPoint import PathPoint
 from common.ReferencePoint import ReferencePoint
-from common.TrajectoryPoint import TrajectoryPoint
+from protoclass.TrajectoryPoint import TrajectoryPoint
 from CartesianFrenetConverter import CartesianFrenetConverter
 from common.Frame import Frame 
 from common.ReferenceLineInfo import ReferenceLineInfo

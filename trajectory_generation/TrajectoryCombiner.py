@@ -2,7 +2,7 @@ from typing import List
 from common.DiscretizedTrajectory import DiscretizedTrajectory
 from common.PathPoint import PathPoint
 from common.curve1d.Curve1d import Curve1d
-from common.TrajectoryPoint import TrajectoryPoint
+from protoclass.TrajectoryPoint import TrajectoryPoint
 from PathMatcher import PathMatcher
 from CartesianFrenetConverter import CartesianFrenetConverter
 from config import FLAGS_numerical_epsilon, FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution
