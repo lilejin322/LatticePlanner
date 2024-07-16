@@ -5,7 +5,7 @@ from common.PathPoint import PathPoint
 from behavior.CollisionChecker import CollisionChecker
 from trajectory_generation.Trajectory1dGenerator import Trajectory1dGenerator
 from TrajectoryCombiner import TrajectoryCombiner
-from common.ConstantDecelerationTrajectory1d import ConstantDecelerationTrajectory1d
+from common.curve1d.ConstantDecelerationTrajectory1d import ConstantDecelerationTrajectory1d
 from common.DiscretizedTrajectory import DiscretizedTrajectory
 from config import FLAGS_trajectory_time_length
 
