@@ -1,7 +1,7 @@
 from abc import abstractmethod
 from typing import List, Tuple
 from config import FLAGS_default_delta_s_lateral_optimization
-from common.trajectory1d.PiecewiseJerkTrajectory1d import PiecewiseJerkTrajectory1d
+from common.curve1d.PiecewiseJerkTrajectory1d import PiecewiseJerkTrajectory1d
 from common.FrenetFramePoint import FrenetFramePoint
 
 class LateralQPOptimizer:

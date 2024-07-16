@@ -9,7 +9,7 @@ from logging import Logger
 from config import FLAGS_lateral_optimization, FLAGS_max_s_lateral_optimization, FLAGS_default_delta_s_lateral_optimization
 from trajectory_generation.EndConditionSampler import EndConditionSampler
 from trajectory_generation.LateralOSQPOptimizer import LateralOSQPOptimizer
-from common.trajectory1d.PiecewiseJerkTrajectory1d import PiecewiseJerkTrajectory1d
+from common.curve1d.PiecewiseJerkTrajectory1d import PiecewiseJerkTrajectory1d
 from trajectory_generation.LatticeTrajectory1d import LatticeTrajectory1d
 
 # A common function for trajectory bundles generation with 
