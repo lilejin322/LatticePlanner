@@ -160,11 +160,11 @@ class Trajectory1dGenerator:
 
         for end_condition in end_conditions:
             if order == 4:
-                trajectory1d: LatticeTrajectory1d = LatticeTrajectory1d(Curve1d(QuarticPolynomialCurve1d(
-                    init_state, [end_condition[0][1], end_condition[0][2]], end_condition[1])))
+                trajectory1d: LatticeTrajectory1d = LatticeTrajectory1d(QuarticPolynomialCurve1d(
+                    init_state, [end_condition[0][1], end_condition[0][2]], end_condition[1]))
             elif order == 5:
-                trajectory1d: LatticeTrajectory1d = LatticeTrajectory1d(Curve1d(QuinticPolynomialCurve1d(
-                    init_state, end_condition[0], end_condition[1])))
+                trajectory1d: LatticeTrajectory1d = LatticeTrajectory1d(QuinticPolynomialCurve1d(
+                    init_state, end_condition[0], end_condition[1]))
             else:
                 raise ValueError(f"Unsupported order: {order}")
         

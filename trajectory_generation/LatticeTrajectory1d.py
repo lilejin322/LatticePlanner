@@ -1,20 +1,21 @@
+from typing import override
 from common.curve1d.Curve1d import Curve1d
-
-# The initial C++ implementation is LatticeTrajectory1d as a subclass of Curve1d
-# I think this inheritance should be implemented in the future
 
 class LatticeTrajectory1d:
     """
     LatticeTrajectory1d class
+
+    this class is a wrapper for Curve1d instance
     """
 
     def __init__(self, trajectory1d: Curve1d):
         """
         Constructor
 
-        :param trajectory1d: Curve1d instance
+        :param trajectory1d: QuarticPolynomialCurve1d or QuinticPolynomialCurve1d instance
         """
 
+        super().__init__()
         self.trajectory1d = trajectory1d
 
         self._target_position: float = 0.0
@@ -25,7 +26,8 @@ class LatticeTrajectory1d:
         self._has_target_velocity = False
         self._has_target_time = False
 
-    def evaluate(self, order: int, param: float) -> float:
+    @override
+    def Evaluate(self, order: int, param: float) -> float:
         """
         Evaluate the trajectory at a given order and parameter value.
 
@@ -56,6 +58,7 @@ class LatticeTrajectory1d:
         else:
             return 0.0
 
+    @override
     def ParamLength(self) -> float:
         """
         ParamLength
@@ -66,6 +69,7 @@ class LatticeTrajectory1d:
 
         return self.trajectory1d.ParamLength()
 
+    @override
     def ToString(self) -> str:
         """
         ToString
