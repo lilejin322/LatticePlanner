@@ -14,7 +14,7 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         """
 
         if len(args) == 3:
-            start, end, param= args
+            start, end, param = args
             self.__init__(start[0], start[1], start[2], end[0], end[1], param)
         elif len(args) == 6:
             super().__init__()
@@ -22,7 +22,7 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
             self._param = param
             self.start_condition: List[float] = [x0, dx0, ddx0]
             self.end_condition: List[float] = [dx1, ddx1]
-            self._coef: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
+            self._coef: List[float] = [0.0] * 5
             self.ComputeCoefficients(x0, dx0, ddx0, dx1, ddx1, param)
         elif len(args) == 1 and isinstance(args[0], QuarticPolynomialCurve1d):
             other: QuarticPolynomialCurve1d = args[0]
@@ -87,6 +87,7 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :returns: String representation of the curve
         :rtype: str
         """
+
         return f"{'\t'.join(map(str, self._coef))}\t{self._param}\n"
 
     def ComputeCoefficients(self, x0: float, dx0: float, ddx0: float, dx1: float, ddx1: float, p: float) -> None:
@@ -101,6 +102,8 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :param float p: param p
         """
 
+        assert p > 0.0, "Param must be positive"
+
         self._coef[0] = x0
         self._coef[1] = dx0
         self._coef[2] = 0.5 * ddx0
@@ -108,8 +111,8 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         b0: float = dx1 - ddx0 * p - dx0
         b1: float = ddx1 - ddx0
 
-        p2: float = p * p
-        p3: float = p2 * p
+        p2: float = p ** 2
+        p3: float = p ** 3
 
         self._coef[3] = (3 * b0 - b1 * p) / (3 * p2)
         self._coef[4] = (-2 * b0 + b1 * p) / (4 * p3)

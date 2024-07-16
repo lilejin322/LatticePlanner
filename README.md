@@ -4,3 +4,5 @@ This has made it difficult to conduct effective white-box testing on the lattice
 processing algorithm and related support classes of this planner and translated them into Python code. The project is
 not yet complete and we need more collaborators. We plan to integrate and conduct corresponding experiments using environments 
 such as Pygame and Gym. Interested teams are welcome to contact me: li.lejin.147@s.kyushu-u.ac.jp
+
+In this project, we utilize @override decorator, a new feature in typing module, which requires python 3.12+
