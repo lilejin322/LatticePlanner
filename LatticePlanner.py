@@ -7,7 +7,7 @@ from protoclass.TrajectoryPoint import TrajectoryPoint
 from CartesianFrenetConverter import CartesianFrenetConverter
 from common.Frame import Frame 
 from common.ReferenceLineInfo import ReferenceLineInfo
-from common.ADCTrajectory import ADCTrajectory
+from protoclass.ADCTrajectory import ADCTrajectory
 from logging import Logger
 from PathMatcher import PathMatcher
 from config import FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_time_length, FLAGS_enable_backup_trajectory, FLAGS_backup_trajectory_cost
