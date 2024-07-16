@@ -1,2 +1,0 @@
-class SpeedPoint:
-    pass

@@ -4,7 +4,7 @@ from common.curve1d.QuarticPolynomialCurve1d import QuarticPolynomialCurve1d
 from common.curve1d.QuinticPolynomialCurve1d import QuinticPolynomialCurve1d
 from behavior.PathTimeGraph import PathTimeGraph
 from behavior.PredictionQuerier import PredictionQuerier
-from common.PlanningTarget import PlanningTarget
+from protoclass.PlanningTarget import PlanningTarget
 from logging import Logger
 from config import FLAGS_lateral_optimization, FLAGS_max_s_lateral_optimization, FLAGS_default_delta_s_lateral_optimization
 from trajectory_generation.EndConditionSampler import EndConditionSampler

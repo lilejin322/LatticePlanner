@@ -1,2 +1,0 @@
-class PlanningTarget:
-    pass

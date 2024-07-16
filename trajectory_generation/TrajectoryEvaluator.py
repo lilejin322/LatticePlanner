@@ -2,7 +2,7 @@ from typing import List, Tuple
 import heapq
 import math
 from common.curve1d.Curve1d import Curve1d
-from common.PlanningTarget import PlanningTarget
+from protoclass.PlanningTarget import PlanningTarget
 from protoclass.PathPoint import PathPoint
 from behavior.PathTimeGraph import PathTimeGraph
 from config import FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution, FLAGS_lattice_stop_buffer, \
@@ -18,7 +18,7 @@ import numpy as np
 from PathMatcher import PathMatcher
 from common.curve1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccelerationTrajectory1d
 from trajectory_generation.PiecewiseBrakingTrajectoryGenerator import PiecewiseBrakingTrajectoryGenerator
-from common.SpeedPoint import SpeedPoint
+from protoclass.SpeedPoint import SpeedPoint
 
 class TrajectoryEvaluator:
     """
