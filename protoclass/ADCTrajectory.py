@@ -3,7 +3,6 @@ from typing import Optional, List
 from protoclass.PathPoint import PathPoint
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from protoclass.Header import Header
-from protoclass.Debug import Debug
 from protoclass.DecisionResult import DecisionResult
 import math
 from enum import Enum
@@ -156,7 +155,6 @@ class ADCTrajectory:
     # in seconds
     total_path_time: Optional[float] = None
     estop: Optional[EStop] = None
-    debug: Optional[Debug] = None
     # is_replan == true mean replan triggered
     is_replan: Optional[bool] = field(default=False)
     # Specify trajectory gear
