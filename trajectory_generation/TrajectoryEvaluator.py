@@ -16,7 +16,7 @@ from common.ConstraintChecker1d import ConstraintChecker1d
 from logging import Logger
 import numpy as np
 from PathMatcher import PathMatcher
-from common.trajectory1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccelerationTrajectory1d
+from common.curve1d.PiecewiseAccelerationTrajectory1d import PiecewiseAccelerationTrajectory1d
 from trajectory_generation.PiecewiseBrakingTrajectoryGenerator import PiecewiseBrakingTrajectoryGenerator
 from common.SpeedPoint import SpeedPoint
 
