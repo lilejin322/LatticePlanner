@@ -1,4 +1,4 @@
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 import math
 from typing import List, Tuple
 import bisect

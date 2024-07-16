@@ -1,6 +1,6 @@
 from typing import List, Dict
 from common.Obstacle import Obstacle
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from logging import Logger
 from bisect import bisect
 from math import cos, sin

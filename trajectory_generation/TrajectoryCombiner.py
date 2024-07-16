@@ -1,6 +1,6 @@
 from typing import List
 from common.DiscretizedTrajectory import DiscretizedTrajectory
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from common.curve1d.Curve1d import Curve1d
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from PathMatcher import PathMatcher

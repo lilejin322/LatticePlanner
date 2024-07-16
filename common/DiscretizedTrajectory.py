@@ -3,7 +3,7 @@ from protoclass.TrajectoryPoint import TrajectoryPoint
 from bisect import bisect_left
 from logging import Logger
 import math
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from common.Vec2d import Vec2d
 
 class DiscretizedTrajectory(list):

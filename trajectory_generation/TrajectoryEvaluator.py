@@ -3,7 +3,7 @@ import heapq
 import math
 from common.curve1d.Curve1d import Curve1d
 from common.PlanningTarget import PlanningTarget
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from behavior.PathTimeGraph import PathTimeGraph
 from config import FLAGS_trajectory_time_length, FLAGS_trajectory_time_resolution, FLAGS_lattice_stop_buffer, \
                    FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_space_resolution, FLAGS_weight_lon_objective, \

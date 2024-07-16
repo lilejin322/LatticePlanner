@@ -1,7 +1,7 @@
 import math
 import time
 from typing import List, Optional, Tuple
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from common.ReferencePoint import ReferencePoint
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from CartesianFrenetConverter import CartesianFrenetConverter

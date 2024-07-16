@@ -1,7 +1,7 @@
 from typing import List
 from math import cos, sin, fabs, atan2, pi
 from common.Obstacle import Obstacle
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from common.ReferenceLineInfo import ReferenceLineInfo
 from behavior.PathTimeGraph import PathTimeGraph
 from common.DiscretizedTrajectory import DiscretizedTrajectory

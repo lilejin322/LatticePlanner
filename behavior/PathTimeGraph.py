@@ -1,7 +1,7 @@
 from typing import List, Tuple, Dict
 from common.Obstacle import Obstacle
 from common.ReferenceLineInfo import ReferenceLineInfo
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from PathMatcher import PathMatcher
 from common.SLBoundary import SLBoundary
 from common.STBoundary import STBoundary

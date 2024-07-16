@@ -1,7 +1,7 @@
 import heapq
 from typing import List, Tuple
 from common.curve1d.Curve1d import Curve1d
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from behavior.CollisionChecker import CollisionChecker
 from trajectory_generation.Trajectory1dGenerator import Trajectory1dGenerator
 from TrajectoryCombiner import TrajectoryCombiner

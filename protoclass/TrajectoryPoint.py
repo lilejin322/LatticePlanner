@@ -1,10 +1,14 @@
 from dataclasses import dataclass
 from typing import Optional
-from common.PathPoint import PathPoint
+from protoclass.PathPoint import PathPoint
 from protoclass.GaussianInfo import GaussianInfo
 
 @dataclass
 class TrajectoryPoint:
+    """
+    TrajectoryPoint class, oriented from protobuf message
+    """
+
     # path point
     path_point: Optional[PathPoint] = None
     # linear velocity
