@@ -2,7 +2,7 @@ from typing import List, Dict
 from common.Obstacle import Obstacle
 from protoclass.PathPoint import PathPoint
 from logging import Logger
-from bisect import bisect
+from bisect import bisect_left
 from math import cos, sin
 from PathMatcher import PathMatcher
 
@@ -61,7 +61,7 @@ class PredictionQuerier:
         if t < trajectory.trajectory_point[0].relative_time or t > trajectory.trajectory_point[num_traj_point - 1].relative_time:
             return 0.0
 
-        matched_index = bisect.bisect_left([p.relative_time for p in trajectory.trajectory_point], t)
+        matched_index = bisect_left([p.relative_time for p in trajectory.trajectory_point], t)
         matched_it = trajectory.trajectory_point[matched_index]
         v: float = matched_it.v
         theta: float = matched_it.path_point.theta
