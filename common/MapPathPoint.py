@@ -1,5 +1,27 @@
 from common import Vec2d
 from typing import List
+from dataclasses import dataclass
+
+@dataclass
+class LaneWaypoint:
+    """
+    LaneWaypoint class
+    """
+
+    lane: str
+    s: float = 0.0
+    l: float = 0.0
+
+    def __post_init__(self):
+        """
+        Check if lane is None
+        """
+        
+        if self.lane is None:
+            raise ValueError("LaneId cannot be None")
+
+    def __str__(self):
+        return f"(lane={self.lane}, s={self.s}, l={self.l})"
 
 class MapPathPoint(Vec2d):
     """
