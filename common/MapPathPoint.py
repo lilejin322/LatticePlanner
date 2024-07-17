@@ -156,4 +156,4 @@ class MapPathPoint(Vec2d):
         :rtype: str
         """
 
-        return f'x = {self._x}  y = {self._y}  heading = {self._heading}  waypoints = {self._lane_waypoints}'
+        return f"x = {self._x}  y = {self._y}  heading = {self._heading}  waypoints = {self._lane_waypoints}"

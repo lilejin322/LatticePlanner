@@ -238,4 +238,11 @@ cython_debug/
 
 # End of https://www.toptal.com/developers/gitignore/api/linux,python,visualstudiocode,macos
 
+####  User working space ####
+
+# Ignore all test scripts
 test.py
+# Ignore all .cc files
+*.cc
+# Ignore all .h files
+*.h
