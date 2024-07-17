@@ -56,7 +56,6 @@ class MapPathPoint(Vec2d):
 
         return self._heading
 
-    @heading.setter
     def set_heading(self, heading: float) -> None:
         """
         set heading property

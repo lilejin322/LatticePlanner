@@ -40,7 +40,6 @@ class Vec2d:
 
         return self._x
 
-    @x.setter
     def set_x(self, value: float) -> None:
         """
         Setter for x component
@@ -61,7 +60,6 @@ class Vec2d:
 
         return self._y
 
-    @y.setter
     def set_y(self, value: float) -> None:
         """
         Setter for y component
