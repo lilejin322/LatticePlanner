@@ -29,8 +29,8 @@ class ReferencePoint(MapPathPoint):
         :returns: PathPoint class
         :rtype: PathPoint
         """
-
-        return PointFactory.ToPathPoint(self.x, self.y, 0.0, s, self.heading, self._kappa, self._dkappa)
+        return PathPoint(x=self.x, y=self.y, z=0.0, theta=self.heading, kappa=self._kappa, 
+                         s=s, dkappa=self._dkappa, ddkappa=0.0)
 
     @property
     def kappa(self) -> float:
