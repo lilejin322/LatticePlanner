@@ -1,4 +1,6 @@
-class ReferencePoint:
+from common.MapPathPoint import MapPathPoint
+
+class ReferencePoint(MapPathPoint):
     """
     Reference point class
     """

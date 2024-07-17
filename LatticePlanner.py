@@ -32,9 +32,9 @@ def ToDiscretizedReferenceLine(ref_points: List[ReferencePoint]) -> List[PathPoi
     """
 
     s = 0.0
-    path_points = []
+    path_points: List[PathPoint] = []
     for ref_point in ref_points:
-        path_point = PathPoint(ref_point.x, ref_point.y, ref_point.heading,
+        path_point: PathPoint = PathPoint(ref_point.x, ref_point.y, ref_point.heading,
                                ref_point.kappa, ref_point.dkappa)
         if path_points:
             dx = path_point.x - path_points[-1].x
@@ -239,10 +239,10 @@ class LatticePlanner:
             if lattice_traj.has_target_position():
                 self.logger.debug(f"Ending Lon. State: s = {lattice_traj.target_position} ds = {lattice_traj.target_velocity}  t = {lattice_traj.target_time}")
 
-            self.logger.debug(f"InputPose XY: {planning_init_point.ShortDebugString()} S: ({init_s[0]}, {init_s[1]}, {init_s[2]}) L: ({init_d[0]}, {init_d[1]}, {init_d[2]})")
+            self.logger.debug(f"InputPose XY: {planning_init_point} S: ({init_s[0]}, {init_s[1]}, {init_s[2]}) L: ({init_d[0]}, {init_d[1]}, {init_d[2]})")
 
             self.logger.debug(f"Reference_line_priority_cost = {reference_line_info.PriorityCost()} Total_Trajectory_Cost = {trajectory_pair_cost}")
-            self.logger.debug(f"OutputTrajectory: {[combined_trajectory_points[i].ShortDebugString for i in range(10)]}")
+            self.logger.debug(f"OutputTrajectory: {[combined_trajectory_points[i] for i in range(10)]}")
 
             break
         
