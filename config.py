@@ -98,3 +98,19 @@ FLAGS_time_min_density = 1
 FLAGS_default_lon_buffer = 1
 
 FLAGS_num_sample_follow_per_timestamp = 1
+
+FLAGS_speed_lower_bound = 1
+
+FLAGS_speed_upper_bound = 1
+
+FLAGS_longitudinal_acceleration_lower_bound = 1
+
+FLAGS_longitudinal_acceleration_upper_bound = 1
+
+FLAGS_longitudinal_jerk_lower_bound = 1
+
+FLAGS_longitudinal_jerk_upper_bound = 1
+
+FLAGS_lateral_acceleration_bound = 1
+
+FLAGS_lateral_jerk_bound = 1
