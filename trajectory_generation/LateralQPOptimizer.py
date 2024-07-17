@@ -2,7 +2,7 @@ from abc import abstractmethod
 from typing import List, Tuple
 from config import FLAGS_default_delta_s_lateral_optimization
 from common.curve1d.PiecewiseJerkTrajectory1d import PiecewiseJerkTrajectory1d
-from common.FrenetFramePoint import FrenetFramePoint
+from protoclass.FrenetFramePoint import FrenetFramePoint
 
 class LateralQPOptimizer:
     """
@@ -67,10 +67,10 @@ class LateralQPOptimizer:
         accumulated_s: float = 0.0
         for i in range(len(self._opt_d)):
             frenet_frame_point: FrenetFramePoint = FrenetFramePoint()
-            frenet_frame_point.set_s(accumulated_s)
-            frenet_frame_point.set_l(self._opt_d[i])
-            frenet_frame_point.set_dl(self._opt_d_prime[i])
-            frenet_frame_point.set_ddl(self._opt_d_pprime[i])
+            frenet_frame_point.s = accumulated_s
+            frenet_frame_point.l = self._opt_d[i]
+            frenet_frame_point.dl = self._opt_d_prime[i]
+            frenet_frame_point.ddl = self._opt_d_pprime[i]
             frenet_frame_path.append(frenet_frame_point)
             accumulated_s += self._delta_s
         return frenet_frame_path
