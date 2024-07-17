@@ -79,7 +79,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return math.sqrt(self.x_ ** 2 + self.y_ ** 2)
+        return math.sqrt(self._x ** 2 + self._y ** 2)
 
     def LengthSquare(self) -> float:
         """
@@ -89,7 +89,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return self.x_ ** 2 + self.y_ ** 2
+        return self._x ** 2 + self._y ** 2
 
     def Angle(self) -> float:
         """
@@ -99,7 +99,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return math.atan2(self.y_, self.x_)
+        return math.atan2(self._y, self._x)
 
     def Normalize(self) -> None:
         """
@@ -108,8 +108,8 @@ class Vec2d:
 
         length = self.length()
         if length > 0:
-            self.x_ /= length
-            self.y_ /= length
+            self._x /= length
+            self._y /= length
 
     def DistanceTo(self, other: 'Vec2d') -> float:
         """
@@ -120,7 +120,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return math.sqrt((self.x_ - other.x_) ** 2 + (self.y_ - other.y_) ** 2)
+        return math.sqrt((self._x - other._x) ** 2 + (self._y - other._y) ** 2)
 
     def DistanceSquareTo(self, other: 'Vec2d') -> float:
         """
@@ -131,7 +131,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return (self.x_ - other.x_) ** 2 + (self.y_ - other.y_) ** 2
+        return (self._x - other._x) ** 2 + (self._y - other._y) ** 2
 
     def CrossProd(self, other: 'Vec2d') -> float:
         """
@@ -142,7 +142,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return self.x_ * other.y_ - self.y_ * other.x_
+        return self._x * other._y - self._y * other._x
 
     def InnerProd(self, other: 'Vec2d') -> float:
         """
@@ -153,7 +153,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return self.x_ * other.x_ + self.y_ * other.y_
+        return self._x * other._x + self._y * other._y
 
     def rotate(self, angle: float) -> 'Vec2d':
         """
@@ -166,8 +166,8 @@ class Vec2d:
 
         cos_angle = math.cos(angle)
         sin_angle = math.sin(angle)
-        return Vec2d(self.x_ * cos_angle - self.y_ * sin_angle,
-                     self.x_ * sin_angle + self.y_ * cos_angle)
+        return Vec2d(self._x * cos_angle - self._y * sin_angle,
+                     self._x * sin_angle + self._y * cos_angle)
 
     def SelfRotate(self, angle: float) -> None:
         """
@@ -178,10 +178,10 @@ class Vec2d:
 
         cos_angle = math.cos(angle)
         sin_angle = math.sin(angle)
-        new_x = self.x_ * cos_angle - self.y_ * sin_angle
-        new_y = self.x_ * sin_angle + self.y_ * cos_angle
-        self.x_ = new_x
-        self.y_ = new_y
+        new_x = self._x * cos_angle - self._y * sin_angle
+        new_y = self._x * sin_angle + self._y * cos_angle
+        self._x = new_x
+        self._y = new_y
 
     def __add__(self, other: 'Vec2d') -> 'Vec2d':
         """
@@ -192,7 +192,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        return Vec2d(self.x_ + other.x_, self.y_ + other.y_)
+        return Vec2d(self._x + other._x, self._y + other._y)
 
     def __sub__(self, other: 'Vec2d') -> 'Vec2d':
         """
@@ -203,7 +203,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        return Vec2d(self.x_ - other.x_, self.y_ - other.y_)
+        return Vec2d(self._x - other._x, self._y - other._y)
 
     def __mul__(self, ratio: float) -> 'Vec2d':
         """
@@ -214,7 +214,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        return Vec2d(self.x_ * ratio, self.y_ * ratio)
+        return Vec2d(self._x * ratio, self._y * ratio)
 
     def __truediv__(self, ratio: float) -> 'Vec2d':
         """
@@ -225,7 +225,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        return Vec2d(self.x_ / ratio, self.y_ / ratio)
+        return Vec2d(self._x / ratio, self._y / ratio)
 
     def __iadd__(self, other: 'Vec2d') -> 'Vec2d':
         """
@@ -236,8 +236,8 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        self.x_ += other.x_
-        self.y_ += other.y_
+        self._x += other._x
+        self._y += other._y
         return self
 
     def __isub__(self, other: 'Vec2d') -> 'Vec2d':
@@ -249,8 +249,8 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        self.x_ -= other.x_
-        self.y_ -= other.y_
+        self._x -= other._x
+        self._y -= other._y
         return self
 
     def __imul__(self, ratio: float) -> 'Vec2d':
@@ -262,8 +262,8 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        self.x_ *= ratio
-        self.y_ *= ratio
+        self._x *= ratio
+        self._y *= ratio
         return self
 
     def __itruediv__(self, ratio: float) -> 'Vec2d':
@@ -275,8 +275,8 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        self.x_ /= ratio
-        self.y_ /= ratio
+        self._x /= ratio
+        self._y /= ratio
         return self
 
     def __eq__(self, other: 'Vec2d') -> bool:
@@ -288,7 +288,7 @@ class Vec2d:
         :rtype: bool
         """
 
-        return self.x_ == other.x_ and self.y_ == other.y_
+        return self._x == other._x and self._y == other._y
 
     def __str__(self) -> str:
         """
@@ -298,4 +298,4 @@ class Vec2d:
         :rtype: str
         """
 
-        return f"Vec2d(x: {self.x_}, y: {self.y_})"
+        return f"Vec2d(x: {self._x}, y: {self._y})"
