@@ -79,7 +79,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return math.sqrt(self._x ** 2 + self._y ** 2)
+        return math.hypot(self._x, self._y)
 
     def LengthSquare(self) -> float:
         """
@@ -106,10 +106,10 @@ class Vec2d:
         Returns the unit vector that is co-linear with this vector
         """
 
-        length = self.length()
-        if length > 0:
-            self._x /= length
-            self._y /= length
+        l: float = self.Length()
+        if l > kMathEpsilon:
+            self._x /= l
+            self._y /= l
 
     def DistanceTo(self, other: 'Vec2d') -> float:
         """
@@ -120,7 +120,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return math.sqrt((self._x - other._x) ** 2 + (self._y - other._y) ** 2)
+        return math.hypot((self._x - other.x), (self._y - other.y))
 
     def DistanceSquareTo(self, other: 'Vec2d') -> float:
         """
@@ -131,7 +131,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return (self._x - other._x) ** 2 + (self._y - other._y) ** 2
+        return (self._x - other.x) ** 2 + (self._y - other.y) ** 2
 
     def CrossProd(self, other: 'Vec2d') -> float:
         """
@@ -142,7 +142,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return self._x * other._y - self._y * other._x
+        return self._x * other.y - self._y * other.x
 
     def InnerProd(self, other: 'Vec2d') -> float:
         """
@@ -153,7 +153,7 @@ class Vec2d:
         :rtype: float
         """
 
-        return self._x * other._x + self._y * other._y
+        return self._x * other.x + self._y * other.y
 
     def rotate(self, angle: float) -> 'Vec2d':
         """
@@ -192,7 +192,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        return Vec2d(self._x + other._x, self._y + other._y)
+        return Vec2d(self._x + other.x, self._y + other.y)
 
     def __sub__(self, other: 'Vec2d') -> 'Vec2d':
         """
@@ -203,7 +203,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        return Vec2d(self._x - other._x, self._y - other._y)
+        return Vec2d(self._x - other.x, self._y - other.y)
 
     def __mul__(self, ratio: float) -> 'Vec2d':
         """
@@ -225,6 +225,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
+        assert ratio > kMathEpsilon, "Division by zero"
         return Vec2d(self._x / ratio, self._y / ratio)
 
     def __iadd__(self, other: 'Vec2d') -> 'Vec2d':
@@ -236,8 +237,8 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        self._x += other._x
-        self._y += other._y
+        self._x += other.x
+        self._y += other.y
         return self
 
     def __isub__(self, other: 'Vec2d') -> 'Vec2d':
@@ -249,8 +250,8 @@ class Vec2d:
         :rtype: Vec2d
         """
 
-        self._x -= other._x
-        self._y -= other._y
+        self._x -= other.x
+        self._y -= other.y
         return self
 
     def __imul__(self, ratio: float) -> 'Vec2d':
@@ -275,6 +276,7 @@ class Vec2d:
         :rtype: Vec2d
         """
 
+        assert ratio > kMathEpsilon, "Division by zero"
         self._x /= ratio
         self._y /= ratio
         return self
@@ -287,8 +289,10 @@ class Vec2d:
         :returns: True if the two vectors are equal, False otherwise
         :rtype: bool
         """
-
-        return self._x == other._x and self._y == other._y
+        
+        dx = abs(self._x - other.x)
+        dy = abs(self._y - other.y)
+        return dx < kMathEpsilon and dy < kMathEpsilon
 
     def __str__(self) -> str:
         """
