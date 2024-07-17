@@ -10,7 +10,7 @@ from config import FLAGS_lateral_optimization, FLAGS_max_s_lateral_optimization,
 from trajectory_generation.EndConditionSampler import EndConditionSampler
 from trajectory_generation.LateralOSQPOptimizer import LateralOSQPOptimizer
 from common.curve1d.PiecewiseJerkTrajectory1d import PiecewiseJerkTrajectory1d
-from trajectory_generation.LatticeTrajectory1d import LatticeTrajectory1d
+from trajectory_generation.LatticeTrajectory1d import CreateLatticeTrajectoy1d
 
 # A common function for trajectory bundles generation with 
 # a given initial state and end conditions
@@ -160,10 +160,10 @@ class Trajectory1dGenerator:
 
         for end_condition in end_conditions:
             if order == 4:
-                trajectory1d: LatticeTrajectory1d = LatticeTrajectory1d(QuarticPolynomialCurve1d(
+                trajectory1d: Curve1d = CreateLatticeTrajectoy1d(QuarticPolynomialCurve1d(
                     init_state, [end_condition[0][1], end_condition[0][2]], end_condition[1]))
             elif order == 5:
-                trajectory1d: LatticeTrajectory1d = LatticeTrajectory1d(QuinticPolynomialCurve1d(
+                trajectory1d: Curve1d = CreateLatticeTrajectoy1d(QuinticPolynomialCurve1d(
                     init_state, end_condition[0], end_condition[1]))
             else:
                 raise ValueError(f"Unsupported order: {order}")
