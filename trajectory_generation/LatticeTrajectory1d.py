@@ -6,6 +6,7 @@ from common.curve1d.QuinticPolynomialCurve1d import QuinticPolynomialCurve1d
 def CreateLatticeTrajectoy1d(obj: Curve1d) -> Curve1d:
     """
     In order to dynamic inheritance
+    
     :param QuarticPolynomialCurve1d/ QuinticPolynomialCurve1d obj: Object to be inherited
     :return: LatticeTrajectory1d object
     :rtype: LatticeTrajectory1d
