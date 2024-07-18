@@ -10,7 +10,7 @@ from bisect import bisect_left
 from logging import Logger
 import hashlib
 import struct
-from config import EGO_VEHICLE_WIDTH, FRONT_EDGE_TO_CENTER
+from config import EGO_VEHICLE_WIDTH, FRONT_EDGE_TO_CENTER, EGO_VEHICLE_LENGTH
 
 logger = Logger("Obstacle")
 kStBoundaryDeltaS: float = 0.2;        # meters
@@ -57,13 +57,17 @@ class Obstacle:
     and it has the lowest priority.
     """
 
-    s_longitudinal_decision_safety_sorter = {ObjectIgnore: 0,
-                                             ObjectOvertake: 100,
-                                             ObjectFollow: 300,
-                                             ObjectYield: 400,
-                                             ObjectStop: 500}
+    s_longitudinal_decision_safety_sorter = {'ObjectIgnore': 0,
+                                             'ObjectOvertake': 100,
+                                             'ObjectFollow': 300,
+                                             'ObjectYield': 400,
+                                             'ObjectStop': 500}
+    
+    # here we use two python dictionaries to store the val
+    # so you need to employ instance.__class__.__name__
+    # to get the tag's class name
 
-    s_lateral_decision_safety_sorter = {ObjectIgnore: 0, ObjectNudge: 100}
+    s_lateral_decision_safety_sorter = {'ObjectIgnore': 0, 'ObjectNudge': 100}
 
     def __init__(self, id: str = "", 
                  perception_obstacle: PerceptionObstacle=None, 
@@ -435,7 +439,7 @@ class Obstacle:
         :rtype: ObjectDecisionType
         """
 
-        raise NotImplementedError
+        return self._lateral_decision
 
     def LongitudinalDecision(self) -> ObjectDecisionType:
         """
@@ -445,9 +449,9 @@ class Obstacle:
         :rtype: ObjectDecisionType
         """
 
-        raise NotImplementedError
+        return self._longitudinal_decision
 
-    def DebugString(self) -> str:
+    def __str__(self) -> str:
         """
         Debug string representation
 
@@ -455,7 +459,15 @@ class Obstacle:
         :rtype: str
         """
 
-        raise NotImplementedError
+        ss = []
+        ss.append(f"Obstacle id: {self._id}")
+        for i in range(len(self._decisions)):
+            ss.append(f" decision: {self._decisions[i]}, made by {self._decider_tags[i]}")
+        if self._lateral_decision.object_tag is not None:
+            ss.append(f"lateral decision: {self._lateral_decision}")
+        if self._longitudinal_decision.object_tag is not None:
+            ss.append(f"longitudinal decision: {self._longitudinal_decision}")
+        return ''.join(ss)
 
     def PrintPolygonCurve(self) -> None:
         """
@@ -466,52 +478,77 @@ class Obstacle:
 
     def PerceptionSLBoundary(self) -> SLBoundary:
         """
+        Get perception SL boundary
 
+        :returns: Perception SL boundary
+        :rtype: SLBoundary
         """
 
-        raise NotImplementedError
+        return self._sl_boundary
 
     def reference_line_st_boundary(self) -> STBoundary:
         """
+        Get reference line ST boundary
 
+        :returns: Reference line ST boundary
+        :rtype: STBoundary
         """
 
-        raise NotImplementedError
+        return self._reference_line_st_boundary
 
     def path_st_boundary(self) -> STBoundary:
         """
+        Get path ST boundary
 
+        :returns: Path ST boundary
+        :rtype: STBoundary
         """
         
-        raise NotImplementedError
+        return self._path_st_boundary
 
     def decider_tags(self) -> List[str]:
         """
+        Get decider tags
 
+        :returns: Decider tags
+        :rtype: List[str]
         """
         
-        raise NotImplementedError
+        return self._decider_tags
 
-    def decisions(self) -> ObjectDecisionType:
+    def decisions(self) -> List[ObjectDecisionType]:
+        """
+        Get decisions
+
+        :returns: Decisions
+        :rtype: ObjectDecisionType
         """
 
-        """
-
-        raise NotImplementedError
+        return self._decisions
 
     def AddLongitudinalDecision(self, decider_tag: str, decision: ObjectDecisionType) -> None:
         """
         Add a longitudinal decision
         """
 
-        raise NotImplementedError
+        if not self.IsLongitudinalDecision(decision):
+            logger.error(f"Decision {decision} is not a longitudinal decision")
+        longitudinal_decision = self.MergeLongitudinalDecision(self._longitudinal_decision, decision)
+        logger.debug(f"{decider_tag} added obstacle {self._id} longitudinal decision: {decision}. The merged decision is {longitudinal_decision}")
+        self._decisions.append(decision)
+        self._decider_tags.append(decider_tag)
 
     def AddLateralDecision(self, decider_tag: str, decision: ObjectDecisionType) -> None:
         """
         Add a lateral decision
         """
 
-        raise NotImplementedError
+        if not self.IsLateralDecision(decision):
+            logger.error(f"Decision {decision} is not a lateral decision")
+        lateral_decision = self.MergeLateralDecision(self._lateral_decision, decision)
+        logger.debug(f"{decider_tag} added obstacle {self._id} lateral decision: {decision}. The merged decision is {lateral_decision}")
+        self._decisions.append(decision)
+        self._decider_tags.append(decider_tag)
 
     def HasLateralDecision(self) -> bool:
         """
@@ -521,7 +558,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._lateral_decision.object_tag is not None
 
     def set_path_st_boundary(self, boundary: STBoundary) -> None:
         """
@@ -530,7 +567,8 @@ class Obstacle:
         :param STBoundary boundary: Path ST boundary
         """
 
-        raise NotImplementedError
+        self._path_st_boundary = boundary
+        self._path_st_boundary_initialized = True
 
     @property
     def is_path_st_boundary_initialized(self) -> bool:
@@ -550,21 +588,21 @@ class Obstacle:
         :param BoundaryType type: ST boundary type
         """
 
-        raise NotImplementedError
+        self._path_st_boundary.SetBoundaryType(type)
 
     def EraseStBoundary(self) -> None:
         """
         Erase ST boundary
         """
 
-        raise NotImplementedError
+        self._path_st_boundary = STBoundary()
 
     def EraseDecision(self) -> None:
         """
         Erase decision
         """
 
-        raise NotImplementedError
+        self._lateral_decision = ObjectDecisionType()
 
     def SetReferenceLineStBoundary(self, boundary: STBoundary) -> None:
         """
@@ -573,7 +611,7 @@ class Obstacle:
         :param STBoundary boundary: Reference line ST boundary
         """
 
-        raise NotImplementedError
+        self._reference_line_st_boundary = boundary
 
     def SetReferenceLineStBoundaryType(self, type: BoundaryType) -> None:
         """
@@ -582,14 +620,14 @@ class Obstacle:
         :param BoundaryType type: Reference line ST boundary type
         """
 
-        raise NotImplementedError
+        self._reference_line_st_boundary.SetBoundaryType(type)
 
     def EraseReferenceLineStBoundary(self) -> None:
         """
         Erase reference line ST boundary
         """
 
-        raise NotImplementedError
+        self._reference_line_st_boundary = STBoundary()
 
     @property
     def HasLongitudinalDecision(self) -> bool:
@@ -600,7 +638,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._longitudinal_decision.object_tag is not None
 
     def HasNonIgnoreDecision(self) -> bool:
         """
@@ -610,7 +648,8 @@ class Obstacle:
         :rtype: bool
         """
         
-        raise NotImplementedError
+        return (self.HasLateralDecision() and not self.IsLateralIgnore()) or \
+               (self.HasLongitudinalDecision() and not self.IsLongitudinalIgnore())
 
     def MinRadiusStopDistance(self) -> float:
         """
@@ -645,7 +684,7 @@ class Obstacle:
         rtype: bool
         """
 
-        raise NotImplementedError
+        return self.IsLongitudinalIgnore() and self.IsLateralIgnore()
 
     def IsLongitudinalIgnore(self) -> bool:
         """
@@ -656,7 +695,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return isinstance(self._longitudinal_decision.object_tag, ObjectIgnore)
 
     def IsLateralIgnore(self) -> bool:
         """
@@ -667,7 +706,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return isinstance(self._lateral_decision.object_tag, ObjectIgnore)
 
     def BuildReferenceLineStBoundary(self, reference_line: ReferenceLine, adc_start_s: float) -> None:
         """
@@ -712,7 +751,8 @@ class Obstacle:
         :rtype: bool
         """
         
-        raise NotImplementedError
+        return decision.has_ignore or decision.has_stop or decision.has_yield() or \
+               decision.has_follow or decision.has_overtake
 
     @staticmethod
     def IsLateralDecision(decision: ObjectDecisionType) -> bool:
@@ -724,7 +764,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return decision.has_ignore or decision.has_nudge
 
     def SetBlockingObstacle(self, blocking: bool) -> None:
         """
@@ -763,7 +803,19 @@ class Obstacle:
         :param ReferenceLine reference_line: Reference line
         """
     
-        raise NotImplementedError
+        if not self.IsStatic:
+            self._is_lane_blocking = False
+            return
+        assert self._sl_boundary.has_start_s and self._sl_boundary.has_end_s and self._sl_boundary.has_start_l \
+               and self._sl_boundary.has_end_l, f"Obstacle {self._id} has invalid sl_boundary"
+        if self._sl_boundary.start_l * self._sl_boundary.end_l < 0.0:
+            self._is_lane_blocking = True
+            return
+        driving_width = reference_line.GetDrivingWidth(self._sl_boundary)
+        if reference_line.IsOnLane(self._sl_boundary) and driving_width < EGO_VEHICLE_WIDTH + FLAGS_static_obstacle_nudge_l_buffer:
+            self._is_lane_blocking = True
+            return
+        self._is_lane_blocking = False
 
     def IsLaneChangeBlocking(self) -> bool:
         """
@@ -782,7 +834,7 @@ class Obstacle:
         :param bool is_distance_clear: Is distance clear
         """
 
-        raise NotImplementedError
+        self._is_lane_change_blocking = is_distance_clear
 
     def GetObstacleTrajectoryPolygon(self, point: TrajectoryPoint) -> Polygon2d:
         """
@@ -793,7 +845,18 @@ class Obstacle:
         :rtype: Polygon2d
         """
 
-        raise NotImplementedError
+        delta_heading: float = point.path_point.theta - self._perception_obstacle.theta
+        cos_delta_heading: float = math.cos(delta_heading)
+        sin_delta_heading: float = math.sin(delta_heading)
+        polygon_point: List[Vec2d] = []
+        for iter in self._perception_polygon.points:
+            relative_x: float = iter.x - self._perception_obstacle.position.x
+            relative_y: float = iter.y - self._perception_obstacle.position.y
+            x: float = relative_x * cos_delta_heading - relative_y * sin_delta_heading + point.path_point.x
+            y: float = relative_x * sin_delta_heading + relative_y * cos_delta_heading + point.path_point.y
+            polygon_point.append(Vec2d(x, y))
+        trajectory_point_polygon = Polygon2d(polygon_point)
+        return trajectory_point_polygon
 
     def BuildTrajectoryStBoundary(self, reference_line: ReferenceLine, adc_start_s: float) -> Tuple[bool, STBoundary]:
         """
@@ -805,8 +868,107 @@ class Obstacle:
         :rtype: Tuple[bool, STBoundary]
         """
 
-        raise NotImplementedError
-    
+        if not self.IsValidObstacle(self._perception_obstacle):
+            logger.error(f"Fail to build trajectory st boundary because object is not valid. PerceptionObstacle: {self._perception_obstacle}")
+            return False, None
+
+        object_width = self._perception_obstacle.width
+        object_length = self._perception_obstacle.length
+        trajectory_points = self._trajectory.trajectory_point
+        if not trajectory_points:
+            logger.warning(f"object {self._id} has no trajectory points")
+            return False, None
+        adc_length = EGO_VEHICLE_LENGTH
+        adc_half_length = EGO_VEHICLE_LENGTH / 2
+        adc_width = EGO_VEHICLE_WIDTH
+        min_box: Box2d = Box2d([0, 0], 1.0, 1.0, 1.0)
+        max_box: Box2d = Box2d([0, 0], 1.0, 1.0, 1.0)
+        polygon_points: List[Tuple[STPoint, STPoint]] = []
+        last_sl_boundary = SLBoundary()
+        last_index: int = 0
+
+        for i in range(1, len(trajectory_points)):
+            logger.debug(f"last_sl_boundary: {last_sl_boundary}")
+            first_traj_point = trajectory_points[i - 1]
+            second_traj_point = trajectory_points[i]
+            first_point = first_traj_point.path_point
+            second_point = second_traj_point.path_point
+
+            object_moving_box_length = object_length + DistanceXY(first_point, second_point)
+
+            center = Vec2d((first_point.x + second_point.x) / 2.0, (first_point.y + second_point.y) / 2.0)
+            object_moving_box = Box2d(center, first_point.theta, object_moving_box_length, object_width)
+            object_boundary = SLBoundary()
+            # NOTICE: this method will have errors when the reference line is not
+            # straight. Need double loop to cover all corner cases.
+            # roughly skip points that are too close to last_sl_boundary box
+            distance_xy = DistanceXY(trajectory_points[last_index].pathpoint, trajectory_points[i].path_point)
+            if last_sl_boundary.start_l > distance_xy or last_sl_boundary.end_l < -distance_xy:
+                continue
+
+            mid_s: float = (last_sl_boundary.start_s + last_sl_boundary.end_s) / 2.0
+            start_s: float = max(0.0, mid_s - 2.0 * distance_xy)
+            end_s: float = reference_line.Length if i == 1 else min(reference_line.Length, mid_s + 2.0 * distance_xy)
+            if not reference_line.GetApproximateSLBoundary(object_moving_box, start_s, end_s, object_boundary):
+                logger.error(f"failed to calculate boundary")
+                return False, None
+            
+            # update history record
+            last_sl_boundary = object_boundary
+            last_index = i
+
+            # skip if object is entirely on one side of reference line.
+            kSkipLDistanceFactor: float = 0.4
+            skip_l_distance = (object_boundary.end_s - object_boundary.start_s) * kSkipLDistanceFactor + adc_width / 2.0
+
+            if not self.IsCautionLevelObstacle:
+                if (min(object_boundary.start_l, object_boundary.end_l) > skip_l_distance) or (max(object_boundary.start_l, object_boundary.end_l) < -skip_l_distance):
+                    continue
+
+                if object_boundary.end_s < 0:
+                    # skip if behind reference line
+                    continue
+            kSparseMappingS: float = 20.0
+            st_boundary_delta_s = kStBoundarySparseDeltaS if (abs(object_boundary.start_s - adc_start_s) > kSparseMappingS) else kStBoundaryDeltaS
+            object_s_diff: float = object_boundary.end_s - object_boundary.start_s
+            if object_s_diff < st_boundary_delta_s:
+                continue
+            delta_t: float = second_traj_point.relative_time - first_traj_point.relative_time
+            low_s: float = max(object_boundary.start_s - adc_half_length, 0.0)
+            has_low: bool = False
+            high_s: float = min(object_boundary.end_s + adc_half_length, FLAGS_st_max_s)
+            has_high: bool = False
+            while (low_s + st_boundary_delta_s < high_s) and (not has_low or not has_high):
+                if not has_low:
+                    low_ref = reference_line.GetReferencePoint(low_s)
+                    has_low = object_moving_box.HasOverlap([low_ref, low_ref.heading, adc_length, adc_width + FLAGS_nonstatic_obstacle_nudge_l_buffer])
+                    low_s += st_boundary_delta_s
+                if not has_high:
+                    high_ref = reference_line.GetReferencePoint(high_s)
+                    has_high = object_moving_box.HasOverlap([high_ref, high_ref.heading, adc_length, adc_width + FLAGS_nonstatic_obstacle_nudge_l_buffer])
+                    high_s -= st_boundary_delta_s
+            if has_low and has_high:
+                low_s -= st_boundary_delta_s
+                high_s += st_boundary_delta_s
+                low_t: float = (first_traj_point.relative_time + abs((low_s - object_boundary.start_s) / object_s_diff) * delta_t)
+                polygon_points.append((STPoint(low_s - adc_start_s, low_t), STPoint(high_s - adc_start_s, low_t)))
+                high_t = (first_traj_point.relative_time + abs((high_s - object_boundary.start_s) / object_s_diff) * delta_t)
+                if high_t - low_t > 0.05:
+                    polygon_points.append((STPoint(low_s - adc_start_s, high_t), STPoint(high_s - adc_start_s, high_t)))
+        if polygon_points:
+            polygon_points.sort(key=lambda p: p[0].t)
+            unique_polygon_points = []
+            for i in range(len(polygon_points)):
+                if i == 0 or abs(polygon_points[i][0].t - polygon_points[i - 1][0].t) >= kStBoundaryDeltaT:
+                    unique_polygon_points.append(polygon_points[i])
+            polygon_points[:] = unique_polygon_points
+            if len(polygon_points) > 2:
+                st_boundary = STBoundary(polygon_points)
+        else:
+            return False, None
+
+        return True, st_boundary
+
     def IsValidObstacle(self, perception_obstacle: PerceptionObstacle) -> bool:
         """
         Check if perception obstacle is valid
@@ -816,4 +978,72 @@ class Obstacle:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        object_width = perception_obstacle.width
+        object_length = perception_obstacle.length
+
+        kMinObjectDimension: float = 1.0e-6
+        return not math.isnan(object_width) and not math.isnan(object_length) and \
+               object_width > kMinObjectDimension and object_length > kMinObjectDimension
+
+    def MergeLongitudinalDecision(lhs: ObjectDecisionType, rhs: ObjectDecisionType) -> ObjectDecisionType:
+        """
+        Merge longitudinal decision
+
+        :param ObjectDecisionType lhs: Left hand side decision
+        :param ObjectDecisionType rhs: Right hand side decision
+        :returns: Merged longitudinal decision
+        :rtype: ObjectDecisionType
+        """
+
+        if lhs.object_tag == None:
+            return rhs
+        elif rhs.object_tag == None:
+            return lhs
+        lhs_val = Obstacle.s_longitudinal_decision_safety_sorter.get(lhs.object_tag.__class__.__name__)
+        rhs_val = Obstacle.s_longitudinal_decision_safety_sorter.get(rhs.object_tag.__class__.__name__)
+        if lhs_val < rhs_val:
+            return rhs
+        elif lhs_val > rhs_val:
+            return lhs
+        else:
+            if isinstance(lhs.object_tag, ObjectStop):
+                return lhs if lhs.object_tag.distance_s < rhs.object_tag.distance_s else rhs
+            elif isinstance(lhs.object_tag, ObjectYield):
+                return lhs if lhs.object_tag.distance_s < rhs.object_tag.distance_s else rhs
+            elif isinstance(lhs.object_tag, ObjectFollow):
+                return lhs if lhs.object_tag.distance_s < rhs.object_tag.distance_s else rhs
+            elif isinstance(lhs.object_tag, ObjectOvertake):
+                return lhs if lhs.object_tag.distance_s > rhs.object_tag.distance_s else rhs
+            else:
+                logger.error(f"Unknown decision lhs type: {lhs.object_tag.__class__.__name__} rhs type: {rhs.object_tag.__class__.__name__}")
+        return lhs    # stop compiler complaining
+
+    def MergeLateralDecision(self, lhs: ObjectDecisionType, rhs: ObjectDecisionType) -> ObjectDecisionType:
+        """
+        Merge lateral decision
+
+        :param ObjectDecisionType lhs: Left hand side decision
+        :param ObjectDecisionType rhs: Right hand side decision
+        :returns: Merged lateral decision
+        :rtype: ObjectDecisionType
+        """
+
+        if lhs.object_tag == None:
+            return rhs
+        elif rhs.object_tag == None:
+            return lhs
+        lhs_val = Obstacle.s_lateral_decision_safety_sorter.get(lhs.object_tag.__class__.__name__)
+        rhs_val = Obstacle.s_lateral_decision_safety_sorter.get(rhs.object_tag.__class__.__name__)
+        if lhs_val < rhs_val:
+            return rhs
+        elif lhs_val > rhs_val:
+            return lhs
+        else:
+            if isinstance(lhs.object_tag, ObjectIgnore):
+                return rhs
+            elif isinstance(lhs.object_tag, ObjectNudge):
+                if not (lhs.object_tag.type == rhs.object_tag.type):
+                    logger.error(f"could not merge left nudge type: {lhs.object_tag.type} and right nudge type: {rhs.object_tag.type}")
+                return lhs if abs(lhs.object_tag.distance_l) > abs(rhs.object_tag.distance_l) else rhs
+        logger.error(f"Does not have rule to merge decision: {lhs} and decision: {rhs}")
+        return lhs
