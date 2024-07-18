@@ -1,7 +1,10 @@
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from typing import List, Tuple
+from protoclass.Trajectory import Trajectory
 from protoclass.DecisionResult import ObjectDecisionType, ObjectIgnore, ObjectStop, ObjectFollow, \
                                       ObjectYield, ObjectOvertake, ObjectNudge, ObjectAvoid, ObjectSidePass
+from protoclass.PredictionObstacles import PredictionObstacles
+from protoclass.PerceptionObstacle import PerceptionObstacle
 from common.SLBoundary import SLBoundary
 from common.STBoundary import STBoundary
 from common.Vec2d import Vec2d
@@ -11,28 +14,27 @@ from logging import Logger
 import hashlib
 import struct
 from config import EGO_VEHICLE_WIDTH, FRONT_EDGE_TO_CENTER, EGO_VEHICLE_LENGTH
+from enum import Enum
 
 logger = Logger("Obstacle")
 kStBoundaryDeltaS: float = 0.2;        # meters
 kStBoundarySparseDeltaS: float = 1.0   # meters
 kStBoundaryDeltaT: float = 0.05        # seconds
 
-class BoundaryType:
-    pass
+class BoundaryType(Enum):
+    UNKNOWN = 0
+    STOP = 1
+    FOLLOW = 2
+    YIELD = 3
+    OVERTAKE = 4
+    KEEP_CLEAR = 5
 
-class PerceptionObstacle:
-    pass
-
-class Priority:
-    pass
+class Priority(Enum):
+    CAUTION = 1
+    NORMAL = 2
+    IGNORE = 3
 
 class Polygon2d:
-    pass
-
-class Trajectory:
-    pass
-
-class PredictionObstacles:
     pass
 
 class Box2d:
