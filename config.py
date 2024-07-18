@@ -114,3 +114,21 @@ FLAGS_longitudinal_jerk_upper_bound = 1
 FLAGS_lateral_acceleration_bound = 1
 
 FLAGS_lateral_jerk_bound = 1
+
+MinSafeTurnRadius = 1.0
+
+FLAGS_use_navigation_mode = False
+
+FLAGS_st_max_s = 1
+
+FLAGS_nonstatic_obstacle_nudge_l_buffer = 1.0
+
+FLAGS_st_max_t = 1
+
+FLAGS_virtual_stop_wall_height = 1
+
+FLAGS_max_stop_distance_obstacle = 1
+
+FLAGS_min_stop_distance_obstacle = 1
+
+FLAGS_static_obstacle_nudge_l_buffer = 1

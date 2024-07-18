@@ -8,18 +8,38 @@ from protoclass.PerceptionObstacle import PerceptionObstacle
 from common.SLBoundary import SLBoundary
 from common.STBoundary import STBoundary
 from common.Vec2d import Vec2d
+from common.STPoint import STPoint
 import math
 from bisect import bisect_left
 from logging import Logger
 import hashlib
 import struct
-from config import EGO_VEHICLE_WIDTH, FRONT_EDGE_TO_CENTER, EGO_VEHICLE_LENGTH
+from PathMatcher import PathMatcher
+from config import EGO_VEHICLE_WIDTH, FRONT_EDGE_TO_CENTER, EGO_VEHICLE_LENGTH, MinSafeTurnRadius, \
+                   FLAGS_use_navigation_mode, FLAGS_st_max_s, FLAGS_nonstatic_obstacle_nudge_l_buffer, \
+                   FLAGS_st_max_t, FLAGS_virtual_stop_wall_height, FLAGS_max_stop_distance_obstacle, \
+                   FLAGS_min_stop_distance_obstacle, FLAGS_static_obstacle_nudge_l_buffer
 from enum import Enum
+from protoclass.PathPoint import PathPoint
 
 logger = Logger("Obstacle")
 kStBoundaryDeltaS: float = 0.2;        # meters
 kStBoundarySparseDeltaS: float = 1.0   # meters
 kStBoundaryDeltaT: float = 0.05        # seconds
+
+def DistanceXY(point1: PathPoint, point2: PathPoint) -> float:
+    """
+    Calculate the distance between two points
+
+    :param PathPoint point1: First point
+    :param PathPoint point2: Second point
+    :returns: Distance between two points
+    :rtype: float
+    """
+
+    dx: float = point1.x - point2.x
+    dy: float = point1.y - point2.y
+    return math.hypot(dx, dy)
 
 class BoundaryType(Enum):
     UNKNOWN = 0
@@ -101,7 +121,7 @@ class Obstacle:
         self._is_blocking_obstacle: bool = False
         self._is_lane_blocking: bool = False
         self._is_lane_change_blocking: bool = False
-        self._is_caution_level_obstacle: bool = (obstacle_priority == ObstaclePriority.CAUTION)
+        self._is_caution_level_obstacle: bool = (obstacle_priority == Priority.CAUTION)
         self._min_radius_stop_distance: float = -1.0
         self._path_st_boundary_initialized: float = False
         self.polygon_points: List[Vec2d] = []
@@ -112,7 +132,7 @@ class Obstacle:
             for point in perception_obstacle.polygon_point:
                 self.polygon_points.append(Vec2d(point.x, point.y))
         assert Polygon2d.ComputeConvexHull(self.polygon_points, self._perception_polygon), f"object {self.id} polygon is not a valid convex hull.\n {perception_obstacle}"
-        self._is_static: bool = is_static or (obstacle_priority == ObstaclePriority.IGNORE)
+        self._is_static: bool = is_static or (obstacle_priority == Priority.IGNORE)
         self._is_virtual: bool = perception_obstacle.id < 0
         self._speed: float = math.hypot(perception_obstacle.velocity.x, perception_obstacle.velocity.y)
         self._trajectory: list = trajectory if trajectory is not None else []
@@ -192,11 +212,11 @@ class Obstacle:
 
         return self._is_virtual
 
-    def GetPointAtTime(self, time: float) -> TrajectoryPoint:
+    def GetPointAtTime(self, relative_time: float) -> TrajectoryPoint:
         """
         Get the point at a given time
 
-        :param float time: Time
+        :param float relative_time: Time
         :returns: Trajectory point at the given time
         :rtype: TrajectoryPoint
         """
@@ -367,7 +387,7 @@ class Obstacle:
             point = perception_obstacle.add_polygon_point()
             point.set_x(corner_point.x)
             point.set_y(corner_point.y)
-        obstacle = Obstacle(id, perception_obstacle, ObstaclePriority.NORMAL, True)
+        obstacle = Obstacle(id, perception_obstacle, Priority.NORMAL, True)
         obstacle._is_virtual = True
         return obstacle
 
