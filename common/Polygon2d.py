@@ -1,5 +1,8 @@
 from common.Vec2d import Vec2d
 from typing import List, Tuple
+from copy import deepcopy
+
+kMathEpsilon: float = 1e-10
 
 class Polygon2d:
     """
@@ -25,7 +28,9 @@ class Polygon2d:
             :param Box2d box: The box to construct the polygon.
             """
             
-            pass
+            box: Box2d = args[0]
+            box.GetAllCorners(self._points)
+            self.BuildFromPoints()
 
         elif isinstance(args[0], list):
             """
@@ -36,6 +41,7 @@ class Polygon2d:
 
             points: List[Vec2d] = args[0]
             self._points: List[Vec2d] = points
+            self.BuildFromPoints()
 
         self._num_points: int = 0
         self._line_segments = []
@@ -109,7 +115,10 @@ class Polygon2d:
         :rtype: float
         """
 
-        raise NotImplementedError
+        distance: float = float('inf')
+        for i in range(self._num_points):
+            distance = min(distance, self._line_segments[i].DistanceTo(point))
+        return distance
 
     def DistanceTo(self, *args) -> float:
 
@@ -125,7 +134,13 @@ class Polygon2d:
             """
 
             point: Vec2d = args[0]
-            raise NotImplementedError
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            if self.IsPointIn(point):
+                return 0.0
+            distance: float = float('inf')
+            for i in range(self._num_points):
+                distance = min(distance, self._line_segments[i].DistanceTo(point))
+            return distance
         
         elif isinstance(args[0], LineSegment2d):
             """
@@ -141,8 +156,18 @@ class Polygon2d:
             """
 
             line_segment: LineSegment2d = args[0]
-            raise NotImplementedError
-        
+            if line_segment.length() <= kMathEpsilon:
+                return self.DistanceTo(line_segment.start())
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            if self.IsPointIn(line_segment.center()):
+                return 0.0
+            if any(poly_seg.HasIntersect(line_segment) for poly_seg in self._line_segments):
+                return 0.0
+            distance: float = min(self.DistanceTo(line_segment.start()), self.DistanceTo(line_segment.end()))
+            for i in range(self._num_points):
+                distance = min(distance, line_segment.DistanceTo(self._points[i]))
+            return distance
+
         elif isinstance(args[0], Box2d):
             """
             Compute the distance from a box to the polygon.
@@ -157,7 +182,8 @@ class Polygon2d:
             """
             
             box : Box2d = args[0]
-            raise NotImplementedError
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            return self.DistanceTo(Polygon2d(box))
 
         elif isinstance(args[0], Polygon2d):
             """
@@ -173,7 +199,16 @@ class Polygon2d:
             """
 
             polygon: Polygon2d = args[0]
-            raise NotImplementedError
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            assert len(polygon._points) >= 3, f"len(polygon._points) should be greater than 3, but got {len(polygon._points)}"
+            if self.IsPointIn(polygon.points[0]):
+                return 0.0
+            if polygon.IsPointIn(self.points[0]):
+                return 0.0
+            distance: float = float('inf')
+            for i in range(self._num_points):
+                distance = min(distance, polygon.DistanceTo(self._line_segments[i]))
+            return distance
 
     def DistanceSquareTo(self, point: Vec2d) -> float:
         """
@@ -187,7 +222,13 @@ class Polygon2d:
         :rtype: float
         """
 
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        if self.IsPointIn(point):
+            return 0.0
+        distance_sqr: float = float('inf')
+        for i in range(self._num_points):
+            distance_sqr = min(distance_sqr, self._line_segments[i].DistanceSquareTo(point))
+        return distance_sqr
 
     def IsPointIn(self, point: Vec2d) -> bool:
         """
@@ -198,8 +239,23 @@ class Polygon2d:
         :rtype: bool
         """
 
-        raise NotImplementedError
-        
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        if self.IsPointOnBoundary(point):
+            return True
+        j: int = self._num_points - 1
+        c: int = 0
+        for i in range(self._num_points):
+            if ((self._points[i].y > point.y) != (self._points[j].y > point.y)):
+                side: float = CrossProd(point, self._points[i], self._points[j])
+                if self._points[i].y < self._points[j].y:
+                    if side > 0.0:
+                        c += 1
+                else:
+                    if side < 0.0:
+                        c += 1
+            j = i
+        return c & 1
+
     def IsPointOnBoundary(self, point: Vec2d) -> bool:
         """
         Check if a point is on the boundary of the polygon.
@@ -209,7 +265,8 @@ class Polygon2d:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        return any(poly_seg.IsPointIn(point) for poly_seg in self._line_segments)
 
     def Contains(self, *args) -> bool:
 
@@ -223,7 +280,20 @@ class Polygon2d:
             """
 
             line_segment: LineSegment2d = args[0]
-            raise NotImplementedError
+            if line_segment.length() <= kMathEpsilon:
+                return self.IsPointIn(line_segment.start())
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            if not self.IsPointIn(line_segment.start()):
+                return False
+            if not self.IsPointIn(line_segment.end()):
+                return False
+            if not self._is_convex:
+                overlaps: List[LineSegment2d] = self.GetAllOverlaps(line_segment)
+                total_length: float = 0.0
+                for overlap_seg in overlaps:
+                    total_length += overlap_seg.length()
+                return total_length >= line_segment.length() - kMathEpsilon
+            return True
 
         elif isinstance(args[0], Polygon2d):
             """
@@ -235,20 +305,50 @@ class Polygon2d:
             """
 
             polygon: Polygon2d = args[0]
-            raise NotImplementedError
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            if self._area < polygon.area - kMathEpsilon:
+                return False
+            if self.IsPointIn(polygon.points[0]):
+                return False
+            line_segments = polygon.line_segments
+            return all(self.Contains(line_segment) for line_segment in line_segments)
 
     @staticmethod
-    def ComputeConvexHull(points: List[Vec2d], polygon: 'Polygon2d') -> bool:
+    def ComputeConvexHull(points: List[Vec2d]) -> Tuple[bool, 'Polygon2d']:
         """
         Compute the convex hull of a group of points.
         
         :param List[Vec2d] points: The target points. To compute the convex hull of them.
-        :param Polygon2d polygon: The convex hull of the points.
-        :returns: If successfully compute the convex hull.
-        :rtype: bool
+        :returns: If successfully compute the convex hull, the convex hull of the points.
+        :rtype: Tuple[bool, Polygon2d]
         """
 
-        raise NotImplementedError
+        n: int = len(points)
+        if n < 3:
+            return False, None
+        sorted_indices: List[int] = [0] * n
+        for i in range(n):
+            sorted_indices.append(i)
+        sorted_indices.sort(key=lambda idx: (points[idx].x, points[idx].y))
+        count: int = 0
+        results: List[int] = [0] * n
+        last_count: int = 1
+        for i in range(n + n):
+            if i == n:
+                last_count = count
+            idx: int = sorted_indices[i if i < n else n + n - 1 - i]
+            pt: Vec2d = points[idx]
+            while count > last_count and CrossProd(points[results[count -2]], points[results[count - 1]], pt) <= kMathEpsilon:
+                count -= 1
+            results.append(idx)
+            count += 1
+        count -= 1
+        if count < 3:
+            return False, None
+        result_points: List[Vec2d] = []
+        for i in range(count):
+            result_points.append(points[results[i]])
+        return True, Polygon2d(result_points)
 
     def HasOverlap(self, *args) -> bool:
 
@@ -262,8 +362,17 @@ class Polygon2d:
             """
 
             line_segment: LineSegment2d = args[0]
-            raise NotImplementedError
-        
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            if (line_segment.start.x < self._min_x and line_segment.end.x < self._min_x) or \
+               (line_segment.start.x > self._max_x and line_segment.end.x > self._max_x) or \
+               (line_segment.start.y < self._min_y and line_segment.end.y < self._min_y) or \
+               (line_segment.start.y > self._max_y and line_segment.end.y > self._max_y):
+                return False
+
+            if any(poly_seg.HasIntersect(line_segment) for poly_seg in self._line_segments):
+                return True
+            return False
+
         if isinstance(args[0], Polygon2d):
             """
             Check if this polygon has overlap with another polygon.
@@ -274,9 +383,20 @@ class Polygon2d:
             """
 
             polygon: Polygon2d = args[0]
-            raise NotImplementedError
+            assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+            assert len(polygon.num_points) >= 3, f"polygon.num_points should be greater than 3, but got {polygon.num_points}"
+            if polygon.max_x < self.min_x or polygon.min_x > self.max_x or polygon.max_y < self.min_y or polygon.min_y > self.max_y:
+                return False
+            if self.IsPointIn(polygon.points[0]):
+                return True
+            if polygon.IsPointIn(self._points[0]):
+                return True
+            for i in range(polygon.num_points):
+                if self.HasOverlap(polygon.line_segments[i]):
+                    return True
+            return False
 
-    def GetOverlap(self, line_segment: LineSegment2d, first: Vec2d, last: Vec2d) -> bool:
+    def GetOverlap(self, line_segment: LineSegment2d) -> Tuple[bool, Vec2d, Vec2d]:
         """
         Get the overlap of a line segment and this polygon. If they have
         overlap, output the two ends of the overlapped line segment.
@@ -287,7 +407,33 @@ class Polygon2d:
         :returns: If the target line segment has overlap with this polygon.
         """
 
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        if line_segment.length() <= kMathEpsilon:
+            if not self.IsPointIn(line_segment.start()):
+                return False, None, None
+            first: Vec2d = line_segment.start()
+            last: Vec2d = line_segment.start()
+            return True, first, last
+        
+        min_proj: float = line_segment.length()
+        max_proj: float = 0.0
+        if self.IsPointIn(line_segment.start()):
+            first = line_segment.start()
+            min_proj = 0.0
+        if self.IsPointIn(line_segment.end()):
+            last = line_segment.end()
+            max_proj = line_segment.length()
+        for poly_seg in self._line_segments:
+            tag, pt = poly_seg.GetIntersect(line_segment)
+            if tag:
+                proj: float = line_segment.ProjectOntoUnit(pt)
+                if proj < min_proj:
+                    min_proj = proj
+                    first = pt
+                if proj > max_proj:
+                    max_proj = proj
+                    last = pt
+        return (min_proj <= max_proj + kMathEpsilon), first, last
 
     def GetAllVertices(self) -> List[Vec2d]:
         """
@@ -297,7 +443,7 @@ class Polygon2d:
         :rtype: List[Vec2d]
         """
 
-        raise NotImplementedError
+        return self._points
     
     def GetAllOverlaps(self, line_segment: LineSegment2d) -> List[LineSegment2d]:
         """
@@ -310,7 +456,39 @@ class Polygon2d:
         :rtype: List[LineSegment2d]
         """
 
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        if line_segment.length() <= kMathEpsilon:
+            overlaps: List[LineSegment2d] = []
+            if self.IsPointIn(line_segment.start()):
+                overlaps.append(line_segment)
+            return overlaps
+        projections: List[float] = []
+        if self.IsPointIn(line_segment.start()):
+            projections.append(0.0)
+        if self.IsPointIn(line_segment.end()):
+            projections.append(line_segment.length())
+        for poly_seg in self._line_segments:
+            tag, pt = poly_seg.GetIntersect(line_segment)
+            if tag:
+                projections.append(line_segment.ProjectionOntoUnit(pt))
+        projections.sort()
+        overlaps: List[Tuple[float, float]] = []
+        for i in range(len(projections) - 1):
+            start_proj: float = projections[i]
+            end_proj: float = projections[i + 1]
+            if end_proj - start_proj <= kMathEpsilon:
+                continue
+            reference_point: Vec2d = line_segment.start() + (start_proj + end_proj) / 2.0 * line_segment.unit_direction()
+            if not self.IsPointIn(reference_point):
+                continue
+            if len(overlaps) == 0 or start_proj > overlaps[-1][1] + kMathEpsilon:
+                overlaps.append((start_proj, end_proj))
+            else:
+                overlaps[-1][1] = end_proj
+        overlap_line_segments : List[LineSegment2d] = []
+        for overlap in overlaps:
+            overlap_line_segments.append(LineSegment2d(line_segment.start() + overlap[0] * line_segment.unit_direction(), line_segment.start() + overlap[1] * line_segment.unit_direction()))        
+        return overlap_line_segments
 
     def ComputeOverlap(self, other_polygon: 'Polygon2d') -> Tuple[bool, 'Polygon2d']:
         """
@@ -324,7 +502,13 @@ class Polygon2d:
         :rtype: Tuple[bool, Polygon2d]
         """
 
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        assert self._is_convex and other_polygon.is_convex, f"self and other polygon should be convex, but got {self._is_convex} and {other_polygon.is_convex}"
+        points = deepcopy(other_polygon.points)
+        for i in range(self._num_points):
+            if not self.ClipConvexHull(self._line_segments[i], points):
+                return False
+        return self.ComputeConvexHull(points)
 
     def ComputeIoU(self, other_polygon: 'Polygon2d') -> float:
         """
@@ -337,7 +521,12 @@ class Polygon2d:
         returns: A value between 0.0 and 1.0, meaning no intersection to full overlaping
         """
 
-        raise NotImplementedError
+        tag, overlap_polygon = self.ComputeOverlap(other_polygon)
+        if not tag:
+            return 0.0
+        intersection_area: float = overlap_polygon.area
+        union_area: float = self._area + other_polygon.area - overlap_polygon.area
+        return intersection_area / union_area
 
     def BoundingBoxWithHeading(self, heading: float) -> Box2d:
         """
@@ -348,7 +537,17 @@ class Polygon2d:
         :rtype Box2d
         """
         
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        direction_vec: Vec2d = Vec2d.CreateUnitVec2d(heading)
+        px1, px2 = self.ExtremePoints(heading)
+        py1, py2 = self.ExtremePoints(heading - math.pi / 2.0)
+        x1: float = px1.InnerProd(direction_vec)
+        x2: float = px2.InnerProd(direction_vec)
+        y1: float = py1.InnerProd(direction_vec)
+        y2: float = py2.InnerProd(direction_vec)
+        return Box2d(
+               (x1 + x2) / 2.0 * direction_vec + (y1 + y2) / 2.0 * Vec2d(direction_vec.y, -direction_vec.x),
+               heading, x2 - x1, y2 - y1)
 
     def MinAreaBoundingBox(self) -> Box2d:
         """
@@ -358,7 +557,58 @@ class Polygon2d:
         :rtype: Box2d
         """
 
-        raise NotImplementedError
+        assert len(self._points) >= 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        if not self._is_convex:
+            _, convex_polygon = self.ComputeConvexHull(self._points)
+            assert convex_polygon.is_convex, f"convex_polygon should be convex, but got {convex_polygon.is_convex}"
+            return convex_polygon.MinAreaBoundingBox()
+        min_area: float = float('inf')
+        min_area_at_heading: float = 0.0
+        left_most: int = 0
+        right_most: int = 0
+        top_most: int = 0
+        for i in range(self._num_points):
+            line_segment = self._line_segments[i]
+            proj: float = 0.0
+            min_proj: float = line_segment.ProjectOntoUnit(self._points[left_most])
+            proj = line_segment.ProjectOntoUnit(self._points[self.Prev(left_most)]) 
+            while proj < min_proj:
+                min_proj = proj
+                left_most = self.Prev(left_most)
+                proj = line_segment.ProjectOntoUnit(self._points[self.Prev(left_most)])
+            proj = line_segment.ProjectOntoUnit(self._points[self.Next(left_most)])
+            while proj < min_proj:
+                min_proj = proj
+                left_most = self.Next(left_most)
+                proj = line_segment.ProjectOntoUnit(self._points[self.Next(left_most)])
+            max_proj: float = line_segment.ProjectOntoUnit(self._points[right_most])
+            proj = line_segment.ProjectOntoUnit(self._points[self.Prev(right_most)])
+            while proj > max_proj:
+                max_proj = proj
+                right_most = self.Prev(right_most)
+                proj = line_segment.ProjectOntoUnit(self._points[self.Prev(right_most)])
+            proj = line_segment.ProjectOntoUnit(self._points[self.Next(right_most)])
+            while proj > max_proj:
+                max_proj = proj
+                right_most = self.Next(right_most)
+                proj = line_segment.ProjectOntoUnit(self._points[self.Next(right_most)])
+            prod: float = 0.0
+            max_prod: float = line_segment.ProductOntoUnit(self._points[top_most])
+            prod = line_segment.ProductOntoUnit(self._points[self.Prev(top_most)])
+            while prod > max_prod:
+                max_prod = prod
+                top_most = self.Prev(top_most)
+                prod = line_segment.ProductOntoUnit(self._points[self.Prev(top_most)])
+            prod = line_segment.ProductOntoUnit(self._points[self.Next(top_most)])
+            while prod > max_prod:
+                max_prod = prod
+                top_most = self.Next(top_most)
+                prod = line_segment.ProductOntoUnit(self._points[self.Next(top_most)])
+            area: float = max_prod * (max_proj - min_proj)
+            if area < min_area:
+                min_area = area
+                min_area_at_heading = line_segment.heading()
+        return self.BoundingBoxWithHeading(min_area_at_heading)
 
     def ExtremePoints(self, heading: float) -> Tuple[Vec2d, Vec2d]:
         """
@@ -370,7 +620,20 @@ class Polygon2d:
         :rtype: Tuple[Vec2d, Vec2d]
         """
 
-        raise NotImplementedError
+        assert len(self._points) > 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+
+        direction_vec = Vec2d.CreateUnitVec2d(heading)
+        min_proj: float = float('inf')
+        max_proj: float = -float('inf')
+        for pt in self._points:
+            proj: float = pt.InnerProd(direction_vec)
+            if proj < min_proj:
+                min_proj = proj
+                first = pt
+            if proj > max_proj:
+                max_proj = proj
+                last = pt
+        return first, last
     
     def ExpandByDistance(self, distance: float) -> 'Polygon2d':
         """
@@ -381,7 +644,27 @@ class Polygon2d:
         :rtype: Polygon2d
         """
 
-        raise NotImplementedError
+        if not self._is_convex:
+            _, convex_polygon = self.ComputeConvexHull(self._points)
+            assert convex_polygon.is_convex, f"convex_polygon should be convex, but got {convex_polygon.is_convex}"
+            return convex_polygon.ExpandByDistance(distance)
+        kMinAngle: float = 0.1
+        points: List[Vec2d] = []
+        for i in range(self._num_points):
+            start_angle: float = self._line_segments[self.Prev(i)].heading() - math.pi / 2.0
+            end_angle: float = self._line_segments[i].heading() - math.pi / 2.0
+            diff: float = WrapAngle(end_angle - start_angle)
+            if diff <= kMathEpsilon:
+                points.append(self._points[i] + Vec2d.CreateUnitVec2d(start_angle) * distance)
+            else:
+                count: int = int(diff / kMinAngle) + 1
+                for k in range(count + 1):
+                    angle: float = start_angle + diff * k / count
+                    points.append(self._points[i] + Vec2d.CreateUnitVec2d(angle) * distance)
+
+        tag, new_polygon = self.ComputeConvexHull(points)
+        assert tag, f"Computed polygon should be convex, but got {tag}"
+        return new_polygon
 
     def PolygonExpandByDistance(self, distance: float)  -> 'Polygon2d':
         """
@@ -391,7 +674,34 @@ class Polygon2d:
         :rtype: Polygon2d
         """
 
-        raise NotImplementedError
+        points: List[Vec2d] = []
+        for i in range(self._num_points):
+            v1x: float = self._points[self.Prev(i)].x - points[i].x
+            v1y: float = self._points[self.Prev(i)].y - points[i].y
+            n1: float = math.sqrt(v1x ** 2 + v1y ** 2)
+            v1x /= n1
+            v1y /= n1
+
+            v2x: float = self._points[self.Next(i)].x - points[i].x
+            v2y: float = self._points[self.Next(i)].y - points[i].y
+            n2: float = math.sqrt(v2x ** 2 + v2y ** 2)
+            v2x /= n2
+            v2y /= n2
+
+            l: float = distance / math.sqrt((1 - (v1x * v2x + v1y * v2y)) / 2)
+
+            vx: float = v1x + v2x
+            vy: float = v1y + v2y
+            n: float = l / math.sqrt(vx ** 2 + vy ** 2)
+            
+            vx *= n
+            vy *= n
+
+            point = Vec2d(vx + self._points[i].x, vy + self._points[i].y)
+            points.append(point)
+        tag, new_polygon = self.ComputeConvexHull(points)
+        assert tag, f"Computed polygon should be convex, but got {tag}"
+        return new_polygon    
     
     def CalculateVertices(self, shift_vec: Vec2d) -> None:
         """
@@ -400,7 +710,13 @@ class Polygon2d:
         :param Vec2d shift_vec: The shift vector.
         """
 
-        raise NotImplementedError
+        for i in range(self._num_points):
+            self._points[i] += shift_vec
+        for point in self._points:
+            self._max_x = max(self._max_x, point.x)
+            self._min_x = min(self._min_x, point.x)
+            self._max_y = max(self._max_y, point.y)
+            self._min_y = min(self._min_y, point.y)
 
     def __str__(self) -> str:
         """
@@ -410,8 +726,8 @@ class Polygon2d:
         :returns: Essential information about the polygon for debugging purpose.
         :rtype: str
         """
-
-        raise NotImplementedError
+        
+        return  f"Polygon2d (num_points = {self._num_points}, points = {self._points}, is_convex = {self._is_convex}, area = {self._area})"
 
     @property
     def min_x(self) -> float:
@@ -459,7 +775,40 @@ class Polygon2d:
     
     def BuildFromPoints(self) -> None:
 
-        raise NotImplementedError
+        self._num_points = len(self._points)
+        assert self._num_points >= 3, f"self._num_points should be greater than 3, but got {self._num_points}"
+
+        # Make sure the points are in ccw order
+        self._area: float = 0.0
+        for i in range(1, self._num_points):
+            self._area += CrossProd(self._points[0], self._points[i - 1], self._points[i])
+        if self._area < 0.0:
+            self._area = -self._area
+            self._points.reverse()
+        self._area /= 2.0
+        assert self._area > kMathEpsilon, f"self._area should be greater than kMathEpsilon, but got {self._area}"
+
+        # Construct line_segments.
+        for i in range(self._num_points):
+            self._line_segments.append(LineSegment2d(self._points[i], self._points[self.Next(i)]))
+
+        # Check convexity.
+        self._is_convex = True
+        for i in range(self._num_points):
+            if CrossProd(self._points[self.Prev(i)], self._points[i], self._points[self.Next(i)]) <= -kMathEpsilon:
+                self._is_convex = False
+                break
+        
+        # Compute aabox.
+        self._min_x = self._points[0].x
+        self._max_x = self._points[0].x
+        self._min_y = self._points[0].y
+        self._max_y = self._points[0].y
+        for point in self._points:
+            self._min_x = min(self._min_x, point.x)
+            self._max_x = max(self._max_x, point.x)
+            self._min_y = min(self._min_y, point.y)
+            self._max_y = max(self._max_y, point.y)
 
     def Next(self, at: int) -> int:
         """
@@ -469,7 +818,7 @@ class Polygon2d:
         :rtype: int
         """
 
-        raise NotImplementedError
+        return 0 if at >= self._num_points - 1 else at + 1
     
     def Prev(self, at: int) -> int:
         """
@@ -479,7 +828,7 @@ class Polygon2d:
         :rtype: int
         """
 
-        raise NotImplementedError
+        return self._num_points - 1 if at == 0 else at - 1
 
     @staticmethod
     def ClipConvexHull(line_segment: LineSegment2d, points: List[Vec2d]) -> bool:
@@ -492,4 +841,29 @@ class Polygon2d:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        if line_segment.length() <= kMathEpsilon:
+            return True
+        assert points, f"points should not be empty, but got {points}"
+        n: int = len(points)
+        if n < 3:
+            return False
+        prod: List[float] = [0.0] * n
+        side: List[int] = [0] * n
+        for i in range(n):
+            prod[i] = CrossProd(line_segment.start(), line_segment.end(), points[i])
+            if abs(prod[i]) <= kMathEpsilon:
+                side[i] = 0
+            else:
+                side[i] = (-1 if prod[i] < 0 else 1)
+
+        new_points: List[Vec2d] = []
+        for i in range(n):
+            if side[i] >= 0:
+                new_points.append(points[i])
+            j: int = 0 if i == n - 1 else i + 1
+            if side[i] * side[j] < 0:
+                ratio: float = prod[j] / (prod[j] - prod[i])
+                new_points.append(Vec2d(points[i].x * ratio + points[j].x * (1.0 - ratio), points[i].y * ratio + points[j].y * (1.0 - ratio)))
+
+        points, new_points = new_points, points
+        return len(points) >= 3
