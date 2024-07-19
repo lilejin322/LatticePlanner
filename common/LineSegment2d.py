@@ -1,5 +1,17 @@
-from common.Vec2d import Vec2d
+from common.Vec2d import Vec2d, kMathEpsilon
 from typing import Tuple
+from math import hypot
+from common.Polygon2d import CrossProd
+
+def IsWithin(val: float, bound1: float, bound2:float):
+    """
+    Check if a value is within the range of two bounds.
+    """
+
+    if bound1 > bound2:
+        bound1, bound2 = bound2, bound1
+    
+    return bound1 - kMathEpsilon <= val <= bound2 + kMathEpsilon
 
 class LineSegment2d:
     """
@@ -16,7 +28,11 @@ class LineSegment2d:
             Empty constructor
             """
 
-            raise NotImplementedError
+            self._unit_direction = Vec2d(1, 0)
+            self._heading: float = 0.0
+            self._length: float = 0.0
+            self._start: Vec2d = None
+            self._end: Vec2d = None
         
         elif len(args) == 2:
             """
@@ -28,10 +44,11 @@ class LineSegment2d:
 
             self._start: Vec2d = args[0]
             self._end: Vec2d = args[1]
-            self._unit_direction: Vec2d = None
-            self._heading: float = 0.0
-            self._length: float = 0.0
-            raise NotImplementedError
+            dx: float = self._end.x - self._start.x
+            dy: float = self._end.y - self._start.y
+            self._length = hypot(dx, dy)
+            self._unit_direction: Vec2d = Vec2d(0, 0) if self._length <= kMathEpsilon else Vec2d(dx / self._length, dy / self._length)
+            self._heading = self._unit_direction.Angle()
         
         else:
             raise ValueError("Invalid number of arguments")
@@ -90,7 +107,9 @@ class LineSegment2d:
         :rtype: Vec2d
         """
 
-        raise NotImplementedError
+        diff_vec: Vec2d = self._end - self._start
+        diff_vec.SelfRotate(angle)
+        return self._start + diff_vec
     
     def heading(self) -> float:
         """
@@ -130,7 +149,7 @@ class LineSegment2d:
         :rtype: float
         """
 
-        raise NotImplementedError
+        return self._length
     
     def length_sqr(self) -> float:
         """
@@ -140,7 +159,7 @@ class LineSegment2d:
         :rtype: float
         """
 
-        raise NotImplementedError
+        return self._length * self._length
     
     def DistanceTo(self, point: Vec2d) -> Tuple[float, Vec2d]:
         """
@@ -154,7 +173,16 @@ class LineSegment2d:
         :rtype: Tuple[float, Vec2d]
         """
         
-        raise NotImplementedError
+        if self._length <= kMathEpsilon:
+            return point.DistanceTo(self._start), self._start
+        x0: float = point.x - self._start.x
+        y0: float = point.y - self._start.y
+        proj: float = x0 * self._unit_direction.x + y0 * self._unit_direction.y
+        if proj <= 0.0:
+            return hypot(x0, y0), self._start
+        if proj >= self._length:
+            return point.DistanceTo(self._end), self._end
+        return abs(x0 * self._unit_direction.y - y0 * self._unit_direction.x), self._start + self._unit_direction * proj
 
     def DistanceSquareTo(self, point: Vec2d) -> Tuple[float, Vec2d]:
         """
@@ -168,8 +196,17 @@ class LineSegment2d:
         :rtype: Tuple[float, Vec2d]
         """
 
-        raise NotImplementedError
-    
+        if self._length <= kMathEpsilon:
+            return point.DistanceSquareTo(self._start), self._start
+        x0: float = point.x - self._start.x
+        y0: float = point.y - self._start.y
+        proj: float = x0 * self._unit_direction.x + y0 * self._unit_direction.y
+        if proj <= 0:
+            return x0 ** 2 + y0 ** 2, self._start
+        if proj >= self._length:
+            return point.DistanceSquareTo(self._end), self._end
+        return (x0 * self._unit_direction.y - y0 * self._unit_direction.x) ** 2, self._start + self._unit_direction * proj
+
     def IsPointIn(self, point: Vec2d) -> bool:
         """
         Check if a point is within the line segment.
@@ -178,8 +215,17 @@ class LineSegment2d:
         :returns: Whether the input point is within the line segment or not.
         """
 
-        raise NotImplementedError
-    
+        if self._length <= kMathEpsilon:
+            tag1: bool = abs(point.x - self._start.x) <= kMathEpsilon
+            tag2: bool = abs(point.y - self._start.y) <= kMathEpsilon
+            return tag1 and tag2
+        prod: float = CrossProd(point - self._start, self._end)
+        if abs(prod) > kMathEpsilon:
+            return False
+        tag1: bool = IsWithin(point.x, self._start.x, self._end.x)
+        tag2: bool = IsWithin(point.y, self._start.y, self._end.y)
+        return tag1 and tag2
+
     def HasIntersect(self, other_segment: 'LineSegment2d') -> bool:
         """
         Check if the line segment has an intersect with another line segment in 2-D.
@@ -189,8 +235,9 @@ class LineSegment2d:
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        tag, _ = self.GetIntersect(other_segment)
+        return tag
+
     def GetIntersect(self, other_segment: 'LineSegment2d') -> Tuple[bool, Vec2d]:
         """
         Compute the intersect with another line segment in 2-D if any.
@@ -202,8 +249,27 @@ class LineSegment2d:
         :rtype: Tuple[bool, Vec2d]
         """
 
-        raise NotImplementedError
-    
+        if self.IsPointIn(other_segment.start):
+            return True, other_segment.start
+        if self.IsPointIn(other_segment.end):
+            return True, other_segment.end
+        if other_segment.IsPointIn(self._start):
+            return True, self._start
+        if other_segment.IsPointIn(self._end):
+            return True, self._end
+        if self._length <= kMathEpsilon or other_segment.length() <= kMathEpsilon:
+            return False, None
+        cc1: float = CrossProd(self._start, self._end, other_segment.start)
+        cc2: float = CrossProd(self._start, self._end, other_segment.end)
+        if cc1 * cc2 >= -kMathEpsilon:
+            return False, None
+        cc3: float = CrossProd(other_segment.start, other_segment.end, self._start)
+        cc4: float = CrossProd(other_segment.start, other_segment.end, self._end)
+        if cc3 * cc4 >= -kMathEpsilon:
+            return False, None
+        ratio: float = cc4 / (cc4 - cc3)
+        return True, Vec2d(self._start.x * ratio + self._end.x * (1.0 - ratio), self._start.y * ratio + self._end.y * (1.0 - ratio))
+
     def ProjectOntoUnit(self, point: Vec2d) -> float:
         """
         Compute the projection of a vector onto the line segment.
@@ -215,7 +281,7 @@ class LineSegment2d:
         :rtype: float
         """
 
-        raise NotImplementedError
+        return self._unit_direction.InnerProd(point - self._start)
     
     def ProductOntoUnit(self, point: Vec2d) -> float:
         """
@@ -228,20 +294,25 @@ class LineSegment2d:
         :rtype: float
         """
 
-        raise NotImplementedError
-    
+        return self._unit_direction.CrossProd(point - self._start)
+
     def GetPerpendicularFoot(self, point: Vec2d) -> Tuple[float, Vec2d]:
         """
         Compute perpendicular foot of a point in 2-D on the straight line expanded from the line segment.
-
+        return distance with perpendicular foot point.
         :param Vec2d point: The point to compute the perpendicular foot from.
         :returns: a tuple, the first element is the distance from the input point to the perpendicular foot;
                   the second element is the computed perpendicular foot from the input point to
                   the straight line expanded from the line segment.
         """
 
-        raise NotImplementedError
-    
+        if self._length <= kMathEpsilon:
+            return point.DistanceTo(self._start), self._start
+        x0: float = point.x - self._start.x
+        y0: float = point.y - self._start.y
+        proj: float = x0 * self._unit_direction.x + y0 * self._unit_direction.y
+        return abs(x0 * self._unit_direction.y - y0 * self._unit_direction.x), self._start + self._unit_direction * proj
+
     def __str__(self) -> str:
         """
         Get the debug string including the essential information.
@@ -250,4 +321,4 @@ class LineSegment2d:
         :rtype: str
         """
 
-        raise NotImplementedError
+        return f"segment2d: start: {self._start}, end: {self._end}"
