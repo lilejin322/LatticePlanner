@@ -1,0 +1,2 @@
+class ReferenceLine:
+    pass

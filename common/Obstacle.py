@@ -14,13 +14,15 @@ from bisect import bisect_left
 from logging import Logger
 import hashlib
 import struct
-from PathMatcher import PathMatcher
+from common.ReferenceLine import ReferenceLine
 from config import EGO_VEHICLE_WIDTH, FRONT_EDGE_TO_CENTER, EGO_VEHICLE_LENGTH, MinSafeTurnRadius, \
                    FLAGS_use_navigation_mode, FLAGS_st_max_s, FLAGS_nonstatic_obstacle_nudge_l_buffer, \
                    FLAGS_st_max_t, FLAGS_virtual_stop_wall_height, FLAGS_max_stop_distance_obstacle, \
                    FLAGS_min_stop_distance_obstacle, FLAGS_static_obstacle_nudge_l_buffer
 from enum import Enum
 from protoclass.PathPoint import PathPoint
+from common.Polygon2d import Polygon2d
+from common.Box2d import Box2d
 
 logger = Logger("Obstacle")
 kStBoundaryDeltaS: float = 0.2;        # meters
@@ -42,6 +44,9 @@ def DistanceXY(point1: PathPoint, point2: PathPoint) -> float:
     return math.hypot(dx, dy)
 
 class BoundaryType(Enum):
+    """
+    Enum BoundaryType class
+    """
     UNKNOWN = 0
     STOP = 1
     FOLLOW = 2
@@ -50,15 +55,12 @@ class BoundaryType(Enum):
     KEEP_CLEAR = 5
 
 class Priority(Enum):
+    """
+    Enum Priority class
+    """
     CAUTION = 1
     NORMAL = 2
     IGNORE = 3
-
-class Polygon2d:
-    pass
-
-class Box2d:
-    pass
 
 class Obstacle:
     """
@@ -211,6 +213,108 @@ class Obstacle:
         """
 
         return self._is_virtual
+    
+    @staticmethod
+    def lerp(x0: float, t0: float, x1: float, t1: float, t: float) -> float:
+        """
+        Linear interpolation.
+
+        :param float x0: the x0 value.
+        :param float t0: the t0 value.
+        :param float x1: the x1 value.
+        :param float t1: the t1 value.
+        :param float t: the t value.
+        :returns: the interpolated value.
+        :rtype: float
+        """
+
+        if abs(t1 - t0) <= 1.0e-6:
+            logger.error("Input time difference is too small")
+            return x0
+        r = (t - t0) / (t1 - t0)
+        x = x0 + r * (x1 - x0)
+        return x
+    
+    @staticmethod
+    def NormalizeAngle(angle: float) -> float:
+        """
+        Normalize the angle to [-pi, pi]
+
+        :param float angle: the angle to normalize
+        :returns: the normalized angle
+        :rtype: float
+        """
+
+        a: float = math.fmod(angle + math.pi, 2 * math.pi)
+        if a < 0.0:
+            a += 2 * math.pi
+        return a - math.pi
+    
+    def slerp(self, a0: float, t0: float, a1:float, t1: float, t: float, epsilon:float=1e-10) -> float:
+        """
+        Slerp function
+        
+        :param float a0: a0
+        :param float t0: t0
+        :param float a1: a1
+        :param float t1: t1
+        :param float t: t
+        :param float epsilon: epsilon, default 1e-10
+        :returns: slerp result
+        :rtype: float
+        """
+
+        if abs(t1 - t0) <= epsilon:
+            logger.warning("The time difference is too small")
+            return self.NormalizeAngle(a0)
+        a0_n: float = self.NormalizeAngle(a0)
+        a1_n: float = self.NormalizeAngle(a1)
+        d: float = a1_n - a0_n
+        if d > math.pi:
+            d -= 2.0 * math.pi
+        elif d < -math.pi:
+            d += 2.0 * math.pi
+        r: float = (t - t0) / (t1 - t0)
+        a: float = a0_n + d * r
+        return self.NormalizeAngle(a)
+
+    def InterpolateUsingLinearApproximation(self, tp0: TrajectoryPoint, tp1: TrajectoryPoint, t: float) -> TrajectoryPoint:
+        """
+        Interpolate using linear approximation
+
+        :param TrajectoryPoint tp0: The first trajectory point
+        :param TrajectoryPoint tp1: The second trajectory point
+        :param float t: The relative time
+        :returns: The interpolated trajectory point
+        :rtype: TrajectoryPoint
+        """
+
+        if not tp0.has_path_point or not tp1.has_path_point:
+            # This part has not been implemented
+            p: TrajectoryPoint = TrajectoryPoint()
+            p.mutable_path_point = PathPoint()
+            return p
+        pp0: PathPoint = tp0.path_point
+        pp1: PathPoint = tp1.path_point
+        t0: float = tp0.relative_time
+        t1: float = tp1.relative_time
+
+        tp: TrajectoryPoint = TrajectoryPoint()
+        tp.v = self.lerp(tp0.v, t0, tp1.v, t1, t)
+        tp.a = self.lerp(tp0.a, t0, tp1.a, t1, t)
+        tp.relative_time = t
+        tp.steer = self.slerp(tp0.steer, t0, tp1.steer, t1, t)
+
+        path_point: PathPoint = tp.path_point
+        path_point.x = self.lerp(pp0.x, t0, pp1.x, t1, t)
+        path_point.y = self.lerp(pp0.y, t0, pp1.y, t1, t)
+        path_point.theta = self.slerp(pp0.theta, t0, pp1.theta, t1, t)
+        path_point.kappa = self.lerp(pp0.kappa, t0, pp1.kappa, t1, t)
+        path_point.dkappa = self.lerp(pp0.dkappa, t0, pp1.dkappa, t1, t)
+        path_point.ddkappa = self.lerp(pp0.ddkappa, t0, pp1.ddkappa, t1, t)
+        path_point.s = self.lerp(pp0.s, t0, pp1.s, t1, t)
+
+        return tp
 
     def GetPointAtTime(self, relative_time: float) -> TrajectoryPoint:
         """
@@ -244,7 +348,7 @@ class Obstacle:
             elif index == len(points):
                 return points[-1]
             else:
-                return InterpolateUsingLinearApproximation(points[index - 1], points[index], relative_time)
+                return self.InterpolateUsingLinearApproximation(points[index - 1], points[index], relative_time)
 
     def GetBoundingBox(self, point: TrajectoryPoint) -> Box2d:
         """
