@@ -1,8 +1,36 @@
 from common.Vec2d import Vec2d
 from typing import List, Tuple
 from copy import deepcopy
+import math
+from common.Box2d import Box2d
+from common.LineSegment2d import LineSegment2d
 
 kMathEpsilon: float = 1e-10
+
+def WrapAngle(angle: float) -> float:
+    """
+    Wrap an angle to [-pi, pi].
+
+    :param float angle: The angle to wrap.
+    :returns: The wrapped angle.
+    :rtype: float
+    """
+    
+    new_angle = math.fmod(angle, math.pi * 2.0)
+    return new_angle + math.pi * 2.0 if new_angle < 0 else new_angle
+
+def CrossProd(start_point: Vec2d, end_point_1: Vec2d, end_point_2: Vec2d) -> float:
+    """
+    Compute the cross product of three vectors.
+
+    :param Vec2d start_point: The start point
+    :param Vec2d end_point_1: The end point1
+    :param Vec2d end_point_2: The end point2
+    :returns: The cross product of the vectors.
+    :rtype: float
+    """
+
+    return (end_point_1 - start_point).CrossProd(end_point_2 - start_point)
 
 class Polygon2d:
     """
