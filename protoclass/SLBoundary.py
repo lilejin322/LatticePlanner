@@ -3,7 +3,8 @@ from typing import List, Optional
 
 @dataclass
 class SLPoint:
-    pass
+    s: Optional[float] = None
+    l: Optional[float] = None
 
 @dataclass
 class SLBoundary:

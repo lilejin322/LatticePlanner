@@ -19,6 +19,7 @@ from common.MapPathPoint import MapPathPoint, LaneWaypoint
 from protoclass.PointENU import PointENU
 from config import FLAGS_default_highway_speed_limit, FLAGS_trajectory_point_num_for_debug, FLAGS_default_city_road_speed_limit, \
                    FLAGS_planning_upper_speed_limit
+from protoclass.SLBoundary import SLPoint
 
 logger = Logger("ReferenceLine")
 
@@ -899,13 +900,13 @@ class ReferenceLine:
         roads: RoadInfo = hdmap.GetRoads(point, 4.0)
         
         for road in roads:
-            if road.type != HDMap.UNKNOWN:
+            if road.type != Road.UNKNOWN:
                 road_type = road.type
                 break
         
         return road_type
 
-    def GetLaneBoundaryType(self, s: float) -> Tuple[LaneBoundaryType, LaneBoundaryType]:
+    def GetLaneBoundaryType(self, s: float) -> Tuple:
         """
         Get lane boundary type
 
