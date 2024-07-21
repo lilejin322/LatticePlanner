@@ -3,7 +3,7 @@ from common.Vec2d import Vec2d, kMathEpsilon
 from common.ReferencePoint import ReferencePoint
 from typing import List, Tuple
 from protoclass.PathPoint import PathPoint
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from common.Box2d import Box2d
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from protoclass.FrenetFramePoint import FrenetFramePoint
@@ -15,6 +15,10 @@ from CartesianFrenetConverter import CartesianFrenetConverter
 from scipy.optimize import minimize_scalar
 from math import sin, cos
 from protoclass.SLBoundary import SLBoundary
+from common.MapPathPoint import MapPathPoint, LaneWaypoint
+from protoclass.PointENU import PointENU
+from config import FLAGS_default_highway_speed_limit, FLAGS_trajectory_point_num_for_debug, FLAGS_default_city_road_speed_limit, \
+                   FLAGS_planning_upper_speed_limit
 
 logger = Logger("ReferenceLine")
 
@@ -27,6 +31,76 @@ class SpeedLimit:
     start_s: float = 0.0
     end_s: float = 0.0
     speed_limit: float = 0.0  # unit m/s
+
+@dataclass
+class LaneSegment:
+    """
+    Lane segment class
+    """
+
+    lane: dict = field(default_factory=dict)
+    start_s: float = 0.0
+    end_s: float = 0.0
+
+    def __post_init__(self):
+        """
+        Post initialization, check if property lane is not empty dict {}
+        """
+
+        assert self.lane, "lane must not be an empty dict"
+    
+    def Length(self) -> float:
+        """
+        Get length of lane segment
+
+        :returns: Length of lane segment
+        :rtype: float
+        """
+
+        return self.end_s - self.start_s
+
+    @staticmethod
+    def Join(segments: List['LaneSegment']) -> None:
+        """
+        Join lane segments
+
+        :param List[LaneSegment] segments: List of LaneSegment objects
+        """
+
+        kSegmentDelta: float = 0.5
+        k: int = 0
+        i: int = 0
+        while i < len(segments):
+            j = i
+            while j + 1 < len(segments) and segments[i].lane == segments[j + 1].lane:
+                j += 1
+
+            segment_k = segments[k]
+            segment_k.lane = segments[i].lane
+            segment_k.start_s = segments[i].start_s
+            segment_k.end_s = segments[j].end_s
+            if segment_k.start_s < kSegmentDelta:
+                segment_k.start_s = 0.0
+            if segment_k.end_s + kSegmentDelta >= segment_k.lane.total_length():
+                segment_k.end_s = segment_k.lane.total_length()
+
+            i = j + 1
+            k += 1
+
+        segments[:] = segments[:k]
+
+    def __str__(self) -> str:
+        """
+        Debug string representation
+        
+        :returns: String representation
+        :rtype: str
+        """
+
+        if not self.lane:
+            return "(lane is null)"
+
+        return f"id = {self.lane['id']}  start_s = {self.start_s}  end_s = {self.end_s}"
 
 class ReferenceLine:
     """
@@ -1170,6 +1244,27 @@ class ReferenceLine:
         return self._map_path
 
     @staticmethod
+    def lerp(x0: float, t0: float, x1: float, t1: float, t: float) -> float:
+        """
+        Linear interpolation.
+
+        :param float x0: the x0 value.
+        :param float t0: the t0 value.
+        :param float x1: the x1 value.
+        :param float t1: the t1 value.
+        :param float t: the t value.
+        :returns: the interpolated value.
+        :rtype: float
+        """
+
+        if abs(t1 - t0) <= 1.0e-6:
+            logger.error("Input time difference is too small")
+            return x0
+        r = (t - t0) / (t1 - t0)
+        x = x0 + r * (x1 - x0)
+        return x
+
+    @staticmethod
     def Interpolate(p0: ReferencePoint, s0: float, p1: ReferencePoint, s1: float, s: float) -> ReferencePoint:
         """
         Linearly interpolate p0 and p1 by s0 and s1.
@@ -1193,11 +1288,11 @@ class ReferenceLine:
         assert s0 - 1.0e-6 <= s, f"s: {s} is less than s0: {s0}"
         assert s <= s1 + 1.0e-6, f"s: {s} is larger than s1: {s1}"
 
-        x: float = lerp(p0.x, s0, p1.x, s1, s)
-        y: float = lerp(p0.y, s0, p1.y, s1, s)
+        x: float = ReferenceLine.lerp(p0.x, s0, p1.x, s1, s)
+        y: float = ReferenceLine.lerp(p0.y, s0, p1.y, s1, s)
         heading: float = slerp(p0.heading, s0, p1.heading, s1, s)
-        kappa: float = lerp(p0.kappa, s0, p1.kappa, s1, s)
-        dkappa: float = lerp(p0.dkappa, s0, p1.dkappa, s1, s)
+        kappa: float = ReferenceLine.lerp(p0.kappa, s0, p1.kappa, s1, s)
+        dkappa: float = ReferenceLine.lerp(p0.dkappa, s0, p1.dkappa, s1, s)
         waypoints: List[LaneWaypoint] = []
         if p0.lane_waypoints and p1.lane_waypoints:
             p0_waypoint = p0.lane_waypoints[0]
@@ -1233,8 +1328,8 @@ class ReferenceLine:
         assert s <= s1 + 1.0e-6, f"s: {s} is greater than s1: {s1}"
 
         map_path_point = self._map_path.GetSmoothPoint(index)
-        kappa: float = lerp(p0.kappa, s0, p1.kappa, s1, s)
-        dkappa: float = lerp(p0.dkappa, s0, p1.dkappa, s1, s)
+        kappa: float = ReferenceLine.lerp(p0.kappa, s0, p1.kappa, s1, s)
+        dkappa: float = ReferenceLine.lerp(p0.dkappa, s0, p1.dkappa, s1, s)
 
         return ReferencePoint(map_path_point, kappa, dkappa)
 

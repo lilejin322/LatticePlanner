@@ -132,3 +132,11 @@ FLAGS_max_stop_distance_obstacle = 1
 FLAGS_min_stop_distance_obstacle = 1
 
 FLAGS_static_obstacle_nudge_l_buffer = 1
+
+FLAGS_default_highway_speed_limit = 1
+
+FLAGS_trajectory_point_num_for_debug = 1
+
+FLAGS_default_city_road_speed_limit = 1
+
+FLAGS_planning_upper_speed_limit = 1

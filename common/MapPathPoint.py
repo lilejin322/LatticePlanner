@@ -1,6 +1,7 @@
-from common import Vec2d
+from common.Vec2d import Vec2d
 from typing import List
 from dataclasses import dataclass, field
+from common.ReferenceLine import LaneSegment
 
 @dataclass
 class LaneWaypoint:
@@ -122,7 +123,7 @@ class MapPathPoint(Vec2d):
         del points[count:]
 
     @staticmethod
-    def GetPointsFromSegment(segment) -> List['MapPathPoint']:
+    def GetPointsFromSegment(segment: LaneSegment) -> List['MapPathPoint']:
         """
         get points from segment
 
