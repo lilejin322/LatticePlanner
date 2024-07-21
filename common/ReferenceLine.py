@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from common.Box2d import Box2d
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from protoclass.FrenetFramePoint import FrenetFramePoint
-from common.SLBoundary import SLBoundary
+from protoclass.SLBoundary import SLBoundary
 from common.Polygon2d import Polygon2d
 from logging import Logger
 from bisect import bisect_left, bisect_right
