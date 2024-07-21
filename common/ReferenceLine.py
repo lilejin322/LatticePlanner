@@ -20,8 +20,15 @@ from protoclass.PointENU import PointENU
 from config import FLAGS_default_highway_speed_limit, FLAGS_trajectory_point_num_for_debug, FLAGS_default_city_road_speed_limit, \
                    FLAGS_planning_upper_speed_limit
 from protoclass.SLBoundary import SLPoint
+from enum import Enum
 
 logger = Logger("ReferenceLine")
+
+class RoadType(Enum):
+    UNKNOWN = 0
+    HIGHWAY = 1
+    CITY_ROAD = 2
+    PARK = 3
 
 @dataclass
 class SpeedLimit:
@@ -877,7 +884,7 @@ class ReferenceLine:
         tag, road_left_width, road_right_width = self._map_path.GetRoadWidth(s)
         return tag, road_left_width, road_right_width
 
-    def GetRoadType(self, s: float) -> RoadType:
+    def GetRoadType(self, s: float):
         """
         Get road type
 
@@ -890,7 +897,7 @@ class ReferenceLine:
         if hdmap is None:
             raise ValueError("HDMap is None")
 
-        road_type: RoadType = Road.UNKNOWN
+        road_type = RoadType.UNKNOWN
 
         sl_point = SLPoint(s=s, l=0.0)
         _, pt = self.SLToXY(sl_point)
@@ -900,7 +907,7 @@ class ReferenceLine:
         roads: RoadInfo = hdmap.GetRoads(point, 4.0)
         
         for road in roads:
-            if road.type != Road.UNKNOWN:
+            if road.type != RoadType.UNKNOWN:
                 road_type = road.type
                 break
         
@@ -1168,7 +1175,7 @@ class ReferenceLine:
         if not speed_limit_found:
             # use default speed limit based on road_type
             speed_limit = FLAGS_default_city_road_speed_limit
-            road_type: RoadType = self.GetRoadType(s)
+            road_type = self.GetRoadType(s)
             if road_type == RoadType.HIGHWAY:
                 speed_limit = FLAGS_default_highway_speed_limit
 
