@@ -14,6 +14,7 @@ from bisect import bisect_left, bisect_right
 from CartesianFrenetConverter import CartesianFrenetConverter
 from scipy.optimize import minimize_scalar
 from math import sin, cos
+from protoclass.SLBoundary import SLBoundary
 
 logger = Logger("ReferenceLine")
 
@@ -55,12 +56,12 @@ class ReferenceLine:
 
             self._reference_points: List[ReferencePoint] = args[0]
             self._speed_limit: List[SpeedLimit] = []
-            self._map_path = [MapPathPoint(p) for p in self._reference_points]
+            self._map_path = MapPath([MapPathPoint(p) for p in self._reference_points])
             self._priority: int = 0
             assert len(self._map_path) == len(self._reference_points), \
                    "Number of points in self._map_path does not match the size of self._reference_points"
 
-        elif len(args) == 1 and isinstance(args[0], Path):
+        elif len(args) == 1 and isinstance(args[0], MapPath):
             """
             Constructor with map path
 
@@ -86,7 +87,7 @@ class ReferenceLine:
 
             self._reference_points = []
             self._speed_limit: List[SpeedLimit] = []
-            self._map_path: List[MapPathPoint] = []
+            self._map_path: MapPath = MapPath([])
             self._priority: int = 0
 
     def Stitch(self, other: 'ReferenceLine') -> bool:
@@ -152,7 +153,7 @@ class ReferenceLine:
                 return False
             end_i: int = bisect_right(accumulated_s, last_sl.s)
             self._reference_points.extend(other_points[end_i:])
-        self._map_path = [MapPathPoint(p) for p in self._reference_points]
+        self._map_path = MapPath([MapPathPoint(p) for p in self._reference_points])
         return True
 
     def Segment(self, *args) -> bool:
@@ -202,7 +203,7 @@ class ReferenceLine:
 
             self._reference_points = self._reference_points[start_index:end_index]
 
-            self._map_path = [MapPathPoint(p) for p in self._reference_points]
+            self._map_path = MapPath([MapPathPoint(p) for p in self._reference_points])
             return True
 
         else:
@@ -468,11 +469,12 @@ class ReferenceLine:
         :rtype: List[LaneSegment]
         """
 
-        raise NotImplementedError
+        return self._map_path.GetLaneSegments(start_s, end_s)
 
     def GetApproximateSLBoundary(self, box: Box2d, start_s: float, end_s: float) -> Tuple[bool, SLBoundary]:
         """
-        Get approximate SL boundary
+        Return a rough approximated SLBoundary using box length. It is guaranteed to
+        be larger than the accurate SL boundary.
 
         :param Box2d box: Box
         :param float start_s: Start s
@@ -481,19 +483,36 @@ class ReferenceLine:
         :rtype: Tuple[bool, SLBoundary]
         """
         
-        raise NotImplementedError
+        s: float = 0.0
+        l: float = 0.0
+        distance: float = 0.0
+        tag, s, l, distance = self._map_path.GetProjectionWithHueristicParams(box.center, start_s, end_s)
+        if not tag:
+            logger.error("Cannot get projection point from path.")
+            return False
 
-    def GetSLBoundary(self, *args) -> Tuple[bool, SLBoundary]:
-        """
-        Get the SL Boundary of the box.
-        
-        :param Box2d box: The box to calculate.
-        :param SLBoundary sl_boundary: Output of the SLBoundary.
-        :param float warm_start_s: The initial s for searching mapping point on reference
-                                   line to accelerate computation time.
-        :returns: True if success, the returned sl_boundary; otherwise, false, None
-        :rtype: Tuple[bool, SLBoundary]
-        """
+        projected_point = self._map_path.GetSmoothPoint(s)
+        rotated_box = box
+        rotated_box.RotateFromCenter(-projected_point.heading)
+
+        corners: List[Vec2d] = rotated_box.GetAllCorners()
+
+        min_s: float = float('inf')
+        max_s: float = float('-inf')
+        min_l: float = float('inf')
+        max_l: float = float('-inf')
+
+        for point in corners:
+            # x <--> s, y <--> l
+            # Because the box is rotated to align the reference line
+            min_s = min(min_s, point.x - rotated_box.center.x + s)
+            max_s = max(max_s, point.x - rotated_box.center.x + s)
+            min_l = min(min_l, point.y - rotated_box.center.y + l)
+            max_l = max(max_l, point.y - rotated_box.center.y + l)
+        sl_boundary = SLBoundary(start_s=min_s, end_s=max_s, start_l=min_l, end_l=max_l)
+        return True, sl_boundary
+
+    def GetSLBoundary(self, *args) -> bool:
 
         if isinstance(args[0], Box2d):
             """
@@ -502,17 +521,19 @@ class ReferenceLine:
             :param Box2d box: The box to calculate.
             :param float warm_start_s: The initial s for searching mapping point on reference
                                        line to accelerate computation time.
-            :returns: True if success, the returned sl_boundary; otherwise, false, None
-            :rtype: Tuple[bool, SLBoundary]
+            :param SLBoundary sl_boundary: The SL boundary to store the result.
+            :returns: True if success, False otherwise.
+            :rtype: bool
             """
 
-            if len(args) == 1:
+            if len(args) == 2:
                 box = args[0]
                 warm_start_s = -1.0
-                raise NotImplementedError
+                sl_boundary = args[-1]
             else:
-                box, warm_start_s = args
-                raise NotImplementedError
+                box, warm_start_s, sl_boundary = args
+            corners: List[Vec2d] = box.GetAllCorners()
+            return self.GetSLBoundary(corners, warm_start_s, sl_boundary)
 
         elif isinstance(args[0], Polygon2d):
             """
@@ -521,17 +542,19 @@ class ReferenceLine:
             :param Polygon2d polygon: The polygon to calculate.
             :param float warm_start_s: The initial s for searching mapping point on reference
                                        line to accelerate computation time.
-            :returns: True if success, the returned sl_boundary; otherwise, false, None
-            :rtype: Tuple[bool, SLBoundary]
+            :param SLBoundary sl_boundary: The SL boundary to store the result.
+            :returns: True if success, False otherwise.
+            :rtype: bool
             """
 
-            if len(args) == 1:
+            if len(args) == 2:
                 polygon = args[0]
                 warm_start_s = -1.0
-                raise NotImplementedError
+                sl_boundary = args[-1]
             else:
-                polygon, warm_start_s = args
-                raise NotImplementedError
+                polygon, warm_start_s, sl_boundary = args
+            corners: List[Vec2d] = polygon.points
+            return self.GetSLBoundary(corners, warm_start_s, sl_boundary)
 
         elif isinstance(args[0], list) and isinstance(args[0][0], Vec2d):
             """
@@ -540,13 +563,62 @@ class ReferenceLine:
             :param List[Vec2d] corners: The corners to calculate.
             :param float warm_start_s: The initial s for searching mapping point on reference
                                        line to accelerate computation time.
-            :returns: True if success, the returned sl_boundary; otherwise, false, None
-            :rtype: Tuple[bool, SLBoundary]
+            :param SLBoundary sl_boundary: The SL boundary to store the result.
+            :returns: True if success, False otherwise.
+            :rtype: bool
             """
 
-            corners, warm_start_s = args
-            raise NotImplementedError
-        
+            corners, warm_start_s, sl_boundary = args
+            start_s: float = float('inf')
+            end_s: float = float('-inf')
+            start_l: float = float('inf')
+            end_l: float = float('-inf')
+
+            # The order must be counter-clockwise
+            sl_corners: List[SLPoint] = []
+            for point in corners:
+                tag, sl_point = self.XYToSL(point)
+                if not tag:
+                    logger.error(f"Failed to get projection for point: {point} on reference line.")
+                    return False, None
+                sl_corners.append(sl_point)
+            
+            for i in range(len(corners)):
+                index0: int = i
+                index1: int = (i + 1) % len(corners)
+                p0: SLPoint = corners[index0]
+                p1: SLPoint = corners[index1]
+
+                p_mid = (p0 + p1) * 0.5
+                tag, sl_point_mid = self.XYToSL(p_mid)
+                if not tag:
+                    logger.error(f"Failed to get projection for point: {p_mid} on reference line.")
+                    return False, None
+                
+                v0 = Vec2d(sl_corners[index1].s - sl_corners[index0].s,
+                           sl_corners[index1].l - sl_corners[index0].l)
+                v1 = Vec2d(sl_point_mid.s - sl_corners[index0].s,
+                           sl_point_mid.l - sl_corners[index0].l)
+
+                sl_boundary.boundary_points.append(sl_corners[index0])
+
+                # sl_point is outside of polygon; add to the vertex list
+                if v0.CrossProd(v1) < 0.0:
+                    sl_boundary.boundary_points.append(sl_point_mid)
+            
+            for sl_point in sl_boundary.boundary_points:
+                start_s = min(start_s, sl_point.s)
+                end_s = max(end_s, sl_point.s)
+                start_l = min(start_l, sl_point.l)
+                end_l = max(end_l, sl_point.l)
+            
+            sl_boundary.start_s = start_s
+            sl_boundary.end_s = end_s
+            sl_boundary.start_l = start_l
+            sl_boundary.end_l = end_l
+
+            return True
+
         elif isinstance(args[0], Polygon):
             """
             Get the SL Boundary of the map-polygon.
@@ -554,12 +626,31 @@ class ReferenceLine:
             :param Polygon polygon: The map-polygon to calculate.
             :param float warm_start_s: The initial s for searching mapping point on reference
                                        line to accelerate computation time.
-            :returns: True if success, the returned sl_boundary; otherwise, false, None
-            :rtype: Tuple[bool, SLBoundary]
+            :param SLBoundary sl_boundary: The SL boundary to store the result.
+            :returns: True if success, False otherwise.
+            :rtype: bool
             """
 
             polygon = args[0]
-            raise NotImplementedError
+            start_s: float = float('inf')
+            end_s: float = float('-inf')
+            start_l: float = float('inf')
+            end_l: float = float('-inf')
+            for point in polygon.point:
+                tag, sl_point = self.XYToSL(sl_point)
+                if not tag:
+                    logger.error(f"Failed to get projection for point: {point} on reference line.")
+                    return False, None
+                start_s = min(start_s, sl_point.s)
+                end_s = max(end_s, sl_point.s)
+                start_l = min(start_l, sl_point.l)
+                end_l = max(end_l, sl_point.l)
+            sl_boundary.start_s = start_s
+            sl_boundary.end_s = end_s
+            sl_boundary.start_l = start_l
+            sl_boundary.end_l = end_l
+
+            return True
 
     def SLToXY(self, sl_point: SLPoint) -> Tuple[bool, Vec2d]:
         """
@@ -720,7 +811,25 @@ class ReferenceLine:
         :rtype: Type
         """
         
-        raise NotImplementedError
+        hdmap = HDMapUtil.BaseMap()
+        if hdmap is None:
+            raise ValueError("HDMap is None")
+
+        road_type: RoadType = Road.UNKNOWN
+
+        sl_point = SLPoint(s=s, l=0.0)
+        _, pt = self.SLToXY(sl_point)
+
+        point = PointENU(x=pt.x, y=pt.y, z=0.0)
+        
+        roads: RoadInfo = hdmap.GetRoads(point, 4.0)
+        
+        for road in roads:
+            if road.type != HDMap.UNKNOWN:
+                road_type = road.type
+                break
+        
+        return road_type
 
     def GetLaneBoundaryType(self, s: float) -> Tuple[LaneBoundaryType, LaneBoundaryType]:
         """
@@ -733,16 +842,22 @@ class ReferenceLine:
 
         raise NotImplementedError
 
-    def GetLaneFromS(self, s: float) -> List[LaneInfo]:
+    def GetLaneFromS(self, s: float) -> List[str]:
         """
         Get lane from s
 
-        :param float s: S
+        :param float s: s
         :returns: Lane info
-        :rtype: List[LaneInfo]
+        :rtype: List[str]
         """
-        
-        raise NotImplementedError
+
+        ref_point = self.GetReferencePoint(s)
+        lane_set = set()
+        for lane_waypoint in ref_point.lane_waypoints:
+            lane = lane_waypoint.lane
+            if lane not in lane_set:
+                lane_set.add(lane)
+        return list(lane_set)
 
     def GetDrivingWidth(self, sl_boundary: SLBoundary) -> float:
         """
@@ -753,7 +868,11 @@ class ReferenceLine:
         :rtype: float
         """
 
-        raise NotImplementedError
+        _, lane_left_width, lane_right_width = self.GetLaneWidth(sl_boundary.start_s)
+        driving_width: float = max(lane_left_width - sl_boundary.end_l, lane_right_width + sl_boundary.start_l)
+        driving_width = min(lane_left_width + lane_right_width, driving_width)
+        logger.debug(f"Driving width: {driving_width}.")
+        return driving_width
 
     def IsOnLane(self, *args) -> bool:
 
@@ -766,9 +885,18 @@ class ReferenceLine:
             :rtype: bool
             """
 
-            sl_point = args[0]
-            raise NotImplementedError
-        
+            sl_point: SLPoint = args[0]
+            if sl_point.s <= 0 or sl_point.s > self._map_path.length():
+                return False
+            left_width: float = 0.0
+            right_width: float = 0.0
+
+            tag, left_width, right_width = self.GetLaneWidth(sl_point.s)
+            if not tag:
+                return False
+            
+            return sl_point.l >= -right_width and sl_point.l <= left_width
+
         elif isinstance(args[0], Vec2d):
             """
             check if the point is on lane along reference line
@@ -779,7 +907,10 @@ class ReferenceLine:
             """
 
             vec2d_point = args[0]
-            raise NotImplementedError
+            tag, sl_point = self.XYToSL(vec2d_point)
+            if not tag:
+                return False
+            return self.IsOnLane(sl_point)
 
         elif isinstance(args[0], SLBoundary):
             """
@@ -791,7 +922,13 @@ class ReferenceLine:
             """
 
             sl_boundary = args[0]
-            raise NotImplementedError
+            if sl_boundary.end_s < 0 or sl_boundary.start_s > self.Length():
+                return False
+            middle_s: float = (sl_boundary.start_s + sl_boundary.end_s) / 2.0
+            lane_left_width: float = 0.0
+            lane_right_width: float = 0.0
+            lane_left_width, lane_right_width = self._map_path.GetLaneWidth(middle_s)
+            return sl_boundary.start_l <= lane_left_width and sl_boundary.end_l >= -lane_right_width
 
         elif hasattr(args[0], 'x') and hasattr(args[0], 'y'):
             """
@@ -821,8 +958,13 @@ class ReferenceLine:
             """
 
             sl_point: SLPoint = args[0]
-            raise NotImplementedError
-        
+            if sl_point.s <= 0 or sl_point.s > self._map_path.length():
+                return False
+            tag, road_left_width, road_right_width = self.GetRoadWidth(sl_point.s)
+            if not tag:
+                return False
+            return sl_point.l >= -road_right_width and sl_point.l <= road_left_width
+
         elif isinstance(args[0], Vec2d):
             """
             Check if Vec2d point is on road
@@ -834,8 +976,9 @@ class ReferenceLine:
             """
 
             vec2d_point: Vec2d = args[0]
-            raise NotImplementedError
-        
+            tag, sl_point = self.XYToSL(vec2d_point)
+            return tag and self.IsOnRoad(sl_point)
+
         elif isinstance(args[0], SLBoundary):
             """
             Check if SL boundary is on road
@@ -847,8 +990,12 @@ class ReferenceLine:
             """
 
             sl_boundary = args[0]
-            raise  NotImplementedError
-        
+            if sl_boundary.end_s < 0 or sl_boundary.start_s > self.Length():
+                return False
+            middle_s: float = (sl_boundary.start_s + sl_boundary.end_s) / 2.0
+            _, road_left_width, road_right_width = self.GetRoadWidth(middle_s)
+            return sl_boundary.start_l <= road_left_width and sl_boundary.end_l >= -road_right_width
+
         else:
             raise ValueError(f"Invalid arguments: {args}")
 
@@ -864,7 +1011,7 @@ class ReferenceLine:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._map_path.OverlapWith(box2d, gap)
 
     def HasOverlap(self, box: Box2d) -> bool:
         """
@@ -875,7 +1022,27 @@ class ReferenceLine:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        sl_boundary = SLBoundary()
+        if not self.GetSLBoundary(box, sl_boundary):
+            logger.error(f"Failed to get sl boundary for box: {box}")
+            return False
+        if sl_boundary.end_s < 0 or sl_boundary.start_s > self.Length():
+            return False
+        if sl_boundary.start_l * sl_boundary.end_l < 0:
+            return False
+
+        mid_s: float = (sl_boundary.start_s + sl_boundary.end_s) / 2.0
+        if mid_s < 0 or mid_s > self.Length():
+            logger.error(f"ref_s is out of range: {mid_s}")
+            return False
+        tag, lane_left_width, lane_right_width = self.GetLaneWidth(mid_s)
+        if not tag:
+            logger.error(f"Failed to get width at s = {mid_s}")
+            return False
+        if sl_boundary.start_l > 0:
+            return sl_boundary.start_l < lane_left_width
+        else:
+            return sl_boundary.end_l > -lane_right_width
 
     def Length(self) -> float:
         """
@@ -895,7 +1062,10 @@ class ReferenceLine:
         :rtype: str
         """
 
-        raise NotImplementedError
+        limit: int = min(len(self._reference_points), FLAGS_trajectory_point_num_for_debug)
+        point_num_str: str = f"point num:{len(self._reference_points)}"
+        points_str = "".join(f"{point} " for point in self._reference_points[:limit])
+        return point_num_str + points_str
 
     def GetSpeedLimitFromS(self, s: float) -> float:
         """
@@ -906,7 +1076,28 @@ class ReferenceLine:
         :rtype: float
         """
         
-        raise NotImplementedError
+        for speed_limit in self._speed_limit:
+            if s >= speed_limit.start_s and s <= speed_limit.end_s:
+                return speed_limit.speed_limit
+        map_path_point: ReferencePoint = self.GetReferencePoint(s)
+
+        speed_limit: float = FLAGS_planning_upper_speed_limit
+        speed_limit_found: bool = False
+        for lane_waypoint in map_path_point.lane_waypoints:
+            if lane_waypoint.lane is None:
+                logger.warning("lane_waypoint.lane is None")
+                continue
+            speed_limit_found = True
+            speed_limit = min(lane_waypoint.lane['speed_limit'], speed_limit)
+
+        if not speed_limit_found:
+            # use default speed limit based on road_type
+            speed_limit = FLAGS_default_city_road_speed_limit
+            road_type: RoadType = self.GetRoadType(s)
+            if road_type == RoadType.HIGHWAY:
+                speed_limit = FLAGS_default_highway_speed_limit
+
+        return speed_limit    
 
     def AddSpeedLimit(self, start_s: float, end_s: float, speed_limit: float) -> None:
         """
@@ -914,9 +1105,38 @@ class ReferenceLine:
 
         :param float start_s: Start s
         :param float end_s: End s
-        :param float speed_limit: Speed limit
+        :param float speed_limit: Speed limit to add
         """
-        self.speed_limit_.append({'start_s': start_s, 'end_s': end_s, 'speed_limit': speed_limit})
+        new_speed_limit: List[SpeedLimit] = []
+        for limit in self._speed_limit:
+            if start_s >= limit.end_s or end_s <= limit.start_s:
+                new_speed_limit.append(limit)
+            else:
+                # start_s < speed_limit.end_s && end_s > speed_limit.start_s
+                min_speed: float = min(limit.speed_limit, speed_limit)
+                if start_s > limit.start_s:
+                    new_speed_limit.append(SpeedLimit(limit.start_s, start_s, min_speed))
+                    if end_s <= limit.end_s:
+                        new_speed_limit.append(SpeedLimit(start_s, end_s, min_speed))
+                        new_speed_limit.append(SpeedLimit(end_s, limit.end_s, limit.speed_limit))
+                    else:
+                        new_speed_limit.append(SpeedLimit(start_s, limit.end_s, min_speed))
+                else:
+                    new_speed_limit.append(SpeedLimit(start_s, limit.start_s, speed_limit))
+                    if end_s <= limit.end_s:
+                        new_speed_limit.append(SpeedLimit(limit.start_s, end_s, min_speed))
+                        new_speed_limit.append(SpeedLimit(end_s, limit.end_s, limit.speed_limit))
+                    else:
+                        new_speed_limit.append(SpeedLimit(limit.start_s, limit.end_s, min_speed))
+                start_s = limit.end_s
+                end_s = max(end_s, limit.end_s)
+        self._speed_limit.clear()
+        if end_s > start_s:
+            new_speed_limit.append(SpeedLimit(start_s, end_s, speed_limit))
+        for limit in new_speed_limit:
+            if limit.start_s < limit.end_s:
+                self._speed_limit.append(limit)
+        self._speed_limit.sort(key=lambda x: (x.start_s, x.end_s, x.speed_limit))
 
     @property
     def GetPriority(self) -> int:
@@ -938,6 +1158,7 @@ class ReferenceLine:
 
         self._priority = priority
 
+    @property
     def GetMapPath(self) -> Path:
         """
         Get map path

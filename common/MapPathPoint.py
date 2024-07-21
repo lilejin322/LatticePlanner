@@ -1,6 +1,6 @@
 from common import Vec2d
 from typing import List
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 @dataclass
 class LaneWaypoint:
@@ -8,7 +8,7 @@ class LaneWaypoint:
     LaneWaypoint class
     """
 
-    lane: str
+    lane: dict = field(default_factory=dict)
     s: float = 0.0
     l: float = 0.0
 
