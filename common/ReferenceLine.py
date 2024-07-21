@@ -1,7 +1,7 @@
 from copy import deepcopy
 from common.Vec2d import Vec2d, kMathEpsilon
 from common.ReferencePoint import ReferencePoint
-from typing import List, Tuple
+from typing import List, Tuple, Any
 from protoclass.PathPoint import PathPoint
 from dataclasses import dataclass, field
 from common.Box2d import Box2d
@@ -13,7 +13,7 @@ from logging import Logger
 from bisect import bisect_left, bisect_right
 from CartesianFrenetConverter import CartesianFrenetConverter
 from scipy.optimize import minimize_scalar
-from math import sin, cos
+from math import sin, cos, hypot, pi, fmod
 from protoclass.SLBoundary import SLBoundary
 from common.MapPathPoint import MapPathPoint, LaneWaypoint
 from protoclass.PointENU import PointENU
@@ -21,8 +21,15 @@ from config import FLAGS_default_highway_speed_limit, FLAGS_trajectory_point_num
                    FLAGS_planning_upper_speed_limit
 from protoclass.SLBoundary import SLPoint
 from enum import Enum
+from common.Path import Path as MapPath
 
 logger = Logger("ReferenceLine")
+kMathEpsilon = 1e-10
+
+@dataclass
+class InterpolatedIndex:
+    id: int = 0
+    offset: float = 0.0
 
 class RoadType(Enum):
     UNKNOWN = 0
@@ -293,7 +300,7 @@ class ReferenceLine:
             return False
 
     @property
-    def map_path(self) -> Path:
+    def map_path(self) -> MapPath:
         """
         Get map path
 
@@ -494,6 +501,19 @@ class ReferenceLine:
         it_lower: int = bisect_left(accumulated_s, s)
         return it_lower
 
+    @staticmethod
+    def DistanceXY(u: Any, v: Any) -> float:
+        """
+        Distance XY
+
+        :param Any u: U
+        :param Any v: V
+        :returns: Distance XY
+        :rtype: float
+        """
+
+        return hypot(u.x - v.x, u.y - v.y)
+
     def GetNearestReferencePoint(self, *args) -> ReferencePoint:
 
         if isinstance(args[0], Vec2d):
@@ -509,7 +529,7 @@ class ReferenceLine:
             min_dist: float = float('inf')
             min_index: int = 0
             for i, point in enumerate(self._reference_points):
-                distance: float = DistanceXY(xy, self._reference_points[i])
+                distance: float = self.DistanceXY(xy, self._reference_points[i])
                 if distance < min_dist:
                     min_dist = distance
                     min_index = i
@@ -701,7 +721,7 @@ class ReferenceLine:
 
             return True
 
-        elif isinstance(args[0], Polygon):
+        else:  # isinstance(args[0], Polygon):
             """
             Get the SL Boundary of the map-polygon.
 
@@ -713,6 +733,7 @@ class ReferenceLine:
             :rtype: bool
             """
 
+            raise NotImplementedError("This part has not been implemented due to the lack of Polygon class from hdmap module")
             polygon = args[0]
             start_s: float = float('inf')
             end_s: float = float('-inf')
@@ -904,7 +925,7 @@ class ReferenceLine:
 
         point = PointENU(x=pt.x, y=pt.y, z=0.0)
         
-        roads: RoadInfo = hdmap.GetRoads(point, 4.0)
+        roads = hdmap.GetRoads(point, 4.0)
         
         for road in roads:
             if road.type != RoadType.UNKNOWN:
@@ -1241,7 +1262,7 @@ class ReferenceLine:
         self._priority = priority
 
     @property
-    def GetMapPath(self) -> Path:
+    def GetMapPath(self) -> MapPath:
         """
         Get map path
 
@@ -1273,6 +1294,52 @@ class ReferenceLine:
         return x
 
     @staticmethod
+    def NormalizeAngle(angle: float) -> float:
+        """
+        Normalize the angle to [-pi, pi]
+
+        :param float angle: the angle to normalize
+        :returns: the normalized angle
+        :rtype: float
+        """
+
+        a: float = fmod(angle + pi, 2 * pi)
+        if a < 0.0:
+            a += 2 * pi
+        return a - pi
+
+    @staticmethod
+    def slerp(a0: float, t0: float, a1: float, t1: float, t: float) -> float:
+        """
+        Slerp function
+
+        :param float a0: a0
+        :param float t0: t0
+        :param float a1: a1
+        :param float t1: t1
+        :param float t: t
+        :returns: Slerp result
+        :rtype: float
+        """
+
+        if abs(t1 - t0) <= kMathEpsilon:
+            logger.debug("input time difference is too small")
+            return ReferenceLine.NormalizeAngle(a0)
+
+        a0_n = ReferenceLine.NormalizeAngle(a0)
+        a1_n = ReferenceLine.NormalizeAngle(a1)
+        d = a1_n - a0_n
+
+        if d > pi:
+            d = d - 2 * pi
+        elif d < -pi:
+            d = d + 2 * pi
+
+        r = (t - t0) / (t1 - t0)
+        a = a0_n + d * r
+        return ReferenceLine.NormalizeAngle(a)
+
+    @staticmethod
     def Interpolate(p0: ReferencePoint, s0: float, p1: ReferencePoint, s1: float, s: float) -> ReferencePoint:
         """
         Linearly interpolate p0 and p1 by s0 and s1.
@@ -1298,7 +1365,7 @@ class ReferenceLine:
 
         x: float = ReferenceLine.lerp(p0.x, s0, p1.x, s1, s)
         y: float = ReferenceLine.lerp(p0.y, s0, p1.y, s1, s)
-        heading: float = slerp(p0.heading, s0, p1.heading, s1, s)
+        heading: float = ReferenceLine.slerp(p0.heading, s0, p1.heading, s1, s)
         kappa: float = ReferenceLine.lerp(p0.kappa, s0, p1.kappa, s1, s)
         dkappa: float = ReferenceLine.lerp(p0.dkappa, s0, p1.dkappa, s1, s)
         waypoints: List[LaneWaypoint] = []
