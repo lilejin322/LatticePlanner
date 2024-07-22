@@ -1,8 +1,54 @@
-from common.Vec2d import Vec2d
+from common.Vec2d import Vec2d, kMathEpsilon
 from typing import List, Any
-from math import hypot
+from math import hypot, cos, sin, fmod, pi
 from common.LineSegment2d import LineSegment2d
 from common.AABox2d import AABox2d
+from common.Polygon2d import Polygon2d
+from logging import Logger
+
+logger: Logger = Logger("Box2d")
+
+def NormalizeAngle(angle: float) -> float:
+    """
+    Normalize the angle to [-pi, pi]
+
+    :param float angle: the angle to normalize
+    :returns: the normalized angle
+    :rtype: float
+    """
+
+    a: float = fmod(angle + pi, 2 * pi)
+    if a < 0.0:
+        a += 2 * pi
+    return a - pi
+
+def PtSegDistance(query_x: float, query_y: float, start_x: float, start_y: float, end_x: float, end_y: float, length: float):
+    """
+    Compute the distance between a point and a line segment
+
+    :param float query_x: The x-coordinate of the point
+    :param float query_y: The y-coordinate of the point
+    :param float start_x: The x-coordinate of the start point of the line segment
+    :param float start_y: The y-coordinate of the start point of the line segment
+    :param float end_x: The x-coordinate of the end point of the line segment
+    :param float end_y: The y-coordinate of the end point of the line segment
+    :param float length: The length of the line segment
+    :returns: The distance between the point and the line segment
+    :rtype: float
+    """
+
+    x0 = query_x - start_x
+    y0 = query_y - start_y
+    dx = end_x - start_x
+    dy = end_y - start_y
+    proj = x0 * dx + y0 * dy
+    
+    if proj <= 0.0:
+        return hypot(x0, y0)
+    if proj >= length ** 2:
+        return hypot(x0 - dx, y0 - dy)
+
+    return abs(x0 * dy - y0 * dx) / length
 
 class Box2d:
     """
@@ -18,6 +64,12 @@ class Box2d:
 
     def __init__(self, *args):
 
+        self._corners: List[Vec2d] = []
+        self._max_x: float = float('-inf')
+        self._min_x: float = float('inf')
+        self._max_y: float = float('-inf')
+        self._min_y: float = float('inf')
+
         if len(args) == 4:
             """
             Constructor which takes the center, heading, length and width.
@@ -29,8 +81,18 @@ class Box2d:
             """
 
             center, heading, length, width = args
-            raise NotImplementedError
-        
+            self._center = center
+            self._length = length
+            self._width = width
+            self._half_length = length / 2.0
+            self._half_width = width / 2.0
+            self._heading = heading
+            self._cos_heading = cos(heading)
+            self._sin_heading = sin(heading)
+            assert self._length >= -kMathEpsilon
+            assert self.width >= -kMathEpsilon
+            self.InitCorners()
+
         if len(args) == 5:
             """
             Constructor which takes the point on the axis, front length, back length, heading, and width.
@@ -43,7 +105,18 @@ class Box2d:
             """
 
             point, heading, front_length, back_length, width = args
-            raise NotImplementedError
+            self._length = front_length + back_length
+            self._width = width
+            self._half_length = length / 2.0
+            self._half_width = width / 2.0
+            self._heading = heading
+            self._cos_heading = cos(heading)
+            self._sin_heading = sin(heading)
+            assert self._length >= -kMathEpsilon
+            assert self._width >= -kMathEpsilon
+            delta_length: float = (front_length - back_length) / 2.0
+            self._center = Vec2d(point.x + self._cos_heading * delta_length, point.y + self._sin_heading * delta_length)
+            self.InitCorners()
 
         if len(args) == 2:
             """
@@ -54,8 +127,18 @@ class Box2d:
             """
             
             axis, width = args
-            raise NotImplementedError
-        
+            self._center = axis.center
+            self._length = axis.length
+            self._width = width
+            self._half_length = axis.length / 2.0
+            self._half_width = width / 2.0
+            self._heading = axis.heading
+            self._cos_heading = axis.cos_heading
+            self._sin_heading = axis.sin_heading
+            assert self._length >= -kMathEpsilon
+            assert self._width >= -kMathEpsilon
+            self.InitCorners()
+
         if len(args) == 1:
             """
             Constructor which takes an AABox2d (axes-aligned box).
@@ -63,7 +146,17 @@ class Box2d:
             :param AABox2d aabox: The input AABox2d.
             """
 
-            aabox = args[0]
+            aabox: AABox2d = args[0]
+            self._center = aabox.center
+            self._length = aabox.length
+            self._width = aabox.width
+            self._half_length = aabox.half_length
+            self._half_width = aabox.half_width
+            self._heading = 0.0
+            self._cos_heading = 1.0
+            self._sin_heading = 0.0
+            assert self._length >= -kMathEpsilon
+            assert self._width >= -kMathEpsilon
 
     @staticmethod
     def CreateAABox(one_corner: Vec2d, opposite_corner: Vec2d) -> 'Box2d':
@@ -76,7 +169,11 @@ class Box2d:
         :rtype: Box2d
         """
 
-        raise NotImplementedError
+        x1: float = min(one_corner.x, opposite_corner.x)
+        x2: float = max(one_corner.x, opposite_corner.x)
+        y1: float = min(one_corner.y, opposite_corner.y)
+        y2: float = max(one_corner.y, opposite_corner.y)
+        return Box2d(Vec2d((x1 + x2) / 2.0, (y1 + y2) / 2.0), 0.0, x2 - x1, y2 - y1)
 
     @property
     def center(self) -> Vec2d:
@@ -218,7 +315,7 @@ class Box2d:
         :rtype: List[Vec2d]
         """
 
-        raise NotImplementedError
+        return self._corners
 
     def IsPointIn(self, point: Vec2d) -> bool:
         """
@@ -229,7 +326,11 @@ class Box2d:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        x0: float = point.x - self._center.x
+        y0: float = point.y - self._center.y
+        dx: float = abs(x0 * self._cos_heading + y0 * self._sin_heading)
+        dy: float = abs(-x0 * self._sin_heading + y0 * self._cos_heading)
+        return (dx <= self._half_length + kMathEpsilon) and (dy <= self._half_width + kMathEpsilon)
 
     def IsPointOnBoundary(self, point: Vec2d) -> bool:
         """
@@ -240,7 +341,25 @@ class Box2d:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        x0: float = point.x - self._center.x
+        y0: float = point.y - self._center.y
+        dx: float = abs(x0 * self._cos_heading + y0 * self._sin_heading)
+        dy: float = abs(x0 * self._sin_heading - y0 * self._cos_heading)
+        return (abs(dx - self._half_length) <= kMathEpsilon and dy <= self._half_width + kMathEpsilon) \
+            or (abs(dy - self._half_width) <= kMathEpsilon and dx <= self._half_length + kMathEpsilon)
+
+    def CrossProd(start_point: Vec2d, end_point_1: Vec2d, end_point_2: Vec2d) -> float:
+        """
+        CrossProd util function
+
+        :param Vec2d start_point: The start point
+        :param Vec2d end_point_1: The first end point
+        :param Vec2d end_point_2: The second end point
+        :returns: The cross product of the vectors
+        :rtype: float
+        """
+
+        return (end_point_1 - start_point).CrossProd(end_point_2 - start_point)
 
     def DistanceTo(self, param: Any) -> float:
 
@@ -253,7 +372,16 @@ class Box2d:
             :rtype: float
             """
 
-            raise NotImplementedError
+            point: Vec2d = param
+            x0: float = point.x - self._center.x
+            y0: float = point.y - self._center.y
+            dx: float = abs(x0 * self._cos_heading + y0 * self._sin_heading) - self._half_length
+            dy: float = abs(x0 * self._sin_heading - y0 * self._cos_heading) - self._half_width
+            if dx <= 0:
+                return max(0.0, dy)
+            if dy <= 0:
+                return dx
+            return hypot(dx, dy)
 
         elif isinstance(param, LineSegment2d):
             """
@@ -264,8 +392,73 @@ class Box2d:
             :rtype: float 
             """
 
-            raise NotImplementedError
-        
+            line_segment: LineSegment2d = param
+            if line_segment.length <= kMathEpsilon:
+                return self.DistanceTo(line_segment.start)
+            ref_x1: float = line_segment.start.x - self._center.x
+            ref_y1: float = line_segment.start.y - self._center.y
+            x1: float = ref_x1 * self._cos_heading + ref_y1 * self._sin_heading
+            y1: float = ref_x1 * self._sin_heading - ref_y1 * self._cos_heading
+            box_x: float = self._half_length
+            box_y: float = self._half_width
+            gx1: float = 1 if x1 >= box_x else -1 if x1 <= -box_x else 0
+            gy1: float = 1 if y1 >= box_y else -1 if y1 <= -box_y else 0
+            if gx1 == 0 and gy1 == 0:
+                return 0.0
+            ref_x2: float = line_segment.end.x - self._center.x
+            ref_y2: float = line_segment.end.y - self._center.y
+            x2: float = ref_x2 * self._cos_heading + ref_y2 * self._sin_heading
+            y2: float = ref_x2 * self._sin_heading - ref_y2 * self._cos_heading
+            gx2: float = 1 if x2 >= box_x else -1 if x2 <= -box_x else 0
+            gy2: float = 1 if y2 >= box_y else -1 if y2 <= -box_y else 0
+            if gx2 == 0 and gy2 == 0:
+                return 0.0
+            if gx1 < 0 or (gx1 == 0 and gx2 < 0):
+                x1 = -x1
+                gx1 = -gx1
+                x2 = -x2
+                gx2 = -gx2
+            if gy1 < 0 or (gy1 == 0 and gy2 < 0):
+                y1 = -y1
+                gy1 = -gy1
+                y2 = -y2
+                gy2 = -gy2
+            if gx1 < gy1 or (gx1 == gy1 and gx2 == gy2):
+                x1, y1 = y1, x1
+                gx1, gy1 = gy1, gx1
+                x2, y2 = y2, x2
+                gx2, gy2 = gy2, gx2
+                box_x, box_y = box_y, box_x
+            if gx1 == 1 and gy1 == 1:
+                if gx2 * 3 + gy2 == 4:
+                    return PtSegDistance(box_x, box_y, x1, y1, x2, y2, line_segment.length())
+                if gx2 * 3 + gy2 == 3:
+                    return x2 - box_x if x1 > x2 else PtSegDistance(box_x, box_y, x1, y1, x2,
+                                                                    y2, line_segment.length())
+                if gx2 * 3 + gy2 == 2:
+                    return PtSegDistance(box_x, -box_y, x1, y1, x2, y2, line_segment.length()) \
+                           if x1 > x2 else PtSegDistance(box_x, box_y, x1, y1, x2, y2, line_segment.length())
+                if gx2 * 3 + gy2 == -1:
+                    return 0.0 if self.CrossProd(Vec2d(x1, y1), Vec2d(x2, y2), Vec2d(box_x, -box_y)) >= 0.0 \
+                           else PtSegDistance(box_x, -box_y, x1, y1, x2, y2, line_segment.length())
+                if gx2 * 3 + gy2 == -4:
+                    return PtSegDistance(box_x, -box_y, x1, y1, x2, y2, line_segment.length()) if self.CrossProd(
+                           Vec2d(x1, y1), Vec2d(x2, y2), Vec2d(box_x, -box_y)) <= 0.0 else 0.0 \
+                           if self.CrossProd(Vec2d(x1, y1), Vec2d(x2, y2), Vec2d(-box_x, box_y)) <= 0.0 else \
+                           PtSegDistance(-box_x, box_y, x1, y1, x2, y2, line_segment.length())
+            else:
+                if gx2 * 3 + gy2 == 4:
+                    return x1 - box_x if x1 < x2 else PtSegDistance(box_x, box_y, x1, y1, x2, y2, line_segment.length())
+                if gx2 * 3 + gy2 == 3:
+                    return min(x1, x2) - box_x
+                if gx2 * 3 + gy2 == 1 or gx2 * 3 + gy2 == -2:
+                    return 0.0 if self.CrossProd(Vec2d(x1, y1), Vec2d(x2, y2), Vec2d(box_x, box_y)) <= 0.0 else \
+                           PtSegDistance(box_x, box_y, x1, y1, x2, y2, line_segment.length())
+                if gx2 * 3 + gy2 == -3:
+                    return 0.0
+            logger.error(f"unimplemented state: '{gx1}' '{gy1}' '{gx2}' '{gy2}'")
+            return 0.0
+
         elif isinstance(param, Box2d):
             """
             Determines the distance between two boxes
@@ -275,7 +468,8 @@ class Box2d:
             :rtype: float 
             """
 
-            raise NotImplementedError
+            box: Box2d = param
+            return Polygon2d(box).DistanceTo(self)
         
         else:
 
@@ -292,8 +486,55 @@ class Box2d:
             :rtype: bool
             """
 
-            raise NotImplementedError
-        
+            line_segment: LineSegment2d = param
+            if line_segment.length <= kMathEpsilon:
+                return self.IsPointIn(line_segment.start)
+            if (max(line_segment.start.x, line_segment.end.x) < self.min_x) or \
+               (min(line_segment.start.x, line_segment.end.x) > self.max_x) or \
+               (max(line_segment.start.y, line_segment.end.y) < self.min_y) or \
+               (min(line_segment.start.y, line_segment.end.y) > self.max_y):
+                return False
+            # Construct coordinate system with origin point as left_bottom corner of
+            # Box2d, y axis along direction of heading.
+            x_axis: Vec2d = Vec2d(self._sin_heading, -self._cos_heading)
+            y_axis: Vec2d = Vec2d(self._cos_heading, self._sin_heading)
+            # corners_[2] is the left bottom point of the box.
+            start_v: Vec2d = Vec2d(line_segment.start - self._corners[2])
+            # "start_point" is the start point of "line_segment" mapped in the new
+            # coordinate system.
+            start_point: Vec2d = Vec2d(start_v.InnerProd(x_axis), start_v.InnerProd(y_axis))
+            # Check if "start_point" is inside the box.
+            if self.is_inside_rectangle(start_point):
+                return True
+            # Check if "end_point" is inside the box.
+            end_v: Vec2d = Vec2d(line_segment.end - self._corners[2])
+            end_point: Vec2d = Vec2d(end_v.InnerProd(x_axis), end_v.InnerProd(y_axis))
+            if self.is_inside_rectangle(end_point):
+                return True
+            # Exclude the case when the 2 points of "line_segment" are at the same side
+            # of rectangle.
+            if start_point.x < 0.0 and end_point.x < 0.0:
+                return False
+            if start_point.y < 0.0 and end_point.y < 0.0:
+                return False
+            if start_point.x > self._width and end_point.x > self._width:
+                return False
+            if start_point.y > self._length and end_point.y > self._length:
+                return False
+            # Check if "line_segment" intersects with box.
+            line_direction: Vec2d = line_segment.end - line_segment.start
+            normal_vec: Vec2d = Vec2d(line_direction.y, -line_direction.x)
+            p1: Vec2d = self._center - line_segment.start
+            diagonal_vec: Vec2d = self._center - self._corners[0]
+            # if project_p1 < projection of diagonal, "line_segment" intersects with box.
+            project_p1: float = abs(p1.InnerProd(normal_vec))
+            if abs(diagonal_vec.InnerProd(normal_vec)) >= project_p1:
+                return True
+            diagonal_vec = self._center - self._corners[1]
+            if abs(diagonal_vec.InnerProd(normal_vec)) >= project_p1:
+                return True
+            return False
+
         elif isinstance(param, Box2d):
             """
             Determines whether these two boxes overlap
@@ -303,8 +544,44 @@ class Box2d:
             :rtype: bool
             """
 
-            raise NotImplementedError
-        
+            box: Box2d = param
+            if box.max_x < self.min_x or box.min_x > self.max_x or box.max_y < self.min_y or box.min_y > self.max_y:
+                return False
+            
+            shift_x: float = box.center_x - self._center.x
+            shift_y: float = box.center_y - self._center.y
+
+            dx1: float = self._cos_heading * self._half_length
+            dy1: float = self._sin_heading * self._half_length
+            dx2: float = self._sin_heading * self._half_width
+            dy2: float = -self._cos_heading * self._half_width
+            dx3: float = box.cos_heading * box.half_length
+            dy3: float = box.sin_heading * box.half_length
+            dx4: float = box.sin_heading * box.half_width
+            dy4: float = -box.cos_heading * box.half_width
+
+            condition1 = (abs(shift_x * self._cos_heading + shift_y * self._sin_heading) <= 
+                         abs(dx3 * self._cos_heading + dy3 * self._sin_heading) + 
+                         abs(dx4 * self._cos_heading + dy4 * self._sin_heading) + 
+                         self._half_length)
+    
+            condition2 = (abs(shift_x * self._sin_heading - shift_y * self._cos_heading) <=
+                         abs(dx3 * self._sin_heading - dy3 * self._cos_heading) +
+                         abs(dx4 * self._sin_heading - dy4 * self._cos_heading) +
+                         self._half_width)
+    
+            condition3 = (abs(shift_x * box.cos_heading + shift_y * box.sin_heading) <=
+                         abs(dx1 * box.cos_heading + dy1 * box.sin_heading) +
+                         abs(dx2 * box.cos_heading + dy2 * box.sin_heading) +
+                         box.half_length)
+    
+            condition4 = (abs(shift_x * box.sin_heading - shift_y * box.cos_heading) <=
+                         abs(dx1 * box.sin_heading - dy1 * box.cos_heading) +
+                         abs(dx2 * box.sin_heading - dy2 * box.cos_heading) +
+                         box.half_width)
+
+            return condition1 and condition2 and condition3 and condition4
+
         else:
 
             raise ValueError("Unknown param type")
@@ -317,7 +594,11 @@ class Box2d:
         :rtype: AABox2d
         """
 
-        raise NotImplementedError
+        dx1: float = abs(self._cos_heading * self._half_length)
+        dy1: float = abs(self._sin_heading * self._half_length)
+        dx2: float = abs(self._sin_heading * self._half_width)
+        dy2: float = abs(self._cos_heading * self._half_width)
+        return AABox2d(self._center, (dx1 + dx2) * 2.0, (dy1 + dy2) * 2.0)
 
     def RotateFromCenter(self, rotate_angle: float) -> None:
         """
@@ -326,7 +607,10 @@ class Box2d:
         :param float rotate_angle: Angle to rotate.
         """
         
-        raise NotImplementedError
+        self._heading = NormalizeAngle(self._heading + rotate_angle)
+        self._cos_heading = cos(self._heading)
+        self._sin_heading = sin(self._heading)
+        self.InitCorners()
 
     def Shift(self, shift_vec: Vec2d) -> None:
         """
@@ -335,7 +619,14 @@ class Box2d:
         :param Vec2d shift_vec: The vector determining the shift
         """
 
-        raise NotImplementedError
+        self._center += shift_vec
+        for i in range(4):
+            self._corners[i] += shift_vec
+        for corner in self._corners:
+            self._max_x = max(corner.x, self._max_x)
+            self._min_x = min(corner.x, self._min_x)
+            self._max_y = max(corner.y, self._max_y)
+            self._min_y = min(corner.y, self._min_y)
 
     def LongitudinalExtend(self, extension_length: float) -> None:
         """
@@ -344,7 +635,9 @@ class Box2d:
         :param float extension_length: the length to extend
         """
 
-        raise NotImplementedError
+        self._length += extension_length
+        self._half_length += extension_length / 2.0
+        self.InitCorners()
 
     def LateralExtend(self, extension_length: float) -> None:
         """
@@ -353,7 +646,9 @@ class Box2d:
         :param float extension_length: the length to extend
         """
         
-        raise NotImplementedError
+        self._width += extension_length
+        self._half_width += extension_length / 2.0
+        self.InitCorners()
 
     def __str__(self) -> str:
         """
@@ -363,14 +658,29 @@ class Box2d:
         :rtype: str
         """
 
-        raise NotImplementedError
+        return f"box2d: (center: {self._center}, heading: {self._heading}, length: {self._length}, width: {self._width}"
 
     def InitCorners(self) -> None:
         """
         Initialize the corners of the box
         """
 
-        raise NotImplementedError
+        dx1: float = self._cos_heading * self._half_length
+        dy1: float = self._sin_heading * self._half_length
+        dx2: float = self._sin_heading * self._half_width
+        dy2: float = -self._cos_heading * self._half_width
+
+        self._corners.clear()
+        self._corners.append(Vec2d(self._center.x + dx1 + dx2, self._center.y + dy1 + dy2))
+        self._corners.append(Vec2d(self._center.x + dx1 - dx2, self._center.y + dy1 - dy2))
+        self._corners.append(Vec2d(self._center.x - dx1 - dx2, self._center.y - dy1 - dy2))
+        self._corners.append(Vec2d(self._center.x - dx1 + dx2, self._center.y - dy1 + dy2))
+
+        for corner in self._corners:
+            self._max_x = max(corner.x, self._max_x)
+            self._min_x = min(corner.x, self._min_x)
+            self._max_y = max(corner.y, self._max_y)
+            self._min_y = min(corner.y, self._min_y)
 
     @property
     def max_x(self) -> float:
