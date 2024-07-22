@@ -5,7 +5,7 @@ from protoclass.DecisionResult import ObjectDecisionType, ObjectIgnore, ObjectSt
                                       ObjectYield, ObjectOvertake, ObjectNudge, ObjectAvoid, ObjectSidePass
 from protoclass.PredictionObstacles import PredictionObstacles
 from protoclass.PerceptionObstacle import PerceptionObstacle
-from common.SLBoundary import SLBoundary
+from protoclass.SLBoundary import SLBoundary
 from common.STBoundary import STBoundary
 from common.Vec2d import Vec2d
 from common.STPoint import STPoint
