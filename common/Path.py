@@ -29,8 +29,8 @@ def FindLaneSegment(p1: MapPathPoint, p2: MapPathPoint) -> Tuple[bool, LaneSegme
             if wp2.lane is None:
                 continue
             if wp1.lane['id'] == wp2.lane['id'] and wp1.s < wp2.s:
-                return (True, LaneSegment(wp1.lane, wp1.s, wp2.s))
-    return (False, None)
+                return True, LaneSegment(wp1.lane, wp1.s, wp2.s)
+    return False, None
 
 @dataclass
 class PathApproximation:
@@ -226,13 +226,10 @@ class Path:
         sample_s: float = 0.0
         segment_end_s: float = -1.0
         segment_start_s: float = -1.0
-        waypoint_s: float = 0.0
-        left_width: float = 0.0
-        right_width: float = 0.0
         cur_waypoint: LaneWaypoint = None
         is_reach_to_end: bool = False
         path_point_index: int = 0
-        for i in range (self._num_sample_points):
+        for i in range(self._num_sample_points):
             # Find the segment at the position of "sample_s".
             while segment_end_s < sample_s and (not is_reach_to_end):
                 cur_point = self._path_points[path_point_index]
@@ -309,7 +306,7 @@ class Path:
             ref_point = self._path_points[index.id]
             if abs(index.offset) > kMathEpsilon:
                 delta:Vec2d = self._unit_directions[index.id] * index.offset
-                point: MapPathPoint = MapPathPoint(Vec2d(ref_point.x() + delta.x(), ref_point.y() + delta.y()), ref_point.heading)
+                point: MapPathPoint = MapPathPoint(Vec2d(ref_point.x + delta.x, ref_point.y + delta.y), ref_point.heading)
                 if index.id < self._num_segments and ref_point.lane_waypoints:
                     lane_segment: LaneSegment = self._lane_segments_to_next_point[index.id]
                     ref_lane_waypoint: LaneWaypoint = ref_point.lane_waypoints[0]
@@ -370,7 +367,7 @@ class Path:
         assert self._num_points > 0, "self._num_points is less than 0"
         if s >= self._length:
             return InterpolatedIndex(self._num_points - 1, 0.0)
-        sample_id: int = s // kSampleDistance
+        sample_id: int = int(s // kSampleDistance)
         if sample_id >= self._num_sample_points:
             return InterpolatedIndex(self._num_points - 1, 0.0)
         next_sample_id: int = sample_id + 1
@@ -578,7 +575,6 @@ class Path:
         # Find the segment at the position of "accumulate_s".
         left_index: int = 0
         right_index: int = self._num_segments
-        mid_index: int = 0
         # Find the segment with projection of the given point on it.
         while right_index > left_index + 1:
             mid_index = self.FindIndex(left_index, right_index, warm_start_s)
@@ -615,9 +611,7 @@ class Path:
         :returns: (bool, float heading)
         :rtype: Tuple[bool, float]
         """
-        
-        s: float = 0.0
-        l: float = 0.0
+
         tag, s, l, _ = self.GetProjection(point)
         if tag:
             heading = self.GetSmoothPoint(s).heading
@@ -953,15 +947,13 @@ class Path:
         :rtype: bool
         """
 
-        accumulate_s: float = 0.0
-        lateral: float = 0.0
         tag, accumulate_s, lateral, _ = self.GetProjection(point)
         if not tag:
             return False
         tag, lane_left_width, lane_right_width = self.GetLaneWidth(accumulate_s)
         if not tag:
             return False
-        if lateral < lane_left_width and lateral > -lane_right_width:
+        if lane_left_width > lateral > -lane_right_width:
             return True
         return False
 
@@ -971,7 +963,7 @@ class Path:
 
         :param Box2d box: Box
         :param float width: Width
-        :returns: True if overlap, False otherwise
+        :returns: True if overlapped, False otherwise
         :rtype: bool
         """
 
@@ -1010,20 +1002,20 @@ class Path:
             return 0.0
         if s <= 0.0:
             return samples[0]
-        idx: int = s // kSampleDistance
+        idx: int = int(s // kSampleDistance)
         if idx >= self._num_sample_points - 1:
             return samples[-1]
         ratio: float = s - idx * kSampleDistance / kSampleDistance
         return samples[idx] * (1.0 - ratio) + samples[idx + 1] * ratio
 
-    def GetAllOverlaps(self, type: str) -> List[PathOverlap]:
+    def GetAllOverlaps(self, tp: str) -> List[PathOverlap]:
         """
         Get all overlaps by type
 
         NOTE: This part has been modified, the cpp source code using callback function
         Here we manipulate the lane structure as dict()
 
-        :param str type: Overlap Object Type
+        :param str tp: Overlap Object Type
         :returns: List of path overlaps
         :rtype: List[PathOverlap]
         """
@@ -1043,9 +1035,9 @@ class Path:
                     ref_s = s - lane_segment.start_s
                     adjusted_start_s = max(lane_overlap_info.get('start_s'), lane_segment.start_s) + ref_s
                     adjusted_end_s = min(lane_overlap_info.get('end_s'), lane_segment.end_s) + ref_s
-                    for object in overlap.get('object'):
-                        if object.get('id') != lane_segment.lane.get('id') and object.get('type') == type:
-                            overlaps_by_id[object.get('id')].append((adjusted_start_s, adjusted_end_s))
+                    for obj in overlap.get('object'):
+                        if obj.get('id') != lane_segment.lane.get('id') and obj.get('type') == tp:
+                            overlaps_by_id[obj.get('id')].append((adjusted_start_s, adjusted_end_s))
             s += lane_segment.end_s - lane_segment.start_s
 
         for object_id, segments in overlaps_by_id.items():
