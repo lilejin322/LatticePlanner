@@ -12,6 +12,32 @@ from bisect import bisect_left, bisect_right
 
 kSampleDistance: float = 0.25
 
+def NormalizeAngle(angle: float) -> float:
+    """
+    Normalize_Angle
+
+    :param float angle: angle
+    :returns: normalized angle
+    :rtype: float
+    """
+
+    a: float = math.fmod(angle + math.pi, 2.0 * math.pi)
+    if a < 0.0:
+        a += 2.0 * math.pi
+    return a - math.pi
+
+def AngleDiff(src: float, dst: float) -> float:
+    """
+    Compute angle difference
+
+    :param float src: from angle
+    :param float dst: to angle
+    :returns: angle difference
+    :rtype: float
+    """
+
+    return NormalizeAngle(dst - src)
+
 def FindLaneSegment(p1: MapPathPoint, p2: MapPathPoint) -> Tuple[bool, LaneSegment]:
     """
     Find lane segment
