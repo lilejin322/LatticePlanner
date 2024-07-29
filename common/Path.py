@@ -61,7 +61,364 @@ def FindLaneSegment(p1: MapPathPoint, p2: MapPathPoint) -> Tuple[bool, LaneSegme
 @dataclass
 class PathApproximation:
     # Define properties as per the original PathApproximation structure
-    pass
+    
+    def __init__(self, path: 'Path', max_error: float):
+        """
+        Constructor
+
+        :param Path path: Path
+        :param float max_error: Max error
+        """
+
+        self._max_error = max_error
+        self._max_sqr_error = max_error ** 2
+        self.Init(path)
+        self._original_ids: List[int] = []
+        self._num_points: int = 0
+        self._segments: List[LineSegment2d] = []
+        self._max_error_per_segment: List[float] = []
+
+        self._original_projections: List[float] = []
+
+        # Projection of points onto the diluated segments.
+        self._projections: List[float] = []
+        self._num_projection_samples: int = 0
+
+        # TODO(All): use direction change checks to early stop.
+
+        # The original_projection is the projection of original points onto the
+        # diluated segments.
+        self.original_projections: List[float] = []
+        # max_p_to_left[i] = max(p[0], p[1], ... p[i]).
+        # min_p_to_right[i] = min(p[i], p[i + 1], ... p[size - 1]).
+        self._max_original_projections_to_left: List[float] = []
+        self._min_original_projections_to_right: List[float] = []
+        self._sampled_max_original_projections_to_left: List[int] = []
+
+    @property
+    def max_error(self) -> float:
+        """
+        Return max error
+
+        :returns: Max error
+        :rtype: float
+        """
+
+        return self._max_error
+    
+    def Init(self, path: 'Path') -> None:
+        """
+        Init from path
+
+        :param Path path: Path
+        """
+
+        self.InitDilute(path)
+        self.InitProjections(path)
+
+    def InitDilute(self, path: 'Path') -> None:
+        """
+        Init dilute method
+
+        :param Path path: Path
+        """
+
+        num_original_points: int = path.num_points
+        self._original_ids.clear()
+        last_idx: int = 0
+        while last_idx < num_original_points - 1:
+            self._original_ids.append(last_idx)
+            next_idx: int = last_idx + 1
+            delta: int = 2
+            while last_idx + delta < num_original_points:
+                if not self.is_within_max_error(path, last_idx + delta):
+                    break
+                next_idx = last_idx + delta
+                delta *= 2
+            while delta > 0:
+                if next_idx + delta < num_original_points and self.is_within_max_error(path, next_idx + delta):
+                    next_idx += delta
+                delta //= 2
+            last_idx = next_idx    
+        self._original_ids.append(last_idx)
+        self._num_points = len(self._original_ids)
+        if self._num_points == 0:
+            return
+        
+        self._segments.clear()
+        for i in range(self._num_points - 1):
+            self._segments.append(LineSegment2d(path.path_points[self._original_ids[i]],
+                                                path.path_points[self._original_ids[i + 1]]))
+        self._max_error_per_segment.clear()
+        for i in range(self._num_points - 1):
+            self._max_error_per_segment.append(self.compute_max_error(path, self._original_ids[i],
+                                                                      self._original_ids[i + 1]))
+
+    def InitProjections(self, path: 'Path') -> None:
+        """
+        Init projections method
+
+        :param Path path: Path
+        """
+
+        if self._num_points == 0:
+            return
+        self._projections.clear()
+        s: float = 0.0
+        self._projections.append(0.0)
+        for segment in self._segments:
+            s += segment.length()
+            self._projections.append(s)
+        original_points: List[MapPathPoint] = path.path_points
+        num_original_points: int = len(original_points)
+        self._original_projections.clear()
+        for i in range(len(self._projections)):
+            self._original_projections.append(self._projections[i])
+            if i + 1 < len(self._projections):
+                segment = self._segments[i]
+                for idx in range(self._original_ids[i] + 1, self._original_ids[i + 1]):
+                    proj: float = segment.ProjectOntoUnit(original_points[idx])
+                    self._original_projections.append(self._projections[i] + max(0.0, min(proj, segment.length())))
+
+        # max_p_to_left[i] = max(p[0], p[1], ... p[i]).
+        self._max_original_projections_to_left = [-math.inf] * num_original_points
+        last_projection: float = -math.inf
+        for i in range(num_original_points):
+            last_projection = max(last_projection, self._original_projections[i])
+            self._max_original_projections_to_left[i] = last_projection
+        for i in range(num_original_points - 1):
+            assert self._max_original_projections_to_left[i] <= \
+                   self._max_original_projections_to_left[i + 1] + kMathEpsilon
+
+        # min_p_to_right[i] = min(p[i], p[i + 1], ... p[size - 1]).
+        self._min_original_projections_to_right = [math.inf] * len(self._original_projections)
+        last_projection = math.inf
+        for i in range(num_original_points - 1, -1, -1):
+            last_projection = min(last_projection, self._original_projections[i])
+            self._min_original_projections_to_right[i] = last_projection
+        for i in range(num_original_points - 1):
+            assert self._min_original_projections_to_right[i] <= \
+                   self._min_original_projections_to_right[i + 1] + kMathEpsilon
+
+        # Sample max_p_to_left by sample_distance.
+        self._max_projection = self._projections[-1]
+        self._num_projection_samples = int(self._max_projection / kSampleDistance) + 1
+        self._sampled_max_original_projections_to_left.clear()
+        proj: float = 0.0
+        last_index: int = 0
+        for i in range(self._num_projection_samples):
+            while last_index + 1 < num_original_points and self._max_original_projections_to_left[last_index + 1] < proj:
+                last_index += 1
+            self._sampled_max_original_projections_to_left.append(last_index)
+        assert len(self._sampled_max_original_projections_to_left) == self._num_projection_samples
+    
+    def compute_max_error(self, path: 'Path', s: int, t: int) -> float:
+        """
+        Compute max error
+
+        :param Path path: Path
+        :param int s: param s
+        :param int t: param t
+        :returns: Max error
+        :rtype: float
+        """
+
+        if s + 1 >= t:
+            return 0.0
+        
+        points: List[MapPathPoint] = path.path_points
+        segment = LineSegment2d(points[s], points[t])
+        max_distance_sqr: float = 0.0
+        for i in range(s + 1, t):
+            max_distance_sqr = max(max_distance_sqr, segment.DistanceSquareTo(points[i]))
+        return math.sqrt(max_distance_sqr)
+
+    def is_within_max_error(self, path: 'Path', s: int, t: int) -> bool:
+        """
+        Check if within max error
+
+        :param Path path: Path
+        :param int s: param s
+        :param int t: param t
+        :returns: True if within max error, False otherwise
+        :rtype: bool
+        """
+        
+        if s + 1 >= t:
+            return True
+
+        points: List[MapPathPoint] = path.path_points
+        segment = LineSegment2d(points[s], points[t])
+        for i in range(s + 1, t):
+            if segment.DistanceSquareTo(points[i]) > self._max_sqr_error:
+                return False
+        return True
+
+    def GetProjection(self, path: 'Path', point: Vec2d) -> Tuple[bool, float, float, float]:
+        """
+        Get projection
+
+        :param Path path: Path
+        :param Vec2d point: Point
+        :returns: (bool, float accumulate_s, float lateral, float min_distance)
+        :rtype: Tuple[bool, float, float, float]
+        """
+
+        if self._num_points == 0:
+            return False, 0.0, 0.0, 0.0
+        min_distance_sqr: float = float("inf")
+        estimate_nearest_segment_idx: int = -1
+        distance_sqr_to_segments: List[float] = []
+        for i in range(len(self._segments)):
+            distance_sqr: float = self._segments[i].DistanceSquareTo(point)
+            distance_sqr_to_segments.append(distance_sqr)
+            if distance_sqr < min_distance_sqr:
+                min_distance_sqr = distance_sqr
+                estimate_nearest_segment_idx = i
+        if estimate_nearest_segment_idx < 0:
+            return False, 0.0, 0.0, 0.0
+        
+        original_segments: List[LineSegment2d] = path.segments
+        num_original_segments: int = len(original_segments)
+        original_accumulated_s: List[float] = path.accumulated_s
+        min_distance_sqr_with_error: float = (math.sqrt(min_distance_sqr) +
+                                              self._max_error_per_segment[estimate_nearest_segment_idx] + self._max_error) ** 2
+        min_distance = float("inf")
+        nearest_segment_idx = -1
+        for i in range(len(self._segments)):
+            if distance_sqr_to_segments[i] >= min_distance_sqr_with_error:
+                continue
+            first_segment_idx: int = self._original_ids[i]
+            last_segment_idx: int = self._original_ids[i + 1] - 1
+            max_original_projection: float = float("inf")
+            if first_segment_idx < last_segment_idx:
+                segment: LineSegment2d = self._segments[i]
+                projection: float = segment.ProjectOntoUnit(point)
+                prod_sqr: float = segment.ProductOntoUnit(point) ** 2
+                if prod_sqr >= min_distance_sqr_with_error:
+                    continue
+                scan_distance: float = math.sqrt(min_distance_sqr_with_error - prod_sqr)
+                min_projection: float = projection - scan_distance
+                max_original_projection = self._projections[i] + projection + scan_distance
+                if min_projection > 0.0:
+                    limit: float = self._projections[i] + min_projection
+                    sample_index: int = max(0, int(limit // kSampleDistance))
+                    if sample_index >= self._num_projection_samples:
+                        first_segment_idx = last_segment_idx
+                    else:
+                        first_segment_idx = max(first_segment_idx, self._sampled_max_original_projections_to_left[sample_index])
+                        if first_segment_idx >= last_segment_idx:
+                            first_segment_idx = last_segment_idx
+                        else:
+                            while first_segment_idx < last_segment_idx and self._max_original_projections_to_left[first_segment_idx + 1] < limit:
+                                first_segment_idx += 1
+            min_distance_updated: bool = False
+            is_within_end_point: bool = False
+            for idx in range(first_segment_idx, last_segment_idx + 1):
+                if self._min_original_projections_to_right[idx] > max_original_projection:
+                    break
+                original_segment: LineSegment2d = original_segments[idx]
+                x0: float = point.x - original_segment.start.x
+                y0: float = point.y - original_segment.start.y
+                ux: float = original_segment.unit_direction.x
+                uy: float = original_segment.unit_direction.y
+                proj: float = x0 * ux + y0 * uy
+                distance: float = 0.0
+                if proj < 0.0:
+                    if is_within_end_point:
+                        continue
+                    is_within_end_point = True
+                    distance = math.hypot(x0, y0)
+                elif proj <= original_segment.length():
+                    is_within_end_point = True
+                    distance = abs(x0 * uy - y0 * ux)
+                else:
+                    is_within_end_point = False
+                    if idx != last_segment_idx:
+                        continue
+                    distance = original_segment.end.DistanceTo(point)
+                if distance < min_distance:
+                    min_distance_updated = True
+                    min_distance = distance
+                    nearest_segment_idx = idx
+
+            if min_distance_updated:
+                min_distance_sqr_with_error = (min_distance + self._max_error) ** 2
+        if nearest_segment_idx >= 0:
+            segment: LineSegment2d = original_segments[nearest_segment_idx]
+            proj: float = segment.ProjectOntoUnit(point)
+            prod: float = segment.ProductOntoUnit(point)
+            if nearest_segment_idx > 0:
+                proj = max(0.0, proj)
+            if nearest_segment_idx + 1 < num_original_segments:
+                proj = min(len(segment), proj)
+            accumulate_s: float = original_accumulated_s[nearest_segment_idx] + proj
+            if (nearest_segment_idx == 0 and proj < 0.0) or \
+               (nearest_segment_idx + 1 == num_original_segments and proj > segment.length()):
+                lateral: float = prod
+            else:
+                lateral: float = min_distance if prod > 0.0 else -min_distance
+            return True, accumulate_s, lateral, min_distance
+        return False, 0.0, 0.0, 0.0
+
+    def OverlapWith(self, path: 'Path', box: Box2d, width: float) -> bool:
+        """
+        Overlap with method
+
+        :param Path path: Path
+        :param Box2d box: Box
+        :param float width: Width
+        :returns: True if overlap, False otherwise
+        :rtype: bool
+        """
+
+        if self._num_points == 0:
+            return False
+        center: Vec2d = box.center
+        radius: float = box.diagonal / 2.0 + width
+        radius_sqr: float = radius ** 2
+        original_segments: List[LineSegment2d] = path.segments
+        for i in range(len(self._segments)):
+            segment: LineSegment2d = self._segments[i]
+            max_error: float = self._max_error_per_segment[i]
+            radius_sqr_with_error: float = (radius + max_error) ** 2
+            if segment.DistanceSquareTo(center) > radius_sqr_with_error:
+                continue
+            first_segment_idx: int = self._original_ids[i]
+            last_segment_idx: int = self._original_ids[i + 1] - 1
+            max_original_projection: float = float("inf")
+            if first_segment_idx < last_segment_idx:
+                segment = self._segments[i]
+                projection: float = segment.ProjectOntoUnit(center)
+                prod_sqr: float = segment.ProductOntoUnit(center) ** 2
+                if prod_sqr >= radius_sqr_with_error:
+                    continue
+                scan_distance: float = math.sqrt(radius_sqr_with_error - prod_sqr)
+                min_projection: float = projection - scan_distance
+                max_original_projection = self._projections[i] + projection + scan_distance
+                if min_projection > 0.0:
+                    limit: float = self._projections[i] + min_projection
+                    sample_index: int = max(0, int(limit // kSampleDistance))
+                    if sample_index >= self._num_projection_samples:
+                        first_segment_idx = last_segment_idx
+                    else:
+                        first_segment_idx = max(first_segment_idx,
+                                                self._sampled_max_original_projections_to_left[sample_index])
+                        if first_segment_idx >= last_segment_idx:
+                            first_segment_idx = last_segment_idx
+                        else:
+                            while first_segment_idx < last_segment_idx and self._max_original_projections_to_left[first_segment_idx + 1] < limit:
+                                first_segment_idx += 1
+
+            for idx in range(first_segment_idx, last_segment_idx + 1):
+                if self._min_original_projections_to_right[idx] > max_original_projection:
+                    break
+                original_segment: LineSegment2d = original_segments[idx]
+                if original_segment.DistanceSquareTo(center) > radius_sqr:
+                    continue
+                if box.DistanceTo(original_segment) <= width:
+                    return True
+        return False
 
 @dataclass
 class PathOverlap:
