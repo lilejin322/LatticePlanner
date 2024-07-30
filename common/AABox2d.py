@@ -1,5 +1,7 @@
 from common.Vec2d import Vec2d
 from typing import List
+from common.Polygon2d import kMathEpsilon
+import math
 
 class AABox2d:
     """
@@ -33,6 +35,9 @@ class AABox2d:
             self._center: Vec2d = center
             self._length: float = length
             self._width: float = width
+            self._half_length = self._length / 2
+            self._half_width = self._width / 2
+            assert self._length > -kMathEpsilon and self._width > -kMathEpsilon, f"AABox length and width must greater than 0, got length: {self._length}, width: {self._width}"
 
         elif len(args) == 2:
             """
@@ -43,10 +48,8 @@ class AABox2d:
             """
 
             one_corner, opposite_corner = args
-            self._center = Vec2d((one_corner.x + opposite_corner.x) / 2,
-                                 (one_corner.y + opposite_corner.y) / 2)
-            self._length = abs(one_corner.x - opposite_corner.x)
-            self._width = abs(one_corner.y - opposite_corner.y)
+            self.__init__((one_corner.x + opposite_corner.x) / 2.0, abs(one_corner.x - opposite_corner.x),
+                          abs(one_corner.y - opposite_corner.y))
 
         elif len(args) == 1 and isinstance(args[0], list):
             """
@@ -56,16 +59,22 @@ class AABox2d:
             """
 
             points = args[0]
-            min_x = min(point.x for point in points)
-            max_x = max(point.x for point in points)
-            min_y = min(point.y for point in points)
-            max_y = max(point.y for point in points)
-            self._center = Vec2d((min_x + max_x) / 2, (min_y + max_y) / 2)
+            assert points, f"List points should not be empty!"
+            min_x = points[0].x
+            max_x = points[0].x
+            min_y = points[0].y
+            max_y = points[0].y
+            for point in points:
+                min_x = min(min_x, point.x)
+                max_x = max(max_x, point.x)
+                min_y = min(min_y, point.y)
+                max_y = max(max_y, point.y)
+            
+            self._center = Vec2d((min_x + max_x) / 2.0, (min_y + max_y) / 2.0)
             self._length = max_x - min_x
             self._width = max_y - min_y
-
-        self._half_length = self._length / 2
-        self._half_width = self._width / 2
+            self._half_length = self._length / 2.0
+            self._half_width = self._width / 2.0
 
     @property
     def center(self) -> Vec2d:
@@ -207,12 +216,12 @@ class AABox2d:
         :rtype: List[Vec2d]
         """
 
-        return [
-            Vec2d(self.min_x, self.min_y),
-            Vec2d(self.min_x, self.max_y),
-            Vec2d(self.max_x, self.max_y),
-            Vec2d(self.max_x, self.min_y)
-        ]
+        corners: List[Vec2d] = []
+        corners.append(Vec2d(self._center.x + self._half_length, self._center.y - self._half_width))
+        corners.append(Vec2d(self._center.x + self._half_length, self._center.y + self._half_width))
+        corners.append(Vec2d(self._center.x - self._half_length, self._center.y + self._half_width))
+        corners.append(Vec2d(self._center.x - self._half_length, self._center.y - self._half_width))
+        return corners
 
     def IsPointIn(self, point: Vec2d) -> bool:
         """
@@ -223,8 +232,8 @@ class AABox2d:
         :rtype: bool
         """
 
-        return (self.min_x <= point.x <= self.max_x and
-                self.min_y <= point.y <= self.max_y)
+        return abs(point.x - self._center.x) <= self._half_length + kMathEpsilon and \
+               abs(point.y - self._center.y) <= self._half_width + kMathEpsilon
 
     def IsPointOnBoundary(self, point: Vec2d) -> bool:
         """
@@ -235,8 +244,11 @@ class AABox2d:
         :rtype: bool
         """
 
-        return (self.min_x == point.x or self.max_x == point.x or
-                self.min_y == point.y or self.max_y == point.y)
+        dx: float = abs(point.x - self._center.x)
+        dy: float = abs(point.y - self._center.y)
+        tag1 = abs(dx - self._half_length) <= kMathEpsilon and dy <= self._half_width + kMathEpsilon
+        tag2 = abs(dy - self._half_width) <= kMathEpsilon and dx <= self._half_length + kMathEpsilon
+        return tag1 or tag2
 
     def DistanceTo(self, *args) -> float:
 
@@ -250,9 +262,13 @@ class AABox2d:
             """
 
             point: Vec2d = args[0]
-            dx = max(self.min_x - point.x, 0, point.x - self.max_x)
-            dy = max(self.min_y - point.y, 0, point.y - self.max_y)
-            return (dx ** 2 + dy ** 2) ** 0.5
+            dx: float = abs(point.x - self._center.x) - self._half_length
+            dy: float = abs(point.y - self._center.y) - self._half_width
+            if dx <= 0.0:
+                return max(0.0, dy)
+            if dy <= 0.0:
+                return dx
+            return math.hypot(dx, dy)
 
         elif isinstance([0], AABox2d):
             """
@@ -264,9 +280,13 @@ class AABox2d:
             """
 
             box: AABox2d = args[0]
-            dx = max(self.min_x - box.max_x, 0, box.min_x - self.max_x)
-            dy = max(self.min_y - box.max_y, 0, box.min_y - self.max_y)
-            return (dx ** 2 + dy ** 2) ** 0.5
+            dx: float = abs(box.center_x - self._center.x) - box.half_length - self._half_length
+            dy: float = abs(box.center_y - self._center.y) - box.half_width - self._half_width
+            if dx <= 0.0:
+                return max(0.0, dy)
+            if dy <= 0.0:
+                return dx
+            return math.hypot(dx, dy)
 
         else:
             raise ValueError("Invalid arguments")
@@ -280,8 +300,8 @@ class AABox2d:
         :rtype: bool
         """
 
-        return not (self.max_x < box.min_x or self.min_x > box.max_x or
-                    self.max_y < box.min_y or self.min_y > box.max_y)
+        return abs(box.center_x - self._center.x) <= box.half_length + self._half_length and \
+               abs(box.center_y - self._center.y) <= box.half_width + self._half_width
 
     def Shift(self, shift_vec: Vec2d):
         """
@@ -290,8 +310,7 @@ class AABox2d:
         :param Vec2d shift_vec: The vector by which we wish to shift the box
         """
 
-        self._center = Vec2d(self._center.x + shift_vec.x,
-                             self._center.y + shift_vec.y)
+        self._center += shift_vec
 
     def MergeFrom(self, *args) -> None:
 
@@ -303,15 +322,15 @@ class AABox2d:
             """
 
             other_box: AABox2d = args[0]
-            new_min_x = min(self.min_x, other_box.min_x)
-            new_max_x = max(self.max_x, other_box.max_x)
-            new_min_y = min(self.min_y, other_box.min_y)
-            new_max_y = max(self.max_y, other_box.max_y)
-            self._center = Vec2d((new_min_x + new_max_x) / 2, (new_min_y + new_max_y) / 2)
-            self._length = new_max_x - new_min_x
-            self._width = new_max_y - new_min_y
-            self._half_length = self._length / 2
-            self._half_width = self._width / 2
+            x1: float = min(self.min_x, other_box.min_x)
+            x2: float = max(self.max_x, other_box.max_x)
+            y1: float = min(self.min_y, other_box.min_y)
+            y2: float = max(self.max_y, other_box.max_y)
+            self._center = Vec2d((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            self._length = x2 - x1
+            self._width = y2 - y1
+            self._half_length = self._length / 2.0
+            self._half_width = self._width / 2.0
 
         elif isinstance(args[0], Vec2d):
             """
@@ -321,15 +340,15 @@ class AABox2d:
             """
 
             other_point: Vec2d = args[0]
-            new_min_x = min(self.min_x, other_point.x)
-            new_max_x = max(self.max_x, other_point.x)
-            new_min_y = min(self.min_y, other_point.y)
-            new_max_y = max(self.max_y, other_point.y)
-            self._center = Vec2d((new_min_x + new_max_x) / 2, (new_min_y + new_max_y) / 2)
-            self._length = new_max_x - new_min_x
-            self._width = new_max_y - new_min_y
-            self._half_length = self._length / 2
-            self._half_width = self._width / 2
+            x1: float = min(self.min_x, other_point.x)
+            x2: float = max(self.max_x, other_point.x)
+            y1: float = min(self.min_y, other_point.y)
+            y2: float = max(self.max_y, other_point.y)
+            self._center = Vec2d((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            self._length = x2 - x1
+            self._width = y2 - y1
+            self._half_length = self._length / 2.0
+            self._half_width = self._width / 2.0
 
     def __str__(self) -> str:
         """
@@ -339,5 +358,4 @@ class AABox2d:
         :rtype: str
         """
 
-        return (f"AABox2d(center={self._center}, length={self._length}, width={self._width}, "
-                f"half_length={self._half_length}, half_width={self._half_width})")
+        return f"AABox2d(center = {self._center}, length = {self._length}, width = {self._width})"
