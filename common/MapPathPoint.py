@@ -139,7 +139,7 @@ class MapPathPoint(Vec2d):
         """
         get points from lane
 
-        :param LaneInfoConstPtr lane: lane to get points from
+        :param LaneInfo lane: lane to get points from
         :param float start_s: start s
         :param float end_s: end s
         :returns: points from lane

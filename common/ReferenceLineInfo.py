@@ -10,7 +10,19 @@ from protoclass.ADCTrajectory import ADCTrajectory
 from protoclass.Lane import Lane
 from common.Path import PathOverlap
 from protoclass.SLBoundary import SLPoint
-from protoclass.DecisionResult import DecisionResult, VehicleSignal
+from protoclass.DecisionResult import DecisionResult, VehicleSignal, ObjectDecisions
+from protoclass.VehicleState import VehicleState
+from common.PathData import PathData
+from common.PathDecision import PathDecision
+from common.SpeedData import SpeedData
+from protoclass.LatencyStats import LatencyStats
+from protoclass.EngageAdvice import EngageAdvice
+from common.PathBoundary import PathBoundary
+from common.PlanningContext import PlanningContext
+from protoclass.RSSInfo import RSSInfo
+from protoclass.lattice_structure import StopPoint, PlanningTarget
+from common.StGraphData import StGraphData
+from common.LaneInfo import LaneInfo
 
 class ReferenceLineInfo:
     """
@@ -63,7 +75,6 @@ class ReferenceLineInfo:
         # SL boundary of stitching point (starting point of plan trajectory)
         # relative to the reference line
         self._adc_sl_boundary: SLBoundary = None
-        self._debug: Debug = None
         self._latency_stats: LatencyStats = None
         self._is_on_reference_line: bool = False
         self._is_path_lane_borrow: bool = False
@@ -311,17 +322,6 @@ class ReferenceLineInfo:
         """
 
         raise NotImplementedError
-
-    @property
-    def debug(self) -> Debug:
-        """
-        I think this debug function can be deprecated
-
-        :returns: The debug information
-        :rtype: Debug
-        """
-
-        return self._debug
     
     @property
     def latency_stats(self) -> LatencyStats:
