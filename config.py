@@ -17,6 +17,12 @@ EGO_BACK_EDGE_TO_CENTER = 0.5
 
 FRONT_EDGE_TO_CENTER = 0.5
 
+BACK_EDGE_TO_CENTER = 0.5
+
+LEFT_EDGE_TO_CENTER = 0.5
+
+RIGHT_EDGE_TO_CENTER = 0.5
+
 FLAGS_lon_collision_buffer = 1
 
 FLAGS_lat_collision_buffer = 1
@@ -140,3 +146,7 @@ FLAGS_trajectory_point_num_for_debug = 1
 FLAGS_default_city_road_speed_limit = 1
 
 FLAGS_planning_upper_speed_limit = 1
+
+FLAGS_speed_bump_speed_limit = 1
+
+FLAGS_default_cruise_speed = 1

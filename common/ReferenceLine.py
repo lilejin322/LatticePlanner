@@ -22,6 +22,7 @@ from config import FLAGS_default_highway_speed_limit, FLAGS_trajectory_point_num
 from protoclass.SLBoundary import SLPoint
 from enum import Enum
 from common.Path import Path as MapPath
+from common.LaneInfo import LaneInfo
 
 logger = Logger("ReferenceLine")
 kMathEpsilon = 1e-10
@@ -945,13 +946,13 @@ class ReferenceLine:
 
         raise NotImplementedError
 
-    def GetLaneFromS(self, s: float) -> List[str]:
+    def GetLaneFromS(self, s: float) -> List[LaneInfo]:
         """
         Get lane from s
 
         :param float s: s
-        :returns: Lane info
-        :rtype: List[str]
+        :returns: List of lane info
+        :rtype: List[LaneInfo]
         """
 
         ref_point = self.GetReferencePoint(s)

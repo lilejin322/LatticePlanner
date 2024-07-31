@@ -10,7 +10,7 @@ class LaneWaypoint:
     LaneWaypoint class
     """
 
-    lane: dict = field(default_factory=dict)
+    lane: LaneInfo = None
     s: float = 0.0
     l: float = 0.0
 
@@ -20,7 +20,7 @@ class LaneWaypoint:
         """
         
         if self.lane is None:
-            raise ValueError("LaneId cannot be None")
+            raise ValueError("LaneInfo cannot be None")
 
     def __str__(self):
         return f"(lane={self.lane}, s={self.s}, l={self.l})"
