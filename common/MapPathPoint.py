@@ -2,6 +2,7 @@ from common.Vec2d import Vec2d
 from typing import List
 from dataclasses import dataclass, field
 from common.ReferenceLine import LaneSegment
+from common.LaneInfo import LaneInfo
 
 @dataclass
 class LaneWaypoint:
@@ -135,7 +136,7 @@ class MapPathPoint(Vec2d):
         raise NotImplementedError
 
     @staticmethod
-    def GetPointsFromLane(lane, start_s: float, end_s: float) -> List['MapPathPoint']:
+    def GetPointsFromLane(lane: LaneInfo, start_s: float, end_s: float) -> List['MapPathPoint']:
         """
         get points from lane
 
