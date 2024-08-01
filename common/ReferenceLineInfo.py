@@ -28,8 +28,23 @@ from config import FRONT_EDGE_TO_CENTER, BACK_EDGE_TO_CENTER, LEFT_EDGE_TO_CENTE
 from common.Vec2d import Vec2d
 from common.Box2d import Box2d
 from logging import Logger
+from common.ReferencePoint import ReferencePoint
+import copy
 
 logger = Logger("ReferenceLineInfo")
+
+def WithinOverlap(overlap: PathOverlap, s: float) -> bool:
+    """
+    Check if the s is within the overlap
+
+    :param PathOverlap overlap: The overlap
+    :param float s: The s value
+    :returns: True if the s is within the overlap, otherwise False.
+    :rtype: bool
+    """
+
+    kEpsilon: float = 1e-2
+    return overlap.start_s - kEpsilon <= s <= overlap.end_s + kEpsilon
 
 class ReferenceLineInfo:
     """
@@ -185,23 +200,27 @@ class ReferenceLineInfo:
 
         return self._vehicle_state
     
+    @property
     def path_decision(self) -> PathDecision:
         """
+        Get the path decision
+
+        returns: The path decision
+        rtype: PathDecision
         """
 
-        raise NotImplementedError
+        return self._path_decision
     
+    @property
     def reference_line(self) -> ReferenceLine:
         """
+        Get the reference line
+
+        returns: The reference line
+        rtype: ReferenceLine
         """
 
-        raise NotImplementedError
-    
-    def mutable_reference_line(self) -> ReferenceLine:
-        """
-        """
-
-        raise NotImplementedError
+        return self._reference_line
     
     def SDistanceToDestination(self) -> float:
         """
@@ -217,9 +236,12 @@ class ReferenceLineInfo:
     
     def SetTrajectory(self, trajectory: DiscretizedTrajectory) -> None:
         """
+        Set the trajectory
+
+        :param DiscretizedTrajectory trajectory: The trajectory to set
         """
 
-        raise NotImplementedError
+        self._discretized_trajectory = trajectory
     
     def trajectory(self) -> DiscretizedTrajectory:
         """
@@ -352,7 +374,7 @@ class ReferenceLineInfo:
         
         return lanes[0]
 
-    def GetNeighborLaneInfo(lane_type: LaneType, s: float) -> Tuple[bool, str, float]:
+    def GetNeighborLaneInfo(self, lane_type: LaneType, s: float) -> Tuple[bool, str, float]:
         """
         Get the neighbor lane info
 
@@ -362,8 +384,46 @@ class ReferenceLineInfo:
         :rtype: Tuple[bool, str, float]
         """
 
-        raise NotImplementedError
-    
+        lane_info = self.LocateLaneInfo(s)
+        if lane_info is None:
+            return False, "", float("inf")
+        
+        if lane_type == self.LaneType.LeftForward:
+            if not lane_info.lane.left_neighbor_forward_lane_id:
+                return False, "", float("inf")
+            lane_id = lane_info.lane.left_neighbor_forward_lane_id[0]
+        
+        elif lane_type == self.LaneType.LeftReverse:
+            if not lane_info.lane.left_neighbor_reverse_lane_id:
+                return False, "", float("inf")
+            lane_id = lane_info.lane.left_neighbor_reverse_lane_id[0]
+
+        elif lane_type == self.LaneType.RightForward:
+            if not lane_info.lane.right_neighbor_forward_lane_id:
+                return False, "", float("inf")
+            lane_id = lane_info.lane.right_neighbor_forward_lane_id[0]
+        
+        elif lane_type == self.LaneType.RightReverse:
+            if not lane_info.lane.right_neighbor_reverse_lane_id:
+                return False, "", float("inf")
+            lane_id = lane_info.lane.right_neighbor_reverse_lane_id[0]
+
+        else:
+            raise ValueError("Invalid LaneType")
+
+        neighbor_lane = hdmap.HDMapUtil.BaseMapPtr().GetLaneById(lane_id)
+        if neighbor_lane is None:
+            return False, "", float("inf")
+        
+        ref_point: ReferencePoint = self._reference_line.GetReferencePoint(s)
+
+        tag, neighbor_s, neighbor_l = neighbor_lane.GetProjection(Vec2d(ref_point.x, ref_point.y))
+        if not tag:
+            return False, "", float("inf")
+        
+        lane_width = neighbor_lane.GetWidth(neighbor_s)
+        return True, lane_id, lane_width
+
     def IsStartFrom(previous_reference_line_info: 'ReferenceLineInfo') -> bool:
         """
         check if current reference line is started from another reference
@@ -453,7 +513,7 @@ class ReferenceLineInfo:
 
         """
 
-        raise NotImplementedError
+        return self._adc_sl_boundary
     
     def PathSpeedDebugString(self) -> str:
         """
@@ -510,20 +570,30 @@ class ReferenceLineInfo:
 
         raise NotImplementedError
     
+    @property
     def Lanes(self) -> RouteSegments:
         """
+        Get the lanes
 
+        :returns: The lanes
+        :rtype: RouteSegments
         """
 
-        raise NotImplementedError
+        return self._lanes
     
     def TargetLaneId(self) -> List[str]:
         """
+        Get the target lane id
 
+        :returns: The target lane id
+        :rtype: List[str]
         """
 
-        raise NotImplementedError
-    
+        lane_ids: List[str] = []
+        for lane_seg in self._lanes:
+            lane_ids.append(lane_seg.lane.id)
+        return lane_ids
+
     def ExportDecision(self) -> Tuple[DecisionResult, PlanningContext]:
         """
 
@@ -536,18 +606,34 @@ class ReferenceLineInfo:
     
     def SetJunctionRightOfWay(self, junction_s: float, is_protected: bool) -> None:
         """
-        
+        Set the junction right of way
+
+        :param float junction_s: The s value of the junction
+        :param bool is_protected: True if the junction is protected, otherwise False.
         """
         
-        raise NotImplementedError
-    
+        for overlap in self._reference_line.map_path.junction_overlaps:
+            if WithinOverlap(overlap, junction_s):
+                self._junction_right_of_way_map[overlap.object_id] = is_protected
+
     def GetRightOfWayStatus(self) -> ADCTrajectory.RightOfWayStatus:
         """
-        
+        Get the right of way status
+
+        :returns: The right of way status
+        :rtype: ADCTrajectory.RightOfWayStatus
         """
 
-        raise NotImplementedError
+        for overlap in self._reference_line.map_path.junction_overlaps:
+            if overlap.end_s < self._adc_sl_boundary.start_s:
+                self._junction_right_of_way_map.pop(overlap.object_id)
+            elif WithinOverlap(overlap, self._adc_sl_boundary.end_s):
+                is_protected: bool = self._junction_right_of_way_map.get(overlap.object_id)
+                if is_protected:
+                    return ADCTrajectory.RightOfWayStatus.PROTECTED
     
+        return ADCTrajectory.RightOfWayStatus.UNPROTECTED
+
     def GetPathTurnType(self, s: float) -> Lane.LaneTurn:
         """
 
@@ -600,7 +686,7 @@ class ReferenceLineInfo:
         """
 
         self._candidate_path_boundaries = candidate_path_boundaries
-    
+
     def GetCandidatePathData(self) -> List[PathData]:
         """
         Get the candidate path data
@@ -704,6 +790,7 @@ class ReferenceLineInfo:
             
         return self._trajectory_type
 
+    @property
     def st_graph_data(self) -> StGraphData:
         """
         Get the st graph data
@@ -809,8 +896,41 @@ class ReferenceLineInfo:
         Init the first overlaps
         """
 
-        raise NotImplementedError
-    
+        map_path = self._reference_line.map_path
+        # clear_zone
+        tag, clear_area_overlap = self.GetFirstOverlap(map_path.clear_area_overlaps)
+        if tag:
+            self._first_encounter_overlaps.append(self.OverlapType.CLEAR_AREA, clear_area_overlap)
+
+        # crosswalk
+        tag, crosswalk_overlap = self.GetFirstOverlap(map_path.crosswalk_overlaps)
+        if tag:
+            self._first_encounter_overlaps.append(self.OverlapType.CROSSWALK, crosswalk_overlap)
+
+        # pnc_junction
+        tag, pnc_junction_overlap = self.GetFirstOverlap(map_path.pnc_junction_overlaps)
+        if tag:
+            self._first_encounter_overlaps.append(self.OverlapType.PNC_JUNCTION, pnc_junction_overlap)
+        
+        # signal
+        tag, signal_overlap = self.GetFirstOverlap(map_path.signal_overlaps)
+        if tag:
+            self._first_encounter_overlaps.append(self.OverlapType.SIGNAL, signal_overlap)
+        
+        # stop_sign
+        tag, stop_sign_overlap = self.GetFirstOverlap(map_path.stop_sign_overlaps)
+        if tag:
+            self._first_encounter_overlaps.append(self.OverlapType.STOP_SIGN, stop_sign_overlap)
+        
+        # yield_sign
+        tag, yield_sign_overlap = self.GetFirstOverlap(map_path.yield_sign_overlaps)
+        if tag:
+            self._first_encounter_overlaps.append(self.OverlapType.YIELD_SIGN, yield_sign_overlap)
+        
+        # sort by start_s
+        if self._first_encounter_overlaps:
+            self._first_encounter_overlaps.sort(key=lambda x: x[1].start_s)
+
     def CheckChangeLane(self) -> bool:
         """
         Check if the vehicle is changing lane
@@ -911,37 +1031,45 @@ class ReferenceLineInfo:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self.AddObstacle(obstacle) is not None
     
-    def GetFirstOverlap(self, path_overlaps: List[PathOverlap]) -> PathOverlap:
+    def GetFirstOverlap(self, path_overlaps: List[PathOverlap]) -> Tuple[bool, PathOverlap]:
         """
         Get the first overlap
 
         :param List[PathOverlap] path_overlaps: The path overlaps
-        :returns: The first overlap
-        :rtype: PathOverlap
+        :returns: (bool, The first overlap)
+        :rtype: Tuple[bool, PathOverlap]
         """
 
-        raise NotImplementedError
+        start_s: float = self._adc_sl_boundary.end_s
+        kMaxOverlapRange: float = 500.0
+        overlap_min_s: float = kMaxOverlapRange
 
-    def DISALLOW_COPY_AND_ASSIGN(self, ReferenceLineInfo):
+        overlap_min_s_iter = path_overlaps[-1]
+        for iter in path_overlaps:
+            if iter.end_s < start_s:
+                continue
+            if overlap_min_s > iter.start_s:
+                overlap_min_s_iter = iter
+                overlap_min_s = iter.start_s
+
+        # Ensure that the path_overlaps is not empty.
+        if overlap_min_s_iter is not None:
+            path_overlap = overlap_min_s_iter
+
+        return (overlap_min_s < kMaxOverlapRange, path_overlap)
+
+    def __copy__(self):
         """
-        This function is weird, the python should be implemented as follow template
-
-        class ReferenceLineInfo:
-            def __init__(self):
-                pass
-
-            def __copy__(self):
-                raise NotImplementedError("Copy operation is not allowed")
-
-            def __deepcopy__(self, memo):
-                raise NotImplementedError("Deep copy operation is not allowed")
-
-            def __setattr__(self, key, value):
-                if key in self.__dict__:
-                    raise AttributeError("Assignment operation is not allowed")
-                super().__setattr__(key, value)
+        Disallow copy operation
         """
 
-        raise NotImplementedError
+        raise NotImplementedError("Copy operation is not allowed")
+
+    def __deepcopy__(self, memo):
+        """
+        Disallow deep copy operation
+        """
+
+        raise NotImplementedError("Deep copy operation is not allowed")
