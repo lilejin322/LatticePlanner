@@ -150,3 +150,5 @@ FLAGS_planning_upper_speed_limit = 1
 FLAGS_speed_bump_speed_limit = 1
 
 FLAGS_default_cruise_speed = 1
+
+FLAGS_use_multi_thread_to_add_obstacles = 1

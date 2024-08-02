@@ -10,7 +10,8 @@ from protoclass.ADCTrajectory import ADCTrajectory
 from protoclass.Lane import Lane
 from common.Path import PathOverlap
 from protoclass.SLBoundary import SLPoint
-from protoclass.DecisionResult import DecisionResult, VehicleSignal, ObjectDecisions
+from protoclass.DecisionResult import DecisionResult, VehicleSignal, ObjectDecisions, ObjectDecisionType, ObjectIgnore, ChangeLaneType, \
+                                      MainDecision, MainStop, MainCruise
 from protoclass.VehicleState import VehicleState
 from common.PathData import PathData
 from common.PathDecision import PathDecision
@@ -20,16 +21,22 @@ from protoclass.EngageAdvice import EngageAdvice
 from common.PathBoundary import PathBoundary
 from common.PlanningContext import PlanningContext
 from protoclass.RSSInfo import RSSInfo
+from protoclass.PathPoint import PathPoint
 from protoclass.lattice_structure import StopPoint, PlanningTarget
 from common.StGraphData import StGraphData
 from common.LaneInfo import LaneInfo
 from config import FRONT_EDGE_TO_CENTER, BACK_EDGE_TO_CENTER, LEFT_EDGE_TO_CENTER, RIGHT_EDGE_TO_CENTER, \
-                   EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, FLAGS_speed_bump_speed_limit, FLAGS_default_cruise_speed
+                   EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, FLAGS_speed_bump_speed_limit, FLAGS_default_cruise_speed, \
+                   FLAGS_use_multi_thread_to_add_obstacles, FLAGS_trajectory_time_min_interval, \
+                   FLAGS_trajectory_time_max_interval, FLAGS_trajectory_time_high_density_period, \
+                   FLAGS_passed_destination_threshold
 from common.Vec2d import Vec2d
 from common.Box2d import Box2d
 from logging import Logger
 from common.ReferencePoint import ReferencePoint
-import copy
+from copy import deepcopy, copy
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import math
 
 logger = Logger("ReferenceLineInfo")
 
@@ -174,20 +181,63 @@ class ReferenceLineInfo:
         rtype: bool
         """
 
-        raise NotImplementedError
-    
+        if FLAGS_use_multi_thread_to_add_obstacles:
+            with ThreadPoolExecutor() as executor:
+                futures = {executor.submit(self.AddObstacle, obstacle): obstacle for obstacle in obstacles}
+                for future in as_completed(futures):
+                    if not future.result():
+                        logger.error("Fail to add obstacles.")
+                        return False
+        else:
+            for obstacle in obstacles:
+                if not self.AddObstacle(obstacle):
+                    logger.error(f"Failed to add obstacle {obstacle.Id}.")
+                    return False
+        
+        return True
+
     def AddObstacle(self, obstacle: Obstacle) -> Obstacle:
         """
         Add an obstacle to the reference line info
-        
-        (Note this part in cpp is weird using pointer, should take a deeper look)
+        AddObstacle is thread safe        
+
         param Obstacle obstacle: Obstacle to add
         returns: The added obstacle
         rtype: Obstacle
         """
 
-        raise NotImplementedError
+        if obstacle is None:
+            logger.error("The provided obstacle is empty")
+            return None
+        mutable_obstacle: Obstacle = self.path_decision.AddObstacle(obstacle)
+        if not mutable_obstacle:
+            logger.error(f"Failed to add obstacle {obstacle.Id}")
+            return None
 
+        perception_sl = SLBoundary()
+        tag = self._reference_line.GetSLBoundary(obstacle.PerceptionPolygon, perception_sl)
+        if not tag:
+            logger.error(f"Failed to get SL boundary for obstacle {obstacle.Id}")
+            return mutable_obstacle
+        mutable_obstacle.SetPerceptionSlBoundary(perception_sl)
+        mutable_obstacle.CheckLaneBlocking(self._reference_line)
+        if mutable_obstacle.IsLaneBlocking():
+            logger.debug(f"Obstacle {obstacle.Id} is lane blocking.")
+        else:
+            logger.debug(f"Obstacle {obstacle.Id} is NOT lane blocking.")
+        
+        if self.IsIrrelevantObstacle(mutable_obstacle):
+            ignore = ObjectDecisionType()
+            ignore.object_tag = ObjectIgnore()
+            self.path_decision.AddLateralDecision("reference_line_filter", obstacle.Id, ignore)
+            self.path_decision.AddLongitudinalDecision("reference_line_filter", obstacle.Id, ignore)
+            logger.debug(f"NO build reference line st boundary. id: {obstacle.Id}")
+        else:
+            logger.debug(f"Build reference line st boundary. id: {obstacle.Id}")
+            mutable_obstacle.BuildReferenceLineStBoundary(self._reference_line, self._adc_sl_boundary.start_s)
+            logger.debug(f"Reference line st boundary: t[{mutable_obstacle.reference_line_st_boundary().min_t}, {mutable_obstacle.reference_line_st_boundary().max_t}] s[{mutable_obstacle.reference_line_st_boundary().min_s}, {mutable_obstacle.reference_line_st_boundary().max_s}]")
+
+        return mutable_obstacle
 
     @property
     def vehicle_state(self) -> VehicleState:
@@ -224,15 +274,33 @@ class ReferenceLineInfo:
     
     def SDistanceToDestination(self) -> float:
         """
+        Get the distance to the destination
+
+        returns: The distance to the destination
+        rtype: float
         """
 
-        raise NotImplementedError
-    
+        res: float = float('inf')
+        dest = self._path_decision.Find(FLAGS_destination_obstacle_id)
+        if not dest:
+            return res
+        if not dest.LongitudinalDecision.has_stop():
+            return res
+        if not self._reference_line.IsOnLane(dest.PerceptionBoundingBox.center):
+            return res
+        stop_s = dest.PerceptionSLBoundary.start_s + dest.LongitudinalDecision.stop().distance_s
+        return stop_s - self._adc_sl_boundary.end_s
+
     def ReachedDestination(self) -> bool:
         """
+        Judge if the vehicle has reached the destination
+
+        returns: True if the vehicle has reached the destination, otherwise False.
+        rtype: bool
         """
 
-        raise NotImplementedError
+        distance_destination: float = self.SDistanceToDestination()
+        return distance_destination <= FLAGS_passed_destination_threshold
     
     def SetTrajectory(self, trajectory: DiscretizedTrajectory) -> None:
         """
@@ -242,12 +310,17 @@ class ReferenceLineInfo:
         """
 
         self._discretized_trajectory = trajectory
-    
+
+    @property
     def trajectory(self) -> DiscretizedTrajectory:
         """
+        Get the trajectory
+
+        returns: The trajectory
+        rtype: DiscretizedTrajectory
         """
 
-        raise NotImplementedError
+        return self._discretized_trajectory
     
     @property
     def Cost(self) -> float:
@@ -293,7 +366,7 @@ class ReferenceLineInfo:
 
         self._priority_cost = cost
     
-    def SetLatticeStopPoint(stop_point: StopPoint) -> None:
+    def SetLatticeStopPoint(self, stop_point: StopPoint) -> None:
         """
         Set the lattice stop point
         For lattice planner'speed planning target
@@ -301,9 +374,9 @@ class ReferenceLineInfo:
         :param StopPoint stop_point: The stop point to set
         """
 
-        raise NotImplementedError
+        self._planning_target.stop_point = deepcopy(stop_point)
     
-    def SetLatticeCruiseSpeed(speed: float) -> None:
+    def SetLatticeCruiseSpeed(self, speed: float) -> None:
         """
         Set the lattice cruise speed
         For lattice planner'speed planning target
@@ -311,7 +384,7 @@ class ReferenceLineInfo:
         :param float speed: The speed to set
         """
 
-        raise NotImplementedError
+        self._planning_target.cruise_speed = speed
 
     @property
     def planning_target(self) -> PlanningTarget:
@@ -424,7 +497,7 @@ class ReferenceLineInfo:
         lane_width = neighbor_lane.GetWidth(neighbor_s)
         return True, lane_id, lane_width
 
-    def IsStartFrom(previous_reference_line_info: 'ReferenceLineInfo') -> bool:
+    def IsStartFrom(self, previous_reference_line_info: 'ReferenceLineInfo') -> bool:
         """
         check if current reference line is started from another reference
         line info line. The method is to check if the start point of current
@@ -434,8 +507,13 @@ class ReferenceLineInfo:
         line, otherwise False.
         """
 
-        raise NotImplementedError
-    
+        if not self._reference_line.reference_points:
+            return False
+        start_point = self._reference_line.reference_points[0]
+        prev_reference_line = previous_reference_line_info.reference_line
+        _, sl_point = prev_reference_line.XYToSL(start_point)
+        return previous_reference_line_info.reference_line.IsOnLane(sl_point)
+
     @property
     def latency_stats(self) -> LatencyStats:
         """
@@ -446,7 +524,8 @@ class ReferenceLineInfo:
         """
 
         return self._latency_stats
-    
+
+    @property
     def path_data(self) -> PathData:
         """
         Get the path data
@@ -455,8 +534,9 @@ class ReferenceLineInfo:
         :rtype: PathData
         """
 
-        raise NotImplementedError
-    
+        return self._path_data
+
+    @property
     def fallback_path_data(self) -> PathData:
         """
         Get the fallback path data
@@ -465,8 +545,9 @@ class ReferenceLineInfo:
         :rtype: PathData
         """
 
-        raise NotImplementedError
-    
+        return self._fallback_path_data
+
+    @property
     def speed_data(self) -> SpeedData:
         """
         Get the speed data
@@ -475,8 +556,9 @@ class ReferenceLineInfo:
         :rtype: SpeedData
         """
 
-        raise NotImplementedError
-    
+        return self._speed_data
+
+    @property
     def rss_info(self) -> RSSInfo:
         """
         Get the rss info
@@ -485,29 +567,138 @@ class ReferenceLineInfo:
         :rtype: RSSInfo
         """
 
-        raise NotImplementedError
+        return self._rss_info
     
-    def CombinePathAndSpeedProfile(relative_time: float, start_s: float, discretized_trajectory: DiscretizedTrajectory) -> bool:
+    def CombinePathAndSpeedProfile(self, relative_time: float, start_s: float, discretized_trajectory: DiscretizedTrajectory) -> bool:
         """
         aggregate final result together by some configuration
         """
 
-        raise NotImplementedError
-    
+        assert discretized_trajectory is not None, "discretized_trajectory is None"
+        # use varied resolution to reduce data load but also provide enough data
+        # point for control module
+        kDenseTimeResoltuion = FLAGS_trajectory_time_min_interval
+        kSparseTimeResolution = FLAGS_trajectory_time_max_interval
+        kDenseTimeSec = FLAGS_trajectory_time_high_density_period
+
+        if not self._path_data.discretized_path:
+            logger.error("path data is empty.")
+            return False
+        
+        if not self._speed_data:
+            logger.error("speed profile is empty")
+            return False
+        
+        cur_rel_time = 0.0
+        while cur_rel_time < self._speed_data.TotalTime():
+            tag, speed_point = self._speed_data.EvaluateByTime(cur_rel_time)
+            if not tag:
+                logger.error(f"Fail to get speed point with relative time {cur_rel_time}")
+                return False
+            
+            if speed_point.s > self._path_data.discretized_path.Length():
+                break
+
+            path_point: PathPoint = self._path_data.GetPathPointWithPathS(speed_point.s)
+            path_point.s += start_s
+
+            trajectory_point: TrajectoryPoint = TrajectoryPoint(path_point=deepcopy(path_point), v=speed_point.v, a=speed_point.a,
+                                                                relative_time=speed_point.t + relative_time)
+            discretized_trajectory.AppendTrajectoryPoint(trajectory_point)
+
+            cur_rel_time += (kDenseTimeResoltuion if cur_rel_time < kDenseTimeSec else kSparseTimeResolution)
+
+        if self._path_data.is_reverse_path():
+            for trajectory_point in discretized_trajectory:
+                trajectory_point.v = -trajectory_point.v
+                trajectory_point.a = -trajectory_point.a
+            logger.info("reversed path")
+            discretized_trajectory.SetIsReversed(True)
+        
+        return True
+
     def AdjustTrajectoryWhichStartsFromCurrentPos(planning_start_point: TrajectoryPoint,
-                                                  trajectory: List[TrajectoryPoint]) -> DiscretizedTrajectory:
+                                                  trajectory: List[TrajectoryPoint]) -> Tuple[bool, DiscretizedTrajectory]:
         """
         adjust trajectory if it starts from cur_vehicle postion rather planning
         init point from upstream
 
         :param TrajectoryPoint planning_start_point: The planning start point
         :param List[TrajectoryPoint] trajectory: The trajectory to adjust
-        :returns: The adjusted trajectory
-        :rtype: DiscretizedTrajectory
+        :returns: (bool, The adjusted trajectory)
+        :rtype: Tuple[bool, DiscretizedTrajectory]
         """
 
-        raise NotImplementedError
-    
+        # TODO(all): It is a brutal way to insert the planning init point, one elegant
+        # way would be bypassing trajectory stitching logics somehow, or use planing
+        # init point from trajectory stitching to compute the trajectory at the very
+        # start
+
+        # find insert index by check heading
+        kMaxAngleDiff: float = math.pi / 2.0
+
+        start_point_heading: float = planning_start_point.path_point.theta
+        start_point_x: float = planning_start_point.path_point.x
+        start_point_y: float = planning_start_point.path_point.y
+        start_point_relative_time: float = planning_start_point.relative_time
+
+        insert_idx: int = -1
+        for i, traj in enumerate(trajectory):
+            # skip trajectory_points early than planning_start_point
+            if traj.relative_time <= start_point_relative_time:
+                continue
+
+            cur_point_x: float = traj.path_point.x
+            cur_point_y: float = traj.path_point.y
+            tracking_heading: float = math.atan2(cur_point_y - start_point_y, cur_point_x - start_point_x)
+            if abs(AngleDiff(start_point_heading, tracking_heading) < kMaxAngleDiff):
+                insert_idx = i
+                break
+        
+        if insert_idx == -1:
+            logger.error(f"All points are behind of planning init point")
+            return False, None
+
+        cut_trajectory = DiscretizedTrajectory(trajectory)
+        cut_trajectory = cut_trajectory[insert_idx:]
+        cut_trajectory.insert(0, planning_start_point)
+
+        # In class TrajectoryStitcher, the stitched point which is also the planning
+        # init point is supposed have one planning_cycle_time ahead respect to
+        # current timestamp as its relative time. So the relative timelines
+        # of planning init point and the trajectory which start from current
+        # position(relative time = 0) are the same. Therefore any conflicts on the
+        # relative time including the one below should return false and inspected its
+        # cause.
+        if len(cut_trajectory) > 1 and cut_trajectory[0].relative_time >= cut_trajectory[1].relative_time:
+            logger.error(f"planning init point relative_time[{cut_trajectory[0].relative_time}] larger than its next point's relative_time[{cut_trajectory[1].relative_time}]")
+            return False, None
+        
+        # In class TrajectoryStitcher, the planing_init_point is set to have s as 0,
+        # so adjustment is needed to be done on the other points
+        accumulated_s: float = 0.0
+        for i in range(1, len(cut_trajectory)):
+            pre_path_point: PathPoint = cut_trajectory[i - 1].path_point
+            cur_path_point: PathPoint = cut_trajectory[i].path_point
+            accumulated_s += math.sqrt((cur_path_point.x - pre_path_point.x) ** 2 + (cur_path_point.y - pre_path_point.y) ** 2)
+            cur_path_point.s = accumulated_s
+
+        # reevaluate relative_time to make delta t the same
+        adjusted_trajectory = DiscretizedTrajectory()
+        adjusted_trajectory.clear()
+        # use varied resolution to reduce data load but also provide enough data
+        # point for control module
+        kDenseTimeResoltuion: float = FLAGS_trajectory_time_min_interval
+        kSparseTimeResolution: float = FLAGS_trajectory_time_max_interval
+        kDenseTimeSec: float = FLAGS_trajectory_time_high_density_period
+        cur_rel_time = cut_trajectory[0].relative_time
+        while cur_rel_time <= cut_trajectory[-1].relative_time:
+
+            adjusted_trajectory.AppendTrajectoryPoint(adjusted_trajectory.Evaluate(cur_rel_time))
+            cur_rel_time += (kDenseTimeResoltuion if cur_rel_time < kDenseTimeSec else kSparseTimeResolution)
+
+        return True, adjusted_trajectory
+
     def AdcSlBoundary(self) -> SLBoundary:
         """
 
@@ -517,10 +708,13 @@ class ReferenceLineInfo:
     
     def PathSpeedDebugString(self) -> str:
         """
+        Get the path speed debug string
 
+        :returns: The path speed debug string
+        :rtype: str
         """
 
-        raise NotImplementedError
+        return f"path_data: {self._path_data}, speed_data: {self._speed_data}"
     
     def IsChangeLanePath(self) -> bool:
         """
@@ -531,8 +725,8 @@ class ReferenceLineInfo:
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        return not self.Lanes.IsOnSegment
+
     def IsNeighborLanePath(self) -> bool:
         """
         Check if the current reference line is the neighbor of the vehicle
@@ -542,8 +736,8 @@ class ReferenceLineInfo:
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        return self.Lanes.IsNeighborSegment
+
     def SetDrivable(self, drivable: bool) -> None:
         """
         Set if the vehicle can drive following this reference line
@@ -552,16 +746,17 @@ class ReferenceLineInfo:
         :param bool drivable: The value to set
         """
 
-        raise NotImplementedError
+        self._is_drivable = drivable
     
     def IsDrivable(self) -> bool:
         """
-        
+        Get if the vehicle can drive following this reference line
+
         :returns: True if the vehicle can drive following this reference line, otherwise False.
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._is_drivable
     
     def ExportEngageAdvice(self) -> Tuple[EngageAdvice, PlanningContext]:
         """
@@ -596,14 +791,21 @@ class ReferenceLineInfo:
 
     def ExportDecision(self) -> Tuple[DecisionResult, PlanningContext]:
         """
-
+        Export decision
 
         :returns: (DecisionResult decision_result, PlanningContext planning_context)
         :rtype: Tuple[DecisionResult, PlanningContext]
         """
 
-        raise NotImplementedError
-    
+        decision_result, planning_context = self.MakeDecision()
+        vehicle_signal = self.ExportVehicleSignal(decision_result)
+        main_decision: MainDecision = decision_result.main_decision
+        if main_decision.task == MainStop:
+            main_decision.task.change_lane_type = self.Lanes.PreviousAction()
+        elif main_decision.task == MainCruise:
+            main_decision.task.change_lane_type = self.Lanes.PreviousAction()
+        return decision_result, planning_context
+
     def SetJunctionRightOfWay(self, junction_s: float, is_protected: bool) -> None:
         """
         Set the junction right of way
@@ -611,7 +813,7 @@ class ReferenceLineInfo:
         :param float junction_s: The s value of the junction
         :param bool is_protected: True if the junction is protected, otherwise False.
         """
-        
+
         for overlap in self._reference_line.map_path.junction_overlaps:
             if WithinOverlap(overlap, junction_s):
                 self._junction_right_of_way_map[overlap.object_id] = is_protected
@@ -850,15 +1052,15 @@ class ReferenceLineInfo:
         :param VehicleSignal.TurnSignal turn_signal: The turn signal to set
         """
 
-        raise NotImplementedError
-    
+        self._vehicle_signal.turn_signal = turn_signal
+
     def SetEmergencyLight(self) -> None:
         """
         Set the emergency light
         """
 
-        raise NotImplementedError
-    
+        self._vehicle_signal.emergency_light = True
+
     def set_path_reusable(self, path_reusable: bool) -> None:
         """
         Set the path reusable
@@ -941,27 +1143,77 @@ class ReferenceLineInfo:
 
         raise NotImplementedError
 
-    def SetTurnSignalBasedOnLaneTurnType(self) -> VehicleSignal:
+    def SetTurnSignalBasedOnLaneTurnType(self, vehicle_signal: VehicleSignal) -> None:
         """
         Set the turn signal based on lane turn type
 
-        :returns: The turn signal
-        :rtype: VehicleSignal
+        :param VehicleSignal vehicle_signal: The vehicle signal to set
         """
 
-        raise NotImplementedError
-    
-    def ExportVehicleSignal(self) -> VehicleSignal:
+        if vehicle_signal.turn_signal is not None and vehicle_signal.turn_signal != VehicleSignal.TurnSignal.TURN_NONE:
+            return
+        
+        vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_NONE
+
+        # Set turn signal based on lane-change.
+        if self.IsChangeLanePath():
+            if self.Lanes.PreviousAction() == ChangeLaneType.LEFT:
+                vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_LEFT
+            elif self.Lanes.PreviousAction() == ChangeLaneType.RIGHT:
+                vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_RIGHT
+            return
+        
+        # Set turn signal based on lane-borrow.
+        if "left" in self._path_data.path_label:
+            vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_LEFT
+            return
+        if "right" in self._path_data.path_label:
+            vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_RIGHT
+            return
+
+        # Set turn signal based on lane's turn type.
+        route_s: float = 0.0
+        adc_s: float = self._adc_sl_boundary.end_s
+        for seg in self.Lanes:
+            if route_s > adc_s + FLAGS_turn_signal_distance:
+                break
+            route_s += seg.end_s - seg.start_s
+            if route_s < adc_s:
+                continue
+            turn = seg.lane.turn
+            if turn == Lane.LaneTurn.LEFT_TURN:
+                vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_LEFT
+                break
+            elif turn == Lane.LaneTurn.RIGHT_TURN:
+                vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_RIGHT
+                break
+            elif turn == Lane.LaneTurn.U_TURN:
+                # check left or right by geometry.
+                start_xy = PointFactory.ToVec2d(seg.lane.GetSmoothPoint(seg.start_s))
+                middle_xy = PointFactory.ToVec2d(seg.lane.GetSmoothPoint((seg.start_s + seg.end_s) / 2.0))
+                end_xy = PointFactory.ToVec2d(seg.lane.GetSmoothPoint(seg.end_s))
+                start_to_middle = middle_xy - start_xy
+                start_to_end = end_xy - start_xy
+                if start_to_middle.CrossProd(start_to_end) < 0:
+                    vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_RIGHT
+                else:
+                    vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_LEFT
+                break
+
+    def ExportVehicleSignal(self, decision_result: DecisionResult) -> VehicleSignal:
         """
         Export the vehicle signal
 
+        :param DecisionResult decision_result: The decision result
         :returns: The vehicle signal
         :rtype: VehicleSignal
         """
 
-        raise NotImplementedError
-    
-    def IsIrrelevantObstacle(obstacle: Obstacle) -> bool:
+        decision_result.vehicle_signal = copy(self._vehicle_signal)
+        self.SetTurnSignalBasedOnLaneTurnType(decision_result.vehicle_signal)
+        return decision_result.vehicle_signal
+
+    def IsIrrelevantObstacle(self, obstacle: Obstacle) -> bool:
         """
         Check if the obstacle is irrelevant
 
@@ -970,8 +1222,21 @@ class ReferenceLineInfo:
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        if obstacle.IsCautionLevelObstacle:
+            return False
+        
+        # if adc is on the road, and obstacle behind adc, ignore
+        obstacle_boundary = obstacle.PerceptionSLBoundary()
+        if obstacle_boundary.end_s > self._reference_line.Length():
+            return True
+        if self._is_on_reference_line and (not self.IsChangeLanePath()) \
+                                      and (self._adc_sl_boundary.end_s - obstacle_boundary.end_s > FLAGS_obstacle_lon_ignore_buffer) \
+                                      and (self._reference_line.IsOnLane(obstacle_boundary) or obstacle_boundary.end_s < 0.0):
+            # if obstacle is far backward
+            return True
+
+        return False
+
     def MakeDecision(self) -> Tuple[DecisionResult, PlanningContext]:
         """
         Make decision
@@ -980,9 +1245,17 @@ class ReferenceLineInfo:
         :rtype: Tuple[DecisionResult, PlanningContext]
         """
             
-        raise NotImplementedError
-    
-    def MakeMainStopDecision(self) -> Tuple[int, DecisionResult]:
+        # cruise by default
+        decision_result = DecisionResult(main_decision=MainDecision(task=MainCruise))
+
+        # check stop decision
+        error_code: int = self.MakeMainStopDecision(decision_result)
+        if error_code < 0:
+            self.MakeEStopDecision(decision_result)
+        self.MakeMainMissionCompleteDecision(decision_result)
+        self.SetObjectDecisions(decision_result)
+
+    def MakeMainStopDecision(self, decision_result: DecisionResult) -> int:
         """
         Make main stop decision
 
