@@ -2,7 +2,8 @@ from protoclass.TrajectoryPoint import TrajectoryPoint
 from common.SpeedLimit import SpeedLimit
 from common.STBoundary import STBoundary
 from typing import List,Tuple
-from protoclass.STDrivableBoundary import STDrivableBoundary
+from protoclass.STDrivableBoundary import STDrivableBoundary, STDrivableBoundaryInstance
+from config import FLAGS_default_cruise_speed
 
 kObsSpeedIgnoreThreshold: float = 100.0
 
@@ -28,7 +29,14 @@ class StGraphData:
                  speed_limit: SpeedLimit, cruise_speed: float, path_data_length: float,
                  total_time_by_conf: float) -> None:
 
-        raise NotImplementedError
+        self._init = True
+        self._st_boundaries = st_boundaries
+        self._min_s_on_st_boundaries = min_s_on_st_boundaries
+        self._init_point = init_point
+        self._speed_limit = speed_limit
+        self._cruise_speed = cruise_speed
+        self._path_data_length = path_data_length
+        self._total_time_by_conf = total_time_by_conf
 
     def is_initialized(self) -> bool:
         """
@@ -40,66 +48,115 @@ class StGraphData:
 
         return self._init
 
+    @property
     def st_boundaries(self) -> List[STBoundary]:
         """
+        Get the st boundaries
 
+        :returns: The st boundaries
+        :rtype: List[STBoundary]
         """
 
-        raise NotImplementedError
+        return self._st_boundaries
 
+    @property
     def min_s_on_st_boundaries(self) -> float:
         """
+        Get the minimum s on the st boundaries
 
+        :returns: The minimum s on the st boundaries
+        :rtype: float
         """
         
-        raise NotImplementedError
+        return self._min_s_on_st_boundaries
 
+    @property
     def init_point(self) -> TrajectoryPoint:
         """
+        Get the initial point
 
+        :returns: The initial point
+        :rtype: TrajectoryPoint
         """
 
-        raise NotImplementedError
+        return self._init_point
 
+    @property
     def speed_limit(self) -> SpeedLimit:
         """
+        Get the speed limit
 
+        :returns: The speed limit
+        :rtype: SpeedLimit
         """
 
-        raise NotImplementedError
+        return self._speed_limit
 
+    @property
     def cruise_speed(self) -> float:
         """
+        Get the cruise speed
 
+        :returns: The cruise speed
+        :rtype: float
         """
         
-        raise NotImplementedError
+        return self._cruise_speed if self._cruise_speed > 0.0 else FLAGS_default_cruise_speed
 
+    @property
     def path_length(self) -> float:
         """
-        
+        Get the path length
+
+        :returns: The path length
+        :rtype: float
         """
 
-        raise NotImplementedError
+        return self._path_data_length
 
+    @property
     def total_time_by_conf(self) -> float:
         """
-        
+        Get the total time by configuration
+
+        :returns: The total time by configuration
+        :rtype: float
         """
 
-        raise NotImplementedError
+        return self._total_time_by_conf
 
     def SetSTDrivableBoundary(self, s_boundary: List[Tuple[float, float, float]],
                               v_obs_info: List[Tuple[float, float, float]]) -> bool:
         """
-        
-        """
-        
-        raise NotImplementedError
+        Set the st drivable boundary
 
+        :param List[Tuple[float, float, float]] s_boundary: The s boundary
+        :param List[Tuple[float, float, float]] v_obs_info: The observed information
+        :returns: True if the st drivable boundary is set, False otherwise
+        :rtype: bool
+        """
+
+        if len(s_boundary) != len(v_obs_info):
+            return False
+        for i in range(len(s_boundary)):
+            
+            v_obs_lower = v_obs_info[i][1] if v_obs_info[i][1] > -kObsSpeedIgnoreThreshold else None
+            v_obs_upper = v_obs_info[i][2] if v_obs_info[i][2] < kObsSpeedIgnoreThreshold else None
+            st_bound_instance = STDrivableBoundaryInstance(s_boundary[i][0],
+                                                           s_boundary[i][1],
+                                                           s_boundary[i][2],
+                                                           v_obs_lower,
+                                                           v_obs_upper)
+        
+        return True
+
+    @property
     def st_drivable_boundary(self) -> STDrivableBoundary:
         """
-        
+        Get the st drivable boundary
+
+        :returns: The st drivable boundary
+        :rtype: STDrivableBoundary
         """
 
-        raise NotImplementedError
+        return self._st_drivable_boundary
