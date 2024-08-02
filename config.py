@@ -152,3 +152,17 @@ FLAGS_speed_bump_speed_limit = 1
 FLAGS_default_cruise_speed = 1
 
 FLAGS_use_multi_thread_to_add_obstacles = 1
+
+FLAGS_trajectory_time_min_interval = 1
+
+FLAGS_trajectory_time_max_interval = 1
+
+FLAGS_trajectory_time_high_density_period = 1
+
+FLAGS_passed_destination_threshold = 1
+
+FLAGS_destination_check_distance = 1
+
+FLAGS_turn_signal_distance = 1
+
+FLAGS_obstacle_lon_ignore_buffer = 1

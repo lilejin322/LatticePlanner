@@ -12,7 +12,7 @@ from common.Path import PathOverlap
 from protoclass.SLBoundary import SLPoint
 from protoclass.DecisionResult import DecisionResult, VehicleSignal, ObjectDecisions, ObjectDecisionType, ObjectIgnore, ChangeLaneType, \
                                       MainDecision, MainStop, MainCruise, MainEmergencyStop, EmergencyStopCruiseToStop, ObjectDecision, \
-                                      ObjectAvoid, StopReasonCode, MainMissionComplete
+                                      ObjectAvoid, StopReasonCode, MainMissionComplete, ObjectStop
 from protoclass.VehicleState import VehicleState
 from common.PathData import PathData
 from common.PathDecision import PathDecision
@@ -29,7 +29,8 @@ from config import FRONT_EDGE_TO_CENTER, BACK_EDGE_TO_CENTER, LEFT_EDGE_TO_CENTE
                    EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, FLAGS_speed_bump_speed_limit, FLAGS_default_cruise_speed, \
                    FLAGS_use_multi_thread_to_add_obstacles, FLAGS_trajectory_time_min_interval, \
                    FLAGS_trajectory_time_max_interval, FLAGS_trajectory_time_high_density_period, \
-                   FLAGS_passed_destination_threshold, FLAGS_destination_check_distance
+                   FLAGS_passed_destination_threshold, FLAGS_destination_check_distance, FLAGS_turn_signal_distance, \
+                   FLAGS_obstacle_lon_ignore_buffer
 from common.Vec2d import Vec2d
 from common.Box2d import Box2d
 from logging import Logger
@@ -759,13 +760,54 @@ class ReferenceLineInfo:
 
         return self._is_drivable
     
-    def ExportEngageAdvice(self) -> Tuple[EngageAdvice, PlanningContext]:
+    def ExportEngageAdvice(self, planning_context: PlanningContext) -> EngageAdvice:
+        """
+        Export engage advice
+
+        :param PlanningContext planning_context: The planning context
+        :returns: The engage advice
+        :rtype: EngageAdvice
         """
 
-        """
+        prev_advice = EngageAdvice()
+        kMaxAngleDiff: float = math.pi / 6.0
 
-        raise NotImplementedError
-    
+        engage: bool = False
+        if not self.IsDrivable():
+            prev_advice.reason = "Reference line not drivable"
+        elif not self._is_on_reference_line:
+            scenario_type = planning_context.planning_status.scenario.scenario_type
+            if scenario_type == "PARK_AND_GO" or self.IsChangeLanePath():
+                # note: when self._is_on_reference_line is FALSE
+                #  (1) always engage while in PARK_AND_GO scenario
+                #  (2) engage when "ChangeLanePath" is picked as Drivable ref line
+                #  where most likely ADC not OnLane yet
+                engage = True
+            else:
+                prev_advice.reason = "Not on reference line"
+        else:
+            # check heading
+            ref_point = self._reference_line.GetReferencePoint(self._adc_sl_boundary.end_s)
+            if AngleDiff(self._vehicle_state.heading, ref_point.heading) < kMaxAngleDiff:
+                engage = True
+            else:
+                prev_advice.reason = "Vehicle heading is not aligned"
+        
+        if engage:
+            if self._vehicle_state.driving_mode != VehicleState.DrivingMode.COMPLETE_AUTO_DRIVE:
+                # READY_TO_ENGAGE when in non-AUTO mode
+                prev_advice.advice = EngageAdvice.Advice.READY_TO_ENGAGE
+            else:
+                # KEEP_ENGAGED when in AUTO mode
+                prev_advice.advice = EngageAdvice.Advice.KEEP_ENGAGED
+            prev_advice.reason = ""
+        else:
+            if prev_advice.advice != EngageAdvice.Advice.DISALLOW_ENGAGE:
+                prev_advice.advice = EngageAdvice.Advice.PREPARE_DISENGAGE
+        
+        engage_advice: EngageAdvice = deepcopy(prev_advice)
+        return engage_advice
+
     @property
     def Lanes(self) -> RouteSegments:
         """
@@ -840,17 +882,43 @@ class ReferenceLineInfo:
 
     def GetPathTurnType(self, s: float) -> Lane.LaneTurn:
         """
+        Get the path turn type
 
+        :param float s: The s value
+        :returns: The path turn type
+        :rtype: Lane.LaneTurn
         """
 
-        raise NotImplementedError
+        forward_buffer: float = 20.0
+        route_s: float = 0.0
+        for seg in self.Lanes:
+            if route_s > s + forward_buffer:
+                break
+            route_s += seg.end_s - seg.start_s
+            if route_s < s:
+                continue
+            turn_type = seg.lane.turn
+            if turn_type == Lane.LaneTurn.LEFT_TURN or \
+               turn_type == Lane.LaneTurn.RIGHT_TURN or \
+               turn_type == Lane.LaneTurn.U_TURN:
+                return turn_type
     
+        return Lane.LaneTurn.NO_TURN
+
     def GetIntersectionRightofWayStatus(self, pnc_junction_overlap: PathOverlap) -> bool:
         """
+        Get the intersection right of way status
 
+        :param PathOverlap pnc_junction_overlap: The pnc junction overlap
+        :returns: the bool result
+        :rtype: bool
         """
 
-        raise NotImplementedError
+        if self.GetPathTurnType(pnc_junction_overlap.start_s) != Lane.LaneTurn.NO_TURN:
+            return False
+        
+        # TODO(all): iterate exits of intersection to check/compare speed-limit
+        return True
 
     @property
     def OffsetToOtherReferenceLine(self) -> float:
@@ -927,8 +995,8 @@ class ReferenceLineInfo:
         :param str blocking_obstacle_id: The obstacle to set
         """
 
-        raise NotImplementedError
-    
+        self._blocking_obstacle = self._path_decision.Find(blocking_obstacle_id)
+
     def is_path_lane_borrow(self) -> bool:
         """
         Check if the path is lane borrow
@@ -1024,8 +1092,16 @@ class ReferenceLineInfo:
         :rtype: Tuple[int, PathOverlap]
         """
 
-        raise NotImplementedError
-    
+        pnc_junction_overlaps: List[PathOverlap] = self.reference_line.map_path.pnc_junction_overlaps
+
+        kError: float = 1.0   # meter
+        for overlap in pnc_junction_overlaps:
+            if s >= overlap.start_s - kError and s <= overlap.end_s + kError:
+                pnc_junction_overlap = deepcopy(overlap)
+                return 1, pnc_junction_overlap
+
+        return 0, None
+
     def GetJunction(self, s: float) -> Tuple[int, PathOverlap]:
         """
         Get the junction
@@ -1035,8 +1111,16 @@ class ReferenceLineInfo:
         :rtype: Tuple[int, PathOverlap]
         """
 
-        raise NotImplementedError
-    
+        junction_overlaps: List[PathOverlap] = self._reference_line.map_path.junction_overlaps
+
+        kError: float = 1.0   # meter
+        for overlap in junction_overlaps:
+            if s >= overlap.start_s - kError and s <= overlap.end_s + kError:
+                junction_overlap = deepcopy(overlap)
+                return 1, junction_overlap
+        
+        return 0, None
+
     def GetAllStopDecisionSLPoint(self) -> List[SLPoint]:
         """
         Get all stop decision sl point
@@ -1045,8 +1129,23 @@ class ReferenceLineInfo:
         :rtype: List[SLPoint]
         """
 
-        raise NotImplementedError
-    
+        result: List[SLPoint] = []
+        for obstacle in self._path_decision.obstacles:
+            object_decision: ObjectDecisionType = obstacle.LongitudinalDecision()
+            if not isinstance(object_decision.object_tag, ObjectStop):
+                continue
+            stop_point: PointENU = object_decision.object_tag.stop_point
+            _, stop_line_sl = self._reference_line.XYToSL(stop_point)
+            if stop_line_sl.s <= 0 or stop_line_sl.s >= self._reference_line.Length():
+                continue
+            result.append(stop_line_sl)
+        
+        # sort by s
+        if result:
+            result.sort(key=lambda sl_point: sl_point.s)
+
+        return result
+
     def SetTurnSignal(self, turn_signal: VehicleSignal.TurnSignal) -> None:
         """
         Set the turn signal
@@ -1093,8 +1192,43 @@ class ReferenceLineInfo:
         :rtype: PathOverlap
         """
 
-        raise NotImplementedError
-    
+        if overlap_type == ReferenceLineInfo.OverlapType.SIGNAL:
+            # traffic_light_overlap
+            traffic_light_overlaps: List[PathOverlap] = self._reference_line.map_path.signal_overlaps
+            for traffic_light_overlap in traffic_light_overlaps:
+                if traffic_light_overlap.object_id == overlap_id:
+                    return traffic_light_overlap
+
+        elif overlap_type == ReferenceLineInfo.OverlapType.STOP_SIGN:
+            # stop_sign_overlap
+            stop_sign_overlaps: List[PathOverlap] = self._reference_line.map_path.stop_sign_overlaps
+            for stop_sign_overlap in stop_sign_overlaps:
+                if stop_sign_overlap.object_id == overlap_id:
+                    return stop_sign_overlap
+
+        elif overlap_type == ReferenceLineInfo.OverlapType.PNC_JUNCTION:
+            # pnc_junction_overlap
+            pnc_junction_overlaps: List[PathOverlap] = self._reference_line.map_path.pnc_junction_overlaps
+            for pnc_junction_overlap in pnc_junction_overlaps:
+                if pnc_junction_overlap.object_id == overlap_id:
+                    return pnc_junction_overlap
+
+        elif overlap_type == ReferenceLineInfo.OverlapType.YIELD_SIGN:        
+            # yield_sign_overlap
+            yield_sign_overlaps: List[PathOverlap] = self._reference_line.map_path.yield_sign_overlaps
+            for yield_sign_overlap in yield_sign_overlaps:
+                if yield_sign_overlap.object_id == overlap_id:
+                    return yield_sign_overlap
+        
+        elif overlap_type == ReferenceLineInfo.OverlapType.JUNCTION:
+            # junction_overlap
+            junction_overlaps: List[PathOverlap] = self._reference_line.map_path.junction_overlaps
+            for junction_overlap in junction_overlaps:
+                if junction_overlap.object_id == overlap_id:
+                    return junction_overlap
+
+        return None
+
     def InitFirstOverlaps(self) -> None:
         """
         Init the first overlaps
@@ -1139,6 +1273,7 @@ class ReferenceLineInfo:
         """
         Check if the vehicle is changing lane
 
+        * This function is weird, cpp source has no implementation but has a declaration
         :returns: True if the vehicle is changing lane, otherwise False.
         :rtype: bool
         """
