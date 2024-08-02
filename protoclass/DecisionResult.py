@@ -254,6 +254,7 @@ class EmergencyStopCruiseToStop:
 
   pass
 
+@dataclass
 class MainEmergencyStop:
   """
   MainEmergencyStop class, oriented from protobuf message

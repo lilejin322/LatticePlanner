@@ -11,7 +11,8 @@ from protoclass.Lane import Lane
 from common.Path import PathOverlap
 from protoclass.SLBoundary import SLPoint
 from protoclass.DecisionResult import DecisionResult, VehicleSignal, ObjectDecisions, ObjectDecisionType, ObjectIgnore, ChangeLaneType, \
-                                      MainDecision, MainStop, MainCruise
+                                      MainDecision, MainStop, MainCruise, MainEmergencyStop, EmergencyStopCruiseToStop, ObjectDecision, \
+                                      ObjectAvoid, StopReasonCode, MainMissionComplete
 from protoclass.VehicleState import VehicleState
 from common.PathData import PathData
 from common.PathDecision import PathDecision
@@ -29,7 +30,7 @@ from config import FRONT_EDGE_TO_CENTER, BACK_EDGE_TO_CENTER, LEFT_EDGE_TO_CENTE
                    EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, FLAGS_speed_bump_speed_limit, FLAGS_default_cruise_speed, \
                    FLAGS_use_multi_thread_to_add_obstacles, FLAGS_trajectory_time_min_interval, \
                    FLAGS_trajectory_time_max_interval, FLAGS_trajectory_time_high_density_period, \
-                   FLAGS_passed_destination_threshold
+                   FLAGS_passed_destination_threshold, FLAGS_destination_check_distance
 from common.Vec2d import Vec2d
 from common.Box2d import Box2d
 from logging import Logger
@@ -37,6 +38,7 @@ from common.ReferencePoint import ReferencePoint
 from copy import deepcopy, copy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import math
+from protoclass.PointENU import PointENU
 
 logger = Logger("ReferenceLineInfo")
 
@@ -789,20 +791,21 @@ class ReferenceLineInfo:
             lane_ids.append(lane_seg.lane.id)
         return lane_ids
 
-    def ExportDecision(self) -> Tuple[DecisionResult, PlanningContext]:
+    def ExportDecision(self, planning_context: PlanningContext) -> Tuple[DecisionResult, PlanningContext]:
         """
         Export decision
 
+        :param PlanningContext planning_context: The planning context
         :returns: (DecisionResult decision_result, PlanningContext planning_context)
         :rtype: Tuple[DecisionResult, PlanningContext]
         """
 
-        decision_result, planning_context = self.MakeDecision()
+        decision_result = self.MakeDecision(planning_context)
         vehicle_signal = self.ExportVehicleSignal(decision_result)
         main_decision: MainDecision = decision_result.main_decision
-        if main_decision.task == MainStop:
+        if isinstance(main_decision.task, MainStop):
             main_decision.task.change_lane_type = self.Lanes.PreviousAction()
-        elif main_decision.task == MainCruise:
+        elif isinstance(main_decision.task, MainCruise):
             main_decision.task.change_lane_type = self.Lanes.PreviousAction()
         return decision_result, planning_context
 
@@ -1237,7 +1240,7 @@ class ReferenceLineInfo:
 
         return False
 
-    def MakeDecision(self) -> Tuple[DecisionResult, PlanningContext]:
+    def MakeDecision(self, planning_context: PlanningContext) -> Tuple[DecisionResult, PlanningContext]:
         """
         Make decision
 
@@ -1251,21 +1254,56 @@ class ReferenceLineInfo:
         # check stop decision
         error_code: int = self.MakeMainStopDecision(decision_result)
         if error_code < 0:
-            self.MakeEStopDecision(decision_result)
-        self.MakeMainMissionCompleteDecision(decision_result)
+            decision_result = self.MakeEStopDecision()
+        self.MakeMainMissionCompleteDecision(decision_result, planning_context)
         self.SetObjectDecisions(decision_result)
 
     def MakeMainStopDecision(self, decision_result: DecisionResult) -> int:
         """
         Make main stop decision
 
-        :returns: (int, DecisionResult decision_result)
-        :rtype: Tuple[int, DecisionResult]
+        :param DecisionResult decision_result: The decision result obj to be modified
+        :returns: the error code
+        :rtype: int
         """
 
-        raise NotImplementedError
+        min_stop_line_s: float = float("inf")
+        stop_obstacle: Obstacle = None
+        stop_decision: ObjectStop = None
+
+        for obstacle in self._path_decision.obstacles:
+            object_decision = obstacle.LongitudinalDecision()
+            if not object_decision.stop:
+                continue
+            
+            stop_point:PointENU = object_decision.stop.stop_point
+            _, stop_line_sl = self._reference_line.XYToSL(stop_point)
+
+            stop_line_s: float = stop_line_sl.s
+            if stop_line_s < 0 or stop_line_s > self._reference_line.Length():
+                logger.error(f"Ignore object: {obstacle.Id} fence route_s [{stop_line_s}] not in range [0, {self._reference_line.Length()}]")
+                continue
+
+            # check stop_line_s vs adc_s
+            if stop_line_s < min_stop_line_s:
+                min_stop_line_s = stop_line_s
+                stop_obstacle = obstacle
+                stop_decision = object_decision.stop
+
+        if stop_obstacle is not None:
+            main_stop: MainStop = decision_result.main_decision.task
+            main_stop.reason_code = stop_decision.reason_code
+            main_stop.reason = "stop by " + stop_obstacle.Id
+            main_stop.stop_point.x = stop_decision.stop_point.x 
+            main_stop.stop_point.y = stop_decision.stop_point.y
+            main_stop.stop_heading = stop_decision.stop_heading
+            logger.debug(f" main stop obstacle id:{stop_obstacle.Id} stop_line_s:{min_stop_line_s} stop_point: ({stop_decision.stop_point.x}, {stop_decision.stop_point.y}) stop_heading: {stop_decision.stop_heading}")
+
+            return 1
     
-    def MakeMainMissionCompleteDecision(self) -> Tuple[DecisionResult, PlanningContext]:
+        return 0
+
+    def MakeMainMissionCompleteDecision(self, decision_result: DecisionResult, planning_context: PlanningContext) -> None:
         """
         Make main mission complete decision
 
@@ -1273,7 +1311,22 @@ class ReferenceLineInfo:
         :rtype: Tuple[DecisionResult, PlanningContext]
         """
 
-        raise NotImplementedError
+        if not isinstance(decision_result.main_decision.task, MainStop):
+            return
+        main_stop: MainStop = decision_result.main_decision.task
+        if main_stop.reason_code != StopReasonCode.STOP_REASON_DESTINATION or main_stop.reason_code != StopReasonCode.STOP_REASON_PULL_OVER:
+            return
+        distance_destination: float = self.SDistanceToDestination()
+        if distance_destination > FLAGS_destination_check_distance:
+            return
+        
+        decision_result.main_decision.task = MainMissionComplete()
+        mission_complete: MainMissionComplete = decision_result.main_decision.task
+        if self.ReachedDestination():
+            planning_context.planning_status.destination.has_passed_destination = True
+        else:
+            mission_complete.stop_point = deepcopy(main_stop.stop_point)
+            mission_complete.stop_heading = main_stop.stop_heading
 
     def MakeEStopDecision(self) -> DecisionResult:
         """
@@ -1283,8 +1336,21 @@ class ReferenceLineInfo:
         :rtype: DecisionResult
         """
 
-        raise NotImplementedError
-    
+        decision_result = DecisionResult(main_decision=MainDecision(task=MainEmergencyStop()))
+        main_estop: MainEmergencyStop = decision_result.main_decision.task
+        main_estop.reason_code = MainEmergencyStop.ReasonCode.ESTOP_REASON_INTERNAL_ERR
+        main_estop.reason = "estop reason to be added"
+        main_estop.task = EmergencyStopCruiseToStop()
+        
+        # set object decisions
+        object_decisions: ObjectDecisions = decision_result.object_decision
+        for obstacle in self._path_decision.obstacles:
+            object_decision = ObjectDecision(id==obstacle.Id, perception_id=obstacle.PerceptionId,
+                                             object_decision=[ObjectDecisionType(object_tag=ObjectAvoid())])
+            object_decisions.decision.append(object_decision)
+        
+        return decision_result
+
     def SetObjectDecisions(self) -> ObjectDecisions:
         """
         Set object decisions
