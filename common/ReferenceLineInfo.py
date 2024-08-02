@@ -8,7 +8,7 @@ from common.DiscretizedTrajectory import DiscretizedTrajectory
 from protoclass.SLBoundary import SLBoundary
 from protoclass.ADCTrajectory import ADCTrajectory, EngageAdvice
 from protoclass.Lane import Lane
-from common.Path import PathOverlap
+from common.Path import PathOverlap, AngleDiff
 from protoclass.SLBoundary import SLPoint
 from protoclass.DecisionResult import DecisionResult, VehicleSignal, ObjectDecisions, ObjectDecisionType, ObjectIgnore, ChangeLaneType, \
                                       MainDecision, MainStop, MainCruise, MainEmergencyStop, EmergencyStopCruiseToStop, ObjectDecision, \
