@@ -147,7 +147,8 @@ class StGraphData:
                                                            s_boundary[i][2],
                                                            v_obs_lower,
                                                            v_obs_upper)
-        
+
+        self._st_drivable_boundary.st_boundary.append(st_bound_instance)
         return True
 
     @property
