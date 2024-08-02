@@ -1291,6 +1291,7 @@ class ReferenceLineInfo:
                 stop_decision = object_decision.stop
 
         if stop_obstacle is not None:
+            decision_result.main_decision.task = MainStop()
             main_stop: MainStop = decision_result.main_decision.task
             main_stop.reason_code = stop_decision.reason_code
             main_stop.reason = "stop by " + stop_obstacle.Id
@@ -1351,7 +1352,7 @@ class ReferenceLineInfo:
         
         return decision_result
 
-    def SetObjectDecisions(self) -> ObjectDecisions:
+    def SetObjectDecisions(self, decision_result: DecisionResult) -> None:
         """
         Set object decisions
 
@@ -1359,8 +1360,17 @@ class ReferenceLineInfo:
         :rtype: ObjectDecisions
         """
 
-        raise NotImplementedError
-    
+        object_decisions: ObjectDecisions = decision_result.object_decision
+        for obstacle in self._path_decision.obstacles:
+            if not obstacle.HasNonIgnoreDecision():
+                continue
+            object_decision = ObjectDecision(id=obstacle.Id, perception_id=obstacle.PerceptionId)
+            if obstacle.HasLateralDecision() and (not obstacle.IsLateralIgnore()):
+                object_decision.object_decision.append(deepcopy(obstacle.LateralDecision()))
+            if obstacle.HasLongitudinalDecision() and (not obstacle.IsLongitudinalIgnore()):
+                object_decision.object_decision.append(deepcopy(obstacle.LongitudinalDecision()))
+            object_decisions.decision.append(object_decision)
+
     def AddObstacleHelper(self, obstacle: Obstacle) -> bool:
         """
         Add obstacle helper
