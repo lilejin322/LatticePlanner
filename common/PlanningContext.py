@@ -11,14 +11,14 @@ class PlanningContext:
         Constructor
         """
 
-        self._planning_status = None
+        self._planning_status: PlanningStatus = PlanningStatus()
     
     def Clear(self) -> None:
         """
         Clear the context
         """
 
-        self._planning_status.Clear()
+        self.__init__()
     
     def Init(self) -> None:
         """
