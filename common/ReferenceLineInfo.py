@@ -6,7 +6,7 @@ from common.RouteSegments import RouteSegments
 from common.Obstacle import Obstacle
 from common.DiscretizedTrajectory import DiscretizedTrajectory
 from protoclass.SLBoundary import SLBoundary
-from protoclass.ADCTrajectory import ADCTrajectory
+from protoclass.ADCTrajectory import ADCTrajectory, EngageAdvice
 from protoclass.Lane import Lane
 from common.Path import PathOverlap
 from protoclass.SLBoundary import SLPoint
@@ -18,7 +18,6 @@ from common.PathData import PathData
 from common.PathDecision import PathDecision
 from common.SpeedData import SpeedData
 from protoclass.LatencyStats import LatencyStats
-from protoclass.EngageAdvice import EngageAdvice
 from common.PathBoundary import PathBoundary
 from common.PlanningContext import PlanningContext
 from protoclass.RSSInfo import RSSInfo
