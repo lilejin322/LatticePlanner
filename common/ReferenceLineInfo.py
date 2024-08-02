@@ -30,7 +30,7 @@ from config import FRONT_EDGE_TO_CENTER, BACK_EDGE_TO_CENTER, LEFT_EDGE_TO_CENTE
                    FLAGS_use_multi_thread_to_add_obstacles, FLAGS_trajectory_time_min_interval, \
                    FLAGS_trajectory_time_max_interval, FLAGS_trajectory_time_high_density_period, \
                    FLAGS_passed_destination_threshold, FLAGS_destination_check_distance, FLAGS_turn_signal_distance, \
-                   FLAGS_obstacle_lon_ignore_buffer
+                   FLAGS_obstacle_lon_ignore_buffer, FLAGS_destination_obstacle_id
 from common.Vec2d import Vec2d
 from common.Box2d import Box2d
 from logging import Logger

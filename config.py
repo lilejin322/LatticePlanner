@@ -166,3 +166,5 @@ FLAGS_destination_check_distance = 1
 FLAGS_turn_signal_distance = 1
 
 FLAGS_obstacle_lon_ignore_buffer = 1
+
+FLAGS_destination_obstacle_id = 1
