@@ -1,16 +1,30 @@
 from common.ReferenceLine import LaneSegment
 from protoclass.DecisionResult import ChangeLaneType
-from typing import Tuple, Union
+from typing import Tuple, Union, Any
 from protoclass.SLBoundary import SLPoint
 from common.MapPathPoint import LaneWaypoint
 from protoclass.PointENU import PointENU
 from common.Vec2d import Vec2d
 from copy import deepcopy
 from logging import Logger
+import math
+from common.Path import AngleDiff
 
 logger = Logger("RouteSegments")
 
 kSegmentationEpsilon: float = 0.5   # Minimum error in lane segmentation.
+
+def DistanceXY(u: Any, v: Any) -> float:
+    """
+    Distance XY
+
+    :param Any u: U
+    :param Any v: V
+    :returns: Distance XY
+    :rtype: float
+    """
+
+    return math.hypot(u.x - v.x, u.y - v.y)
 
 class RouteSegments(list):
     """
@@ -196,7 +210,23 @@ class RouteSegments(list):
         :rtype: Tuple[bool, LaneWaypoint]
         """
 
-        raise NotImplementedError
+        accumulated_s: float = 0.0
+        has_projection: bool = False
+        waypoint: LaneWaypoint = LaneWaypoint()
+        for segment in self:
+            if accumulated_s - kSegmentationEpsilon < s < accumulated_s + segment.end_s - segment.start_s + kSegmentationEpsilon:
+                waypoint.lane = segment.lane
+                waypoint.s = s - accumulated_s + segment.start_s
+                if waypoint.s < segment.start_s:
+                    waypoint.s = segment.start_s
+                elif waypoint.s > segment.end_s:
+                    waypoint.s = segment.end_s
+                has_projection = True
+                break
+
+            accumulated_s += segment.end_s - segment.start_s
+
+        return has_projection, waypoint
 
     def CanDriveFrom(self, waypoint: LaneWaypoint) -> bool:
         """
@@ -209,7 +239,47 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
+        point = waypoint.lane.GetSmoothPoint(waypoint.s)
+
+        # 0 if waypoint is on segment, ok
+        if self.IsWaypointOnSegment(waypoint):
+            return True
+        
+        # 1. should have valid projection
+        has_projection, route_sl, segment_waypoint = self.GetProjection(point)
+        if not has_projection:
+            logger.error(f"No projection from waypoint: {waypoint}")
+            return False
+        kMaxLaneWidth: float = 10.0
+        if abs(route_sl.l) > 2 * kMaxLaneWidth:
+            return False
+        
+        # 2. heading should be the same
+        waypoint_heading = waypoint.lane.Heading(waypoint.s)
+        segment_heading = segment_waypoint.lane.Heading(segment_waypoint.s)
+        heading_diff = AngleDiff(waypoint_heading, segment_heading)
+        if abs(heading_diff) > math.pi / 2.0:
+            logger.debug(f"Angle diff too large: {heading_diff}")
+            return False
+
+        # 3. the waypoint and the projected lane should not be separated apart.
+        waypoint_left_width, waypoint_right_width = waypoint.lane.GetWidth(waypoint.s)
+        segment_left_width, segment_right_width = segment_waypoint.lane.GetWidth(segment_waypoint.s)
+        segment_projected_point = segment_waypoint.lane.GetSmoothPoint(segment_waypoint.s)
+        dist: float = DistanceXY(point, segment_projected_point)
+        kLaneSeparationDistance: float = 0.3
+        if route_sl.l < 0:
+            # waypoint at right side
+            if dist > waypoint_left_width + segment_right_width + kLaneSeparationDistance:
+                logger.error(f"waypoint is too far to reach: {dist}")
+                return False
+        else:
+            # waypoint at left side
+            if dist > waypoint_right_width + segment_left_width + kLaneSeparationDistance:
+                logger.error(f"waypoint is too far to reach: {dist}")
+                return False
+
+        return True
 
     @property
     def RouteEndWaypoint(self) -> LaneWaypoint:
@@ -295,7 +365,11 @@ class RouteSegments(list):
             look_backward: float = args[1]
             look_forward: float = args[2]
 
-            raise NotImplementedError
+            tag, sl_point, waypoint = self.GetProjection(point)
+            if not tag:
+                logger.error(f"failed to project {point} to segment")
+                return False
+            return self.Shrink(sl_point.s, look_backward, look_forward)
 
         if len(args) == 3 and isinstance(args[0], (float, int)):
             """
@@ -308,7 +382,10 @@ class RouteSegments(list):
             look_backward: float = args[1]
             look_forward: float = args[2]
 
-            raise NotImplementedError
+            tag, waypoint = self.GetWaypoint(s)
+            if not tag:
+                return False
+            return self.Shrink(s, waypoint, look_backward, look_forward)
 
         if len(args) == 4:
             """
@@ -323,7 +400,39 @@ class RouteSegments(list):
             look_backward: float = args[2]
             look_forward: float = args[3]
 
-            raise NotImplementedError
+            acc_s: float = 0.0
+            index: int = 0
+            while index != len(self) and acc_s + self[index].Length() < s - look_backward:
+                acc_s += self[index].Length()
+                index += 1
+            if index == len(self):
+                return True
+            self[index].start_s = max(self[index].start_s, s - look_backward - acc_s + self[index].start_s)
+            if self[index].Length < kSegmentationEpsilon:
+                index += 1
+            del self[:index]
+            
+            index: int = 0
+            acc_s: float = 0.0
+            while index != len(self) and self.WithinLaneSegment(self[index], waypoint):
+                index += 1
+            if index == len(self):
+                return True
+            acc_s = self[index].end_s - waypoint.s
+            if acc_s >= look_forward:
+                self[index].end_s = waypoint.s + look_forward
+                index += 1
+                del self[index:]
+                return True
+            index += 1
+            while index != len(self) and acc_s + self[index].Length() < look_forward:
+                acc_s += self[index].Length()
+                index += 1
+            if index == len(self):
+                return True
+            self[index].end_s = min(self[index].end_s, look_forward - acc_s + self[index].start_s)
+            del self[index + 1:]
+            return True
 
         else:
 
@@ -418,8 +527,11 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        for segment in self:
+            if self.WithinLaneSegment(segment, waypoint):
+                return True
+        return False
+
     def IsConnectedSegment(self, other: 'RouteSegments') -> bool:
         """
         Check if we can reach the other segment from current segment just
@@ -430,7 +542,17 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
+        if len(self) == 0 or len(other) == 0:
+            return False
+        if self.IsWaypointOnSegment(other.FirstWayPoint()):
+            return True
+        if self.IsWaypointOnSegment(other.LastWayPoint()):
+            return True
+        if other.IsWaypointOnSegment(self.FirstWayPoint()):
+            return True
+        if other.IsWaypointOnSegment(self.LastWayPoint()):
+            return True
+        return False
 
     @property
     def StopForDestination(self) -> bool:
