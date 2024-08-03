@@ -6,6 +6,8 @@ from common.MapPathPoint import LaneWaypoint
 from protoclass.PointENU import PointENU
 from common.Vec2d import Vec2d
 
+kSegmentationEpsilon: float = 0.5   # Minimum error in lane segmentation.
+
 class RouteSegments(list):
     """
     RouteSegments class, inherit from list
@@ -84,7 +86,8 @@ class RouteSegments(list):
         """
 
         raise NotImplementedError
-    
+
+    @property
     def CanExit(self) -> bool:
         """
         Whether the passage region that generate this route segment can lead to
@@ -94,7 +97,7 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._can_exit
     
     def SetCanExit(self, can_exit: bool) -> None:
         """
@@ -103,8 +106,8 @@ class RouteSegments(list):
         :param bool can_exit: whether can exit
         """
 
-        raise NotImplementedError
-    
+        self._can_exit = can_exit
+
     def GetProjection(self, *args) -> Tuple[bool, SLPoint, LaneWaypoint]:
         """
         Project a point to this route segment.
@@ -153,7 +156,7 @@ class RouteSegments(list):
         else:
 
             raise ValueError("Invalid arguments for GetProjection()")
-    
+
     def GetWaypoint(self, s: float) -> Tuple[bool, LaneWaypoint]:
         """
         Get the LaneWaypoint on the route segment by the longitudinal s.
@@ -164,7 +167,7 @@ class RouteSegments(list):
         """
 
         raise NotImplementedError
-    
+
     def CanDriveFrom(self, waypoint: LaneWaypoint) -> bool:
         """
         Check whether the map allows a vehicle can reach current
@@ -177,7 +180,7 @@ class RouteSegments(list):
         """
 
         raise NotImplementedError
-    
+
     def RouteEndWaypoint(self) -> LaneWaypoint:
         """
         This is the point that is the end of the original passage in routing.
@@ -190,7 +193,7 @@ class RouteSegments(list):
         """
 
         raise NotImplementedError
-    
+
     def SetRouteEndWaypoint(self, waypoint: LaneWaypoint) -> None:
         """
         Set the route end waypoint
@@ -199,7 +202,7 @@ class RouteSegments(list):
         """
 
         raise NotImplementedError
-    
+
     def Stitch(self, other: 'RouteSegments') -> bool:
         """
         Stitch current route segments with the other route segment.
@@ -220,7 +223,30 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
+        first_waypoint: LaneWaypoint = self.FirstWayPoint()
+        has_overlap: bool = self.IsWaypointOnSegment(other.FirstWayPoint)
+        if other.IsWaypointOnSegment(first_waypoint):
+            for segment in other:
+                if self.WithinLaneSegment(segment,  first_waypoint):
+                    break
+            if segment is not None:
+                self[0].start_s = min(self[0].start_s, segment.start_s)
+                self[0].end_s = max(self[0].end_s, segment.end_s)
+                self[:0] = other[:other.index(segment)]
+                has_overlap = True
+
+        last_waypoint: LaneWaypoint = self.LastWayPoint()
+        if other.IsWaypointOnSegment(last_waypoint):
+            for segment in reversed(other):
+                if self.WithinLaneSegment(segment, last_waypoint):
+                    break
+            if segment is not None:
+                self[-1].start_s = min(self[-1].start_s, segment.start_s)
+                self[-1].end_s = max(self[-1].end_s, segment.end_s)
+                self.extend(other[other.index(segment) + 1:])
+                has_overlap = True
+
+        return has_overlap
 
     def Shrink(self,*args) -> bool:
         """
@@ -317,8 +343,9 @@ class RouteSegments(list):
         :param str id: id to set
         """
 
-        raise NotImplementedError
-    
+        self._id = id
+
+    @property
     def Id(self) -> str:
         """
         Get the id
@@ -327,7 +354,7 @@ class RouteSegments(list):
         :rtype: str
         """
 
-        raise NotImplementedError
+        return self._id
     
     def FirstWayPoint(self) -> LaneWaypoint:
         """
@@ -371,7 +398,8 @@ class RouteSegments(list):
         """
 
         raise NotImplementedError
-    
+
+    @property
     def StopForDestination(self) -> bool:
         """
         Stop for destination
@@ -380,8 +408,8 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        return self._stop_for_destination
+
     def SetStopForDestination(self, stop_for_destination: bool) -> None:
         """
         Set stop for destination
@@ -389,7 +417,7 @@ class RouteSegments(list):
         :param bool stop_for_destination: whether stop for destination
         """
 
-        raise NotImplementedError
+        self._stop_for_destination = stop_for_destination
     
     def SetProperties(self, other: 'RouteSegments') -> None:
         """
@@ -408,8 +436,13 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
-    
+        if waypoint.lane is None:
+            return False
+        tag1: bool = lane_segment.lane.id == waypoint.lane.id
+        tag2: bool = lane_segment.start_s - kSegmentationEpsilon <= waypoint.s
+        tag3: bool = lane_segment.end_s + kSegmentationEpsilon >= waypoint.s
+        return  tag1 and tag2 and tag3
+
     @staticmethod
     def Length(segments: 'RouteSegments'):
         """

@@ -54,7 +54,7 @@ class LaneSegment:
     Lane segment class
     """
 
-    lane: dict = field(default_factory=dict)
+    lane: LaneInfo = None
     start_s: float = 0.0
     end_s: float = 0.0
 
