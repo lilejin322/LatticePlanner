@@ -1,4 +1,4 @@
-from typing import List, Tuple, Dict
+from typing import Dict
 from collections import OrderedDict
 from protoclass.DecisionResult import MainStop, ObjectDecisionType, ObjectStop
 from common.NudgeInfo import NudgeInfo
@@ -23,7 +23,7 @@ class PathDecision:
         Constructor
         """
 
-        self._obstacles = OrderedDict()   # the cpp source code is IndexedList<string, Obstacle>
+        self._obstacles: Dict[str, Obstacle] = OrderedDict()   # the cpp source code is IndexedList<string, Obstacle>
         self._main_stop: MainStop = None
         self._stop_reference_line_s: float = float('inf')
         # nudge info
