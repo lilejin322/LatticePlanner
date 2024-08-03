@@ -1,10 +1,14 @@
 from common.ReferenceLine import LaneSegment
 from protoclass.DecisionResult import ChangeLaneType
-from typing import Tuple
+from typing import Tuple, Union
 from protoclass.SLBoundary import SLPoint
 from common.MapPathPoint import LaneWaypoint
 from protoclass.PointENU import PointENU
 from common.Vec2d import Vec2d
+from copy import deepcopy
+from logging import Logger
+
+logger = Logger("RouteSegments")
 
 kSegmentationEpsilon: float = 0.5   # Minimum error in lane segmentation.
 
@@ -41,6 +45,7 @@ class RouteSegments(list):
         # for destination  in the last loop.
         self._stop_for_destination: bool = False
 
+    @property
     def NextAction(self) -> ChangeLaneType:
         """
         Get the next change lane action need to take by the vehicle, if the vehicle
@@ -53,7 +58,7 @@ class RouteSegments(list):
         change_lane_type_ == routing::RIGHT;
         """
 
-        raise NotImplementedError
+        return self._next_action
     
     def SetNextAction(self, action: ChangeLaneType) -> None:
         """
@@ -62,8 +67,9 @@ class RouteSegments(list):
         :param ChangeLaneType action: action to set
         """
 
-        raise NotImplementedError
+        self._next_action = action
     
+    @property
     def PreviousAction(self) -> ChangeLaneType:
         """
         Get the previous change lane action need to take by the vehicle to reach
@@ -76,7 +82,7 @@ class RouteSegments(list):
         change_lane_type_ = routing::RIGHT;
         """
 
-        raise NotImplementedError
+        return self._previous_action
     
     def SetPreviousAction(self, action: ChangeLaneType) -> None:
         """
@@ -85,7 +91,7 @@ class RouteSegments(list):
         :param ChangeLaneType action: action to set
         """
 
-        raise NotImplementedError
+        self._previous_action = action
 
     @property
     def CanExit(self) -> bool:
@@ -127,7 +133,7 @@ class RouteSegments(list):
             """
 
             point_enu: PointENU = args[0]
-            raise NotImplementedError
+            return self.GetProjection(Vec2d(point_enu.x, point_enu.y))
 
         elif len(args) == 1 and isinstance(args[0], Vec2d):
             """
@@ -138,7 +144,8 @@ class RouteSegments(list):
             """
 
             point: Vec2d = args[0]
-            raise NotImplementedError
+            heading = None
+            return self.GetProjection(point, heading)
 
         elif len(args) == 2 and isinstance(args[0], Vec2d) and isinstance(args[1], (float, int)):
             """
@@ -150,8 +157,31 @@ class RouteSegments(list):
             """
 
             point: Vec2d = args[0]
-            heading: float = args[1]
-            raise NotImplementedError
+            heading: Union[float, None] = args[1]
+            min_l: float = float("inf")
+            accumulated_s: float = 0.0
+            has_projection: bool = False
+            sl_point: SLPoint = SLPoint()
+            waypoint: LaneWaypoint = LaneWaypoint()
+            for segment in self:
+                tag, lane_s, lane_l = segment.lane.GetProjection(point, heading)
+                if not tag:
+                    logger.error(f"Failed to get projection from point {point} on lane {segment.lane.id}")
+                    return False, None, None
+                if lane_s < segment.start_s - kSegmentationEpsilon or lane_s > segment.end_s + kSegmentationEpsilon:
+                    continue
+                if abs(lane_l) < min_l:
+                    has_projection = True
+                    lane_s = max(lane_s, segment.start_s)
+                    lane_s = min(lane_s, segment.end_s)
+                    min_l = abs(lane_l)
+                    sl_point.l=lane_l
+                    sl_point.s=lane_s - segment.start_s + accumulated_s
+                    waypoint.lane = segment.lane
+                    waypoint.s = lane_s
+                accumulated_s += segment.end_s - segment.start_s
+
+            return has_projection, sl_point, waypoint
 
         else:
 
@@ -181,6 +211,7 @@ class RouteSegments(list):
 
         raise NotImplementedError
 
+    @property
     def RouteEndWaypoint(self) -> LaneWaypoint:
         """
         This is the point that is the end of the original passage in routing.
@@ -192,7 +223,7 @@ class RouteSegments(list):
         :rtype: LaneWaypoint
         """
 
-        raise NotImplementedError
+        return self._route_end_waypoint
 
     def SetRouteEndWaypoint(self, waypoint: LaneWaypoint) -> None:
         """
@@ -201,7 +232,7 @@ class RouteSegments(list):
         :param LaneWaypoint waypoint: the route end waypoint
         """
 
-        raise NotImplementedError
+        self._route_end_waypoint = waypoint
 
     def Stitch(self, other: 'RouteSegments') -> bool:
         """
@@ -298,6 +329,7 @@ class RouteSegments(list):
 
             raise ValueError("Invalid arguments for Shrink()")
 
+    @property
     def IsOnSegment(self) -> bool:
         """
         Check if the vehicle is on this RouteSegments.
@@ -306,7 +338,7 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._is_on_segment
     
     def SetIsOnSegment(self, on_segment: bool) -> None:
         """
@@ -315,8 +347,9 @@ class RouteSegments(list):
         :param bool on_segment: whether the vehicle is on this RouteSegments
         """
         
-        raise NotImplementedError
-    
+        self._is_on_segment = on_segment
+
+    @property
     def IsNeighborSegment(self) -> bool:
         """
         Check if the vehicle is on the neighbor segment of this RouteSegments.
@@ -325,7 +358,7 @@ class RouteSegments(list):
         :rtype: bool
         """
 
-        raise NotImplementedError
+        return self._is_neighbor
     
     def SetIsNeighborSegment(self, is_neighbor: bool) -> None:
         """
@@ -334,7 +367,7 @@ class RouteSegments(list):
         :param bool is_neighbor: whether the vehicle is on the neighbor segment of this RouteSegments
         """
 
-        raise NotImplementedError
+        self._is_neighbor = is_neighbor
     
     def SetId(self, id: str) -> None:
         """
@@ -364,8 +397,8 @@ class RouteSegments(list):
         :rtype: LaneWaypoint
         """
 
-        raise NotImplementedError
-    
+        return LaneWaypoint(self[0].lane, self[0].start_s, 0.0)
+
     def LastWayPoint(self) -> LaneWaypoint:
         """
         Get the last waypoint from the lane segments.
@@ -374,8 +407,8 @@ class RouteSegments(list):
         :rtype: LaneWaypoint
         """
 
-        raise NotImplementedError
-    
+        return LaneWaypoint(self[-1].lane, self[-1].end_s, 0.0)
+
     def IsWaypointOnSegment(self, waypoint: LaneWaypoint) -> bool:
         """
         Check if a waypoint is on segment
@@ -424,8 +457,14 @@ class RouteSegments(list):
         Copy the properties of other segments to current one
         """
 
-        raise NotImplementedError
-    
+        self._route_end_waypoint = deepcopy(other.RouteEndWaypoint)
+        self._can_exit = deepcopy(other.CanExit)
+        self._is_on_segment = deepcopy(other.IsOnSegment)
+        self._next_action = deepcopy(other.NextAction)
+        self._previous_action = deepcopy(other.PreviousAction)
+        self._id = deepcopy(other.Id)
+        self._stop_for_destination = deepcopy(other.StopForDestination)
+
     def WithinLaneSegment(self, lane_segment: LaneSegment, waypoint: LaneWaypoint) -> bool:
         """
         Check if the waypoint is within the lane segment
@@ -444,13 +483,16 @@ class RouteSegments(list):
         return  tag1 and tag2 and tag3
 
     @staticmethod
-    def Length(segments: 'RouteSegments'):
+    def Length(segments: 'RouteSegments') -> float:
         """
         Get the length of the route segments
         """
 
-        raise NotImplementedError
-    
+        s: float = 0.0
+        for seg in segments:
+            s += seg.Length()
+        return s
+
     def __str__(self) -> str:
         """
         Get the string representation of the route segments
