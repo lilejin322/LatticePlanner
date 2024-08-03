@@ -3,6 +3,7 @@ from typing import Optional, List
 from enum import Enum
 from protoclass.ADCTrajectory import Point3D
 from protoclass.Trajectory import Trajectory
+import math
 
 @dataclass
 class BBox2D:
