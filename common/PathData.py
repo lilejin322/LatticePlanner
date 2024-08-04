@@ -11,6 +11,7 @@ from protoclass.SLBoundary import SLPoint
 from common.ReferencePoint import ReferencePoint
 from CartesianFrenetConverter import CartesianFrenetConverter
 from common.Vec2d import Vec2d
+from config import FLAGS_trajectory_point_num_for_debug
 
 logger = Logger("PathData")
 
@@ -266,7 +267,9 @@ class PathData:
         :rtype: str
         """
 
-        raise NotImplementedError
+        limit: int = min(len(self._discretized_path), FLAGS_trajectory_point_num_for_debug)
+        points_str = ",\n".join(str(point) for point in self._discretized_path[:limit])
+        return f"[\n{points_str}\n]"
 
     def set_path_label(self, label: str) -> None:
         """
