@@ -146,12 +146,12 @@ class ReferenceLineInfo:
         if not self._reference_line.GetSLBoundary(box, self._adc_sl_boundary):
             logger.error(f"Failed to get ADC boundary from box: {box}")
             return False
-        
+
         self.InitFirstOverlaps()
 
         if self._adc_sl_boundary.end_s < 0 or self._adc_sl_boundary.start_s > self._reference_line.Length():
             logger.warning(f"Vehicle SL {self._adc_sl_boundary} is not on reference line: [0, {self._reference_line.Length()}]")
-        
+
         kOutOfReferenceLineL = 14.0;       # in meters
         if self._adc_sl_boundary.start_l > kOutOfReferenceLineL or self._adc_sl_boundary.end_l < -kOutOfReferenceLineL:
             logger.error(f"Ego vehicle is too far away from reference line. self._adc_sl_boundary.start_l: {self._adc_sl_boundary.start_l}, self._adc_sl_boundary.end_l: {self._adc_sl_boundary.end_l}")
@@ -160,7 +160,7 @@ class ReferenceLineInfo:
         if not self.AddObstacles(obstacles):
             logger.error(f"Failed to add obstacles to reference line")
             return False
-        
+
         map_path = self._reference_line.map_path
         for speed_bump in map_path.speed_bump_overlaps:
             # -1 and + 1.0 are added to make sure it can be sampled.
@@ -195,7 +195,7 @@ class ReferenceLineInfo:
                 if not self.AddObstacle(obstacle):
                     logger.error(f"Failed to add obstacle {obstacle.Id}.")
                     return False
-        
+
         return True
 
     def AddObstacle(self, obstacle: Obstacle) -> Obstacle:
@@ -227,7 +227,7 @@ class ReferenceLineInfo:
             logger.debug(f"Obstacle {obstacle.Id} is lane blocking.")
         else:
             logger.debug(f"Obstacle {obstacle.Id} is NOT lane blocking.")
-        
+
         if self.IsIrrelevantObstacle(mutable_obstacle):
             ignore = ObjectDecisionType()
             ignore.object_tag = ObjectIgnore()
@@ -251,7 +251,7 @@ class ReferenceLineInfo:
         """
 
         return self._vehicle_state
-    
+
     @property
     def path_decision(self) -> PathDecision:
         """
@@ -262,7 +262,7 @@ class ReferenceLineInfo:
         """
 
         return self._path_decision
-    
+
     @property
     def reference_line(self) -> ReferenceLine:
         """
@@ -273,7 +273,7 @@ class ReferenceLineInfo:
         """
 
         return self._reference_line
-    
+
     def SDistanceToDestination(self) -> float:
         """
         Get the distance to the destination
@@ -303,7 +303,7 @@ class ReferenceLineInfo:
 
         distance_destination: float = self.SDistanceToDestination()
         return distance_destination <= FLAGS_passed_destination_threshold
-    
+
     def SetTrajectory(self, trajectory: DiscretizedTrajectory) -> None:
         """
         Set the trajectory
@@ -323,14 +323,14 @@ class ReferenceLineInfo:
         """
 
         return self._discretized_trajectory
-    
+
     @property
     def Cost(self) -> float:
         """
         """
 
         return self._cost
-    
+
     def AddCost(self, cost: float) -> None:
         """
         Add cost to the current cost
@@ -339,7 +339,7 @@ class ReferenceLineInfo:
         """
 
         self._cost += cost
-    
+
     def SetCost(self, cost: float) -> None:
         """
         Set the cost
@@ -348,7 +348,7 @@ class ReferenceLineInfo:
         """
 
         self._cost = cost
-    
+
     @property
     def PriorityCost(self) -> float:
         """
@@ -359,7 +359,7 @@ class ReferenceLineInfo:
         """
 
         return self._priority_cost
-    
+
     def SetPriorityCost(self, cost: float) -> None:
         """
 
@@ -367,7 +367,7 @@ class ReferenceLineInfo:
         """
 
         self._priority_cost = cost
-    
+
     def SetLatticeStopPoint(self, stop_point: StopPoint) -> None:
         """
         Set the lattice stop point
@@ -377,7 +377,7 @@ class ReferenceLineInfo:
         """
 
         self._planning_target.stop_point = deepcopy(stop_point)
-    
+
     def SetLatticeCruiseSpeed(self, speed: float) -> None:
         """
         Set the lattice cruise speed
@@ -396,7 +396,7 @@ class ReferenceLineInfo:
         """
 
         return self._planning_target
-    
+
     def SetCruiseSpeed(self, speed: float) -> None:
         """
         Set the cruise speed
@@ -406,7 +406,7 @@ class ReferenceLineInfo:
 
         self._cruise_speed = speed
         self._base_cruise_speed = speed
-    
+
     def LimitCruiseSpeed(self, speed: float) -> None:
         """
         Limit the cruise speed based on the "base_cruise_speed_". If the new
@@ -418,21 +418,21 @@ class ReferenceLineInfo:
         if self._base_cruise_speed <= speed:
             return
         self._cruise_speed = speed
-    
+
     def GetBaseCruiseSpeed(self) -> float:
         """
         Get the base cruise speed
         """
 
         return self._base_cruise_speed if self._base_cruise_speed > 0.0 else FLAGS_default_cruise_speed
-    
+
     def GetCruiseSpeed(self) -> float:
         """
         Get the cruise speed
         """
 
         return self._cruise_speed if self._cruise_speed > 0.0 else FLAGS_default_cruise_speed
-    
+
     def LocateLaneInfo(self, s: float) -> LaneInfo:
         """
         Locate the lane info based on the s
@@ -446,7 +446,7 @@ class ReferenceLineInfo:
         if not lanes:
             logger.warning(f"cannot get any lane using s: {s}.")
             return None
-        
+
         return lanes[0]
 
     def GetNeighborLaneInfo(self, lane_type: LaneType, s: float) -> Tuple[bool, str, float]:
@@ -462,12 +462,12 @@ class ReferenceLineInfo:
         lane_info = self.LocateLaneInfo(s)
         if lane_info is None:
             return False, "", float("inf")
-        
+
         if lane_type == self.LaneType.LeftForward:
             if not lane_info.lane.left_neighbor_forward_lane_id:
                 return False, "", float("inf")
             lane_id = lane_info.lane.left_neighbor_forward_lane_id[0]
-        
+
         elif lane_type == self.LaneType.LeftReverse:
             if not lane_info.lane.left_neighbor_reverse_lane_id:
                 return False, "", float("inf")
@@ -477,7 +477,7 @@ class ReferenceLineInfo:
             if not lane_info.lane.right_neighbor_forward_lane_id:
                 return False, "", float("inf")
             lane_id = lane_info.lane.right_neighbor_forward_lane_id[0]
-        
+
         elif lane_type == self.LaneType.RightReverse:
             if not lane_info.lane.right_neighbor_reverse_lane_id:
                 return False, "", float("inf")
@@ -570,7 +570,7 @@ class ReferenceLineInfo:
         """
 
         return self._rss_info
-    
+
     def CombinePathAndSpeedProfile(self, relative_time: float, start_s: float, discretized_trajectory: DiscretizedTrajectory) -> bool:
         """
         aggregate final result together by some configuration
@@ -586,11 +586,11 @@ class ReferenceLineInfo:
         if not self._path_data.discretized_path:
             logger.error("path data is empty.")
             return False
-        
+
         if not self._speed_data:
             logger.error("speed profile is empty")
             return False
-        
+
         cur_rel_time = 0.0
         while cur_rel_time < self._speed_data.TotalTime():
             tag, speed_point = self._speed_data.EvaluateByTime(cur_rel_time)
@@ -877,7 +877,7 @@ class ReferenceLineInfo:
                 is_protected: bool = self._junction_right_of_way_map.get(overlap.object_id)
                 if is_protected:
                     return ADCTrajectory.RightOfWayStatus.PROTECTED
-    
+
         return ADCTrajectory.RightOfWayStatus.UNPROTECTED
 
     def GetPathTurnType(self, s: float) -> Lane.LaneTurn:
@@ -902,7 +902,7 @@ class ReferenceLineInfo:
                turn_type == Lane.LaneTurn.RIGHT_TURN or \
                turn_type == Lane.LaneTurn.U_TURN:
                 return turn_type
-    
+
         return Lane.LaneTurn.NO_TURN
 
     def GetIntersectionRightofWayStatus(self, pnc_junction_overlap: PathOverlap) -> bool:
@@ -916,7 +916,7 @@ class ReferenceLineInfo:
 
         if self.GetPathTurnType(pnc_junction_overlap.start_s) != Lane.LaneTurn.NO_TURN:
             return False
-        
+
         # TODO(all): iterate exits of intersection to check/compare speed-limit
         return True
 
@@ -930,7 +930,7 @@ class ReferenceLineInfo:
         """
 
         return self._offset_to_other_reference_line
-    
+
     def SetOffsetToOtherReferenceLine(self, offset: float) -> None:
         """
         Set the offset to other reference line
@@ -939,7 +939,7 @@ class ReferenceLineInfo:
         """
 
         self._offset_to_other_reference_line = offset
-    
+
     def GetCandidatePathBoundaries(self) -> List[PathBoundary]:
         """
         Get the candidate path boundaries
@@ -949,7 +949,7 @@ class ReferenceLineInfo:
         """
 
         return self._candidate_path_boundaries
-    
+
     def SetCandidatePathBoundaries(self, candidate_path_boundaries: List[PathBoundary]) -> None:
         """
         Set the candidate path boundaries
@@ -968,7 +968,7 @@ class ReferenceLineInfo:
         """
 
         return self._candidate_path_data
-    
+
     def SetCandidatePathData(self, candidate_path_data: List[PathData]) -> None:
         """
         Set the candidate path data
@@ -977,7 +977,7 @@ class ReferenceLineInfo:
         """
 
         self._candidate_path_data = candidate_path_data
-    
+
     def GetBlockingObstacle(self) -> Obstacle:
         """
         Get the blocking obstacle
@@ -987,7 +987,7 @@ class ReferenceLineInfo:
         """
 
         return self._blocking_obstacle
-    
+
     def SetBlockingObstacle(self, blocking_obstacle_id: str) -> None:
         """
         Set the blocking obstacle
@@ -1006,7 +1006,7 @@ class ReferenceLineInfo:
         """
 
         return self._is_path_lane_borrow
-    
+
     def set_is_path_lane_borrow(self, is_path_lane_borrow: bool) -> None:
         """
         Set the path is lane borrow
@@ -1022,7 +1022,7 @@ class ReferenceLineInfo:
         """
 
         self._is_on_reference_line = True
-    
+
     def GetPriority(self) -> int:
         """
         Get the priority
@@ -1032,7 +1032,7 @@ class ReferenceLineInfo:
         """
 
         return self._reference_line.GetPriority()
-    
+
     def SetPriority(self, priority: int) -> None:
         """
         Set the priority
@@ -1041,7 +1041,7 @@ class ReferenceLineInfo:
         """
 
         self._reference_line.SetPriority(priority)
-    
+
     def set_trajectory_type(self, trajectory_type: ADCTrajectory.TrajectoryType) -> None:
         """
         Set the trajectory type
@@ -1050,7 +1050,7 @@ class ReferenceLineInfo:
         """
 
         self._trajectory_type = trajectory_type
-    
+
     @property
     def trajectory_type(self) -> ADCTrajectory.TrajectoryType:
         """
@@ -1059,7 +1059,7 @@ class ReferenceLineInfo:
         :returns: The trajectory type
         :rtype: ADCTrajectory.TrajectoryType
         """
-            
+
         return self._trajectory_type
 
     @property
@@ -1072,7 +1072,7 @@ class ReferenceLineInfo:
         """
 
         return self._st_graph_data
-    
+
     def FirstEncounteredOverlaps(self) -> List[Tuple[OverlapType, PathOverlap]]:
         """
         Get the first encountered overlaps
@@ -1082,7 +1082,7 @@ class ReferenceLineInfo:
         """
 
         return self._first_encounter_overlaps
-    
+
     def GetPnCJunction(self, s: float) -> Tuple[int, PathOverlap]:
         """
         Get the pnc junction
@@ -1139,7 +1139,7 @@ class ReferenceLineInfo:
             if stop_line_sl.s <= 0 or stop_line_sl.s >= self._reference_line.Length():
                 continue
             result.append(stop_line_sl)
-        
+
         # sort by s
         if result:
             result.sort(key=lambda sl_point: sl_point.s)
@@ -1170,7 +1170,7 @@ class ReferenceLineInfo:
         """
 
         self._path_reusable = path_reusable
-    
+
     @property
     def path_reusable(self) -> bool:
         """
@@ -1181,7 +1181,7 @@ class ReferenceLineInfo:
         """
 
         return self._path_reusable
-    
+
     def GetOverlapOnReferenceLine(self, overlap_id: str, overlap_type: OverlapType) -> PathOverlap:
         """
         Get the overlap on reference line
@@ -1219,7 +1219,7 @@ class ReferenceLineInfo:
             for yield_sign_overlap in yield_sign_overlaps:
                 if yield_sign_overlap.object_id == overlap_id:
                     return yield_sign_overlap
-        
+
         elif overlap_type == ReferenceLineInfo.OverlapType.JUNCTION:
             # junction_overlap
             junction_overlaps: List[PathOverlap] = self._reference_line.map_path.junction_overlaps
@@ -1249,22 +1249,22 @@ class ReferenceLineInfo:
         tag, pnc_junction_overlap = self.GetFirstOverlap(map_path.pnc_junction_overlaps)
         if tag:
             self._first_encounter_overlaps.append(self.OverlapType.PNC_JUNCTION, pnc_junction_overlap)
-        
+
         # signal
         tag, signal_overlap = self.GetFirstOverlap(map_path.signal_overlaps)
         if tag:
             self._first_encounter_overlaps.append(self.OverlapType.SIGNAL, signal_overlap)
-        
+
         # stop_sign
         tag, stop_sign_overlap = self.GetFirstOverlap(map_path.stop_sign_overlaps)
         if tag:
             self._first_encounter_overlaps.append(self.OverlapType.STOP_SIGN, stop_sign_overlap)
-        
+
         # yield_sign
         tag, yield_sign_overlap = self.GetFirstOverlap(map_path.yield_sign_overlaps)
         if tag:
             self._first_encounter_overlaps.append(self.OverlapType.YIELD_SIGN, yield_sign_overlap)
-        
+
         # sort by start_s
         if self._first_encounter_overlaps:
             self._first_encounter_overlaps.sort(key=lambda x: x[1].start_s)
@@ -1289,7 +1289,7 @@ class ReferenceLineInfo:
 
         if vehicle_signal.turn_signal is not None and vehicle_signal.turn_signal != VehicleSignal.TurnSignal.TURN_NONE:
             return
-        
+
         vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_NONE
 
         # Set turn signal based on lane-change.
@@ -1299,7 +1299,7 @@ class ReferenceLineInfo:
             elif self.Lanes.PreviousAction() == ChangeLaneType.RIGHT:
                 vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_RIGHT
             return
-        
+
         # Set turn signal based on lane-borrow.
         if "left" in self._path_data.path_label:
             vehicle_signal.turn_signal = VehicleSignal.TurnSignal.TURN_LEFT
@@ -1361,7 +1361,7 @@ class ReferenceLineInfo:
 
         if obstacle.IsCautionLevelObstacle:
             return False
-        
+
         # if adc is on the road, and obstacle behind adc, ignore
         obstacle_boundary = obstacle.PerceptionSLBoundary()
         if obstacle_boundary.end_s > self._reference_line.Length():
@@ -1381,7 +1381,7 @@ class ReferenceLineInfo:
         :returns: (DecisionResult decision_result, PlanningContext planning_context)
         :rtype: Tuple[DecisionResult, PlanningContext]
         """
-            
+
         # cruise by default
         decision_result = DecisionResult(main_decision=MainDecision(task=MainCruise))
 
@@ -1409,7 +1409,7 @@ class ReferenceLineInfo:
             object_decision = obstacle.LongitudinalDecision()
             if not object_decision.stop:
                 continue
-            
+
             stop_point:PointENU = object_decision.stop.stop_point
             _, stop_line_sl = self._reference_line.XYToSL(stop_point)
 
