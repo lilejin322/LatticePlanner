@@ -3,6 +3,8 @@ from typing import List, Tuple
 from common.ReferenceLine import ReferenceLine
 from protoclass.PathPoint import PathPoint
 from protoclass.FrenetFramePoint import FrenetFramePoint
+from common.DiscretizedPath import DiscretizedPath
+from common.FrenetFramePath import FrenetFramePath
 
 class PathPointType(Enum):
 
@@ -23,8 +25,8 @@ class PathData:
         """
 
         self._reference_line: ReferenceLine = None
-        self._discretized_path: DiscretizedPath = None
-        self._frenet_path: FrenetFramePath = None
+        self._discretized_path: DiscretizedPath = DiscretizedPath()
+        self._frenet_path: FrenetFramePath = FrenetFramePath()
 
         self._path_point_decision_guide: List[Tuple[float, PathPointType, float]] = []
         """
