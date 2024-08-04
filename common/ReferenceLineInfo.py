@@ -1130,7 +1130,7 @@ class ReferenceLineInfo:
         """
 
         result: List[SLPoint] = []
-        for obstacle in self._path_decision.obstacles:
+        for obstacle in self._path_decision.obstacles.values():
             object_decision: ObjectDecisionType = obstacle.LongitudinalDecision()
             if not isinstance(object_decision.object_tag, ObjectStop):
                 continue
@@ -1405,7 +1405,7 @@ class ReferenceLineInfo:
         stop_obstacle: Obstacle = None
         stop_decision: ObjectStop = None
 
-        for obstacle in self._path_decision.obstacles:
+        for obstacle in self._path_decision.obstacles.values():
             object_decision = obstacle.LongitudinalDecision()
             if not object_decision.stop:
                 continue
@@ -1479,7 +1479,7 @@ class ReferenceLineInfo:
         
         # set object decisions
         object_decisions: ObjectDecisions = decision_result.object_decision
-        for obstacle in self._path_decision.obstacles:
+        for obstacle in self._path_decision.obstacles.values():
             object_decision = ObjectDecision(id==obstacle.Id, perception_id=obstacle.PerceptionId,
                                              object_decision=[ObjectDecisionType(object_tag=ObjectAvoid())])
             object_decisions.decision.append(object_decision)
@@ -1495,7 +1495,7 @@ class ReferenceLineInfo:
         """
 
         object_decisions: ObjectDecisions = decision_result.object_decision
-        for obstacle in self._path_decision.obstacles:
+        for obstacle in self._path_decision.obstacles.values():
             if not obstacle.HasNonIgnoreDecision():
                 continue
             object_decision = ObjectDecision(id=obstacle.Id, perception_id=obstacle.PerceptionId)
