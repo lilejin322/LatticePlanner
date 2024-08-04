@@ -3,7 +3,7 @@ from common.Obstacle import Obstacle
 from common.ReferenceLineInfo import ReferenceLineInfo
 from protoclass.PathPoint import PathPoint
 from PathMatcher import PathMatcher
-from common.SLBoundary import SLBoundary
+from protoclass.SLBoundary import SLBoundary
 from common.STBoundary import STBoundary
 from common.STPoint import STPoint
 from logging import Logger
