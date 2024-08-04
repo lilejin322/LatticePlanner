@@ -5,6 +5,14 @@ from protoclass.PathPoint import PathPoint
 from protoclass.FrenetFramePoint import FrenetFramePoint
 from common.DiscretizedPath import DiscretizedPath
 from common.FrenetFramePath import FrenetFramePath
+from logging import Logger
+from copy import deepcopy
+from protoclass.SLBoundary import SLPoint
+from common.ReferencePoint import ReferencePoint
+from CartesianFrenetConverter import CartesianFrenetConverter
+from common.Vec2d import Vec2d
+
+logger = Logger("PathData")
 
 class PathPointType(Enum):
 
@@ -63,7 +71,16 @@ class PathData:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        if self._reference_line is None:
+            logger.error(f"Should NOT set discretized path when reference line is null. Please set reference line first.")
+            return False
+        self._discretized_path = path
+        tag, self._frenet_path = self.XYToSL(self._discretized_path)
+        if not tag:
+            logger.error(f"Fail to transfer discretized path to frenet path")
+            return False
+        assert len(self._discretized_path) == len(self._frenet_path)
+        return True
 
     def SetFrenetPath(self, frenet_path: FrenetFramePath) -> bool:
         """
@@ -74,7 +91,16 @@ class PathData:
         :rtype: bool
         """
         
-        raise NotImplementedError
+        if self._reference_line is None:
+            logger.error(f"Should NOT set frenet path when reference line is null. Please set reference line first.")
+            return False
+        self._frenet_path = frenet_path
+        tag, self._discretized_path = self.SLToXY(self._frenet_path)
+        if not tag:
+            logger.error(f"Fail to transfer frenet path to discretized path")
+            return False
+        assert len(self._discretized_path) == len(self._frenet_path)
+        return True
 
     def SetReferenceLine(self, reference_line: ReferenceLine) -> None:
         """
@@ -83,7 +109,8 @@ class PathData:
         :param ReferenceLine reference_line: The reference line
         """
 
-        raise NotImplementedError
+        self.Clear()
+        self._reference_line = reference_line
 
     def SetPathPointDecisionGuide(self, path_point_decision_guide: List[Tuple[float, PathPointType, float]]) -> bool:
         """
@@ -94,8 +121,16 @@ class PathData:
         :rtype: bool
         """
     
-        raise NotImplementedError
+        if self._reference_line is None:
+            logger.error(f"Should NOT set path_point_decision_guide when reference line is null.")
+            return False
+        if len(self._frenet_path) == 0 or len(self._discretized_path) == 0:
+            logger.error(f"Should NOT set path_point_decision_guide when frenet_path or world frame trajectory is empty.")
+            return False
+        self._path_point_decision_guide = path_point_decision_guide
+        return True
 
+    @property
     def discretized_path(self) -> DiscretizedPath:
         """
         Get the discretized path
@@ -104,8 +139,9 @@ class PathData:
         :rtype: DiscretizedPath
         """
 
-        raise NotImplementedError
+        return self._discretized_path
 
+    @property
     def frenet_frame_path(self) -> FrenetFramePath:
         """
         Get the frenet path
@@ -114,8 +150,9 @@ class PathData:
         :rtype: FrenetFramePath
         """
 
-        raise NotImplementedError
+        return self._frenet_path
 
+    @property
     def path_point_decision_guide(self) -> List[Tuple[float, PathPointType, float]]:
         """
         Get the path point decision guide
@@ -124,7 +161,7 @@ class PathData:
         :rtype: List[Tuple[float, PathPointType, float]]
         """
 
-        raise NotImplementedError
+        return self._path_point_decision_guide
 
     def GetPathPointWithPathS(self, s: float) -> PathPoint:
         """
@@ -133,19 +170,42 @@ class PathData:
         :param float s: The s value
         """
 
-        raise NotImplementedError
+        return self._discretized_path.Evaluate(s)
 
-    def GetPathPointWithRefS(self, ref_s: float) -> PathPoint:
+    def GetPathPointWithRefS(self, ref_s: float) -> Tuple[bool, PathPoint]:
         """
         this function will find the path_point in discretized_path whose
         projection to reference line has s value closest to ref_s.
 
         :param float ref_s: The reference s value
-        :returns: The path point
-        :rtype: PathPoint
+        :returns: a tuple of success flag and the path point
+        :rtype: Tuple[bool, PathPoint]
         """
 
-        raise NotImplementedError
+        assert self._reference_line is not None, "Reference line is not set"
+        assert len(self._discretized_path) == len(self._frenet_path), "Discretized path and frenet path have different length"
+        if ref_s < 0:
+            logger.error(f"ref_s [{ref_s}] should be > 0")
+            return False, None
+        if ref_s > self._frenet_path[-1].s:
+            logger.error(f"ref_s is larger than the length of self._frenet_path length [{self._frenet_path[-1].s}].")
+            return False, None
+        
+        index: int = 0
+        kDistanceEpsilon: float = 1e-3
+        for i in range(len(self._frenet_path) - 1):
+            if abs(ref_s - self._frenet_path[i].s) < kDistanceEpsilon:
+                path_point = deepcopy(self._discretized_path[i])
+                return True, path_point
+            if self._frenet_path[i].s < ref_s <= self._frenet_path[i + 1].s:
+                index = i
+                break
+        r: float = (ref_s - self._frenet_path[index].s) / (self._frenet_path[index + 1].s - self._frenet_path[index].s)
+
+        discretized_path_s: float = self._discretized_path[index].s + r * (self._discretized_path[index + 1].s - self._discretized_path[index].s)
+        path_point = deepcopy(self._discretized_path.Evaluate(discretized_path_s))
+
+        return True, path_point
 
     def LeftTrimWithRefS(self, frenet_point: FrenetFramePoint) -> bool:
         """
@@ -156,7 +216,17 @@ class PathData:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        assert self._reference_line is not None, "Reference line is not set"
+        frenet_frame_points: List[FrenetFramePoint] = []
+        frenet_frame_points.append(frenet_point)
+
+        for fp in self._frenet_path:
+            if abs(fp.s - frenet_point.s) < 1e-6:
+                continue
+            if fp.s > frenet_point.s:
+                frenet_frame_points.append(fp)
+        self.SetFrenetPath(FrenetFramePath(frenet_frame_points))
+        return True
 
     def UpdateFrenetFramePath(self, reference_line: ReferenceLine) -> bool:
         """
@@ -167,21 +237,26 @@ class PathData:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        self._reference_line = reference_line
+        return self.SetDiscretizedPath(self._discretized_path)
 
     def Clear(self) -> None:
         """
         Clear method
         """
 
-        raise NotImplementedError
+        self._discretized_path.clear()
+        self._frenet_path.clear()
+        self._path_point_decision_guide.clear()
+        self._path_reference.clear()
+        self._reference_line = None
 
     def Empty(self) -> bool:
         """
         Judge if the path is empty
         """
 
-        raise NotImplementedError
+        return len(self._discretized_path) == 0 and len(self._frenet_path) == 0
 
     def __str__(self) -> str:
         """
@@ -200,8 +275,9 @@ class PathData:
         :param str label: The path label
         """
 
-        raise NotImplementedError
+        self._path_label = label
 
+    @property
     def path_label(self) -> str:
         """
         Get the path label
@@ -210,7 +286,7 @@ class PathData:
         :rtype: str
         """
 
-        raise NotImplementedError
+        return self._path_label
 
     def set_blocking_obstacle_id(self, obs_id: str) -> None:
         """
@@ -269,6 +345,7 @@ class PathData:
 
         self._is_optimized_towards_trajectory_reference = is_optimized_towards_trajectory_reference
 
+    @property
     def path_reference(self) -> List[PathPoint]:
         """
         Get the path reference
@@ -277,7 +354,7 @@ class PathData:
         :rtype: List[PathPoint]
         """
 
-        raise NotImplementedError
+        return self._path_reference
 
     def set_path_reference(self, path_reference: List[PathPoint]) -> None:
         """
@@ -286,7 +363,7 @@ class PathData:
         :param List[PathPoint] path_reference: The path reference
         """
 
-        raise NotImplementedError
+        self._path_reference = path_reference
 
     def is_reverse_path(self) -> bool:
         """
@@ -316,7 +393,28 @@ class PathData:
         :rtype: Tuple[bool, DiscretizedPath]
         """
 
-        raise NotImplementedError
+        path_points: List[PathPoint] = []
+        for frenet_point in frenet_path:
+            sl_point: SLPoint = SLPoint(frenet_point.s, frenet_point.l)
+            tag, cartesian_point = self._reference_line.SLToXY(sl_point)
+            if not tag:
+                logger.error(f"Fail to convert sl point to xy point")
+                return False, DiscretizedPath()
+            ref_point: ReferencePoint = self._reference_line.GetReferencePoint(frenet_point.s)
+            theta: float = CartesianFrenetConverter.CalculateTheta(ref_point.heading, ref_point.kappa, frenet_point.l, frenet_point.dl)
+            logger.debug(f"frenet_point: {frenet_point}")
+            kappa: float = CartesianFrenetConverter.CalculateKappa(ref_point.kappa, ref_point.dkappa, frenet_point.l, frenet_point.dl, frenet_point.ddl)
+
+            s: float = 0.0
+            dkappa: float = 0.0
+            if len(path_points) > 0:
+                last: Vec2d = Vec2d(path_points[-1].x, path_points[-1].y)
+                distance: float = (last - cartesian_point).Length()
+                s = path_points[-1].s + distance
+                dkappa = (kappa - path_points[-1].kappa) / distance
+            path_points.append(PathPoint(cartesian_point.x, cartesian_point.y, 0.0, theta, kappa, s, dkappa))
+
+        return True, DiscretizedPath(path_points)
 
     def XYToSL(self, discretized_path: DiscretizedPath) -> Tuple[bool, FrenetFramePath]:
         """
@@ -327,4 +425,22 @@ class PathData:
         :rtype: Tuple[bool, FrenetFramePath]
         """
 
-        raise NotImplementedError
+        assert self._reference_line is not None, "Reference line is not set"
+        frenet_frame_points: List[FrenetFramePoint] = []
+        max_len: float = self._reference_line.Length()
+        for path_point in discretized_path:
+            frenet_point: FrenetFramePoint = self._reference_line.GetFrenetPoint(path_point)
+            if frenet_point.s is None:
+                tag, sl_point = self._reference_line.XYToSL(path_point)
+                if not tag:
+                    logger.error(f"Fail to transfer cartesian point to frenet point.")
+                    return False, FrenetFramePath()
+                # NOTICE: does not set dl and ddl here. Add if needed.
+                frenet_point = FrenetFramePoint(s=max(0.0, min(sl_point.s, max_len)),
+                                                l=sl_point.l)
+                frenet_frame_points.append(frenet_point)
+                continue
+            frenet_point.s = max(0.0, min(frenet_point.s, max_len))
+            frenet_frame_points.append(frenet_point)
+        
+        return True, FrenetFramePath(frenet_frame_points)
