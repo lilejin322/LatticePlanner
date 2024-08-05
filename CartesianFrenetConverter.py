@@ -118,3 +118,24 @@ class CartesianFrenetConverter:
         if a < 0.0:
             a += 2 * math.pi
         return a - math.pi
+
+    @staticmethod
+    def CalculateTheta(rtheta: float, rkappa: float, l: float, dl: float) -> float:
+        """
+        given sl point extract x, y, theta, kappa
+        """
+
+        return CartesianFrenetConverter.NormalizeAngle(rtheta + math.atan2(dl, 1 - l * rkappa))
+
+    @staticmethod
+    def CalculateKappa(rkappa: float, rdkappa: float, l: float, dl: float, ddl: float) -> float:
+        """
+        given sl point extract x, y, theta, kappa
+        """
+
+        denominator: float = (dl * dl + (1 - l * rkappa) * (1 - l * rkappa))
+        if abs(denominator) < 1e-8:
+            return 0.0
+        denominator = math.pow(denominator, 1.5)
+        numerator: float = rkappa + ddl - 2 * l * rkappa * rkappa - l * ddl * rkappa + l * l * rkappa * rkappa * rkappa + l * dl * rdkappa + 2 * dl * dl * rkappa
+        return numerator / denominator
