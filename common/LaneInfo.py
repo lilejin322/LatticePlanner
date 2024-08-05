@@ -3,6 +3,50 @@ from protoclass.PointENU import PointENU
 from common.Vec2d import Vec2d
 from common.LineSegment2d import LineSegment2d
 from common.Box2d import Box2d
+from protoclass.Lane import Lane, Curve, LineSegment
+from logging import Logger
+from config import FLAGS_half_vehicle_width
+
+logger = Logger("LaneInfo")
+
+kDuplicatedPointsEpsilon: float = 1e-7
+"""Minimum distance to remove duplicated points."""
+
+def RemoveDuplicates(points: List[Vec2d]) -> None:
+    """
+    Remove duplicates from the list of points
+
+    :param List[Vec2d] points: the list of points
+    """
+
+    if len(points) == 0:
+        return
+    count: int = 0
+    limit: float = kDuplicatedPointsEpsilon ** 2
+    for point in points:
+        if count == 0 or point.DistanceSquareTo(points[count - 1]) > limit:
+            points[count] = point
+            count += 1
+    points[:] = points[:count]
+
+def PointsFromCurve(input_curve: Curve) -> List[Vec2d]:
+    """
+    Convert curve to points
+
+    :param Curve input_curve: the input curve
+    :returns: the points
+    :rtype: List[Vec2d]
+    """
+
+    points: List[Vec2d] = []
+    for curve in input_curve.segment:
+        if isinstance(curve.curve_type, LineSegment):
+            for point in curve.curve_type.point:
+                points.append(Vec2d(point.x, point.y))
+        else:
+            logger.error(f"Can not handle curve type.")
+    RemoveDuplicates(points)
+    return points
 
 class LaneInfo:
 
@@ -410,11 +454,62 @@ class LaneInfo:
         raise NotImplementedError
 
     def Init(self) -> None:
-       """
-       Init method
-       """
+        """
+        Init method
+        """
 
-       raise NotImplementedError
+        self._points = PointsFromCurve(self._lane.central_curve)
+        assert len(self._points) >= 2, "Lane should have at least two points."
+        self._segments.clear()
+        self._accumulated_s.clear()
+        self._unit_directions.clear()
+        self._headings.clear()
+
+        s: float = 0
+        for i in range(len(self._points) - 1):
+           self._segments.append(LineSegment2d(self._points[i], self._points[i + 1]))
+           self._accumulated_s.append(s)
+           self._unit_directions.append(self._segments[-1].unit_direction)
+           s += self._segments[-1].length()
+
+        self._accumulated_s.append(s)
+        self._total_length = s
+        assert len(self._unit_directions) > 0, "LaneInfo._unit_directions should not be empty."
+        self._unit_directions.append(self._unit_directions[-1])
+        for direction in self._unit_directions:
+            self._headings.append(direction.Angle())
+        for overlap_id in self._lane.overlap_id:
+            self._overlap_ids.append(overlap_id.id)
+        assert len(self._segments) > 0, "LaneInfo._segments should not be empty."
+
+        self._sampled_left_width.clear()
+        self._sampled_right_width.clear()
+        for sample in self._lane.left_sample:
+            self._sampled_left_width.append((sample.s, sample.width))
+        for sample in self._lane.right_sample:
+            self._sampled_right_width.append((sample.s, sample.width))
+        
+        if self._lane.type is not None:
+            if self._lane.type == Lane.LaneType.CITY_DRIVING:
+                for p in self._sampled_left_width:
+                    if p[1] < FLAGS_half_vehicle_width:
+                        logger.error(f"_lane[id = {self._lane.id.id}]. _sampled_left_width[{p[1]}] is too small. It should be larger than half vehicle width[{FLAGS_half_vehicle_width}].")
+                for p in self._sampled_right_width:
+                    if p[1] < FLAGS_half_vehicle_width:
+                        logger.error(f"_lane[id = {self._lane.id.id}]. _sampled_right_width[{p[1]}] is too small. It should be larger than half vehicle width[{FLAGS_half_vehicle_width}].")
+            elif self._lane.type == Lane.LaneType.NONE:
+                logger.error(f"_lane[id = {self._lane.id.id}] type is NONE.")
+        else:
+            logger.error(f"_lane[id = {self._lane.id.id}] has NO type.")
+        
+        self._sampled_left_road_width.clear()
+        self._sampled_right_road_width.clear()
+        for sample in self._lane.left_road_sample:
+            self._sampled_left_road_width.append((sample.s, sample.width))
+        for sample in self._lane.right_road_sample:
+            self._sampled_right_road_width.append((sample.s, sample.width))
+        
+        self.CreateKDTree()
 
     def PostProcess(self, map_instance: HDMapImpl):
         """
