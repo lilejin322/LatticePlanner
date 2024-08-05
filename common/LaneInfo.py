@@ -6,11 +6,25 @@ from common.Box2d import Box2d
 from protoclass.Lane import Lane, Curve, LineSegment
 from logging import Logger
 from config import FLAGS_half_vehicle_width
+from bisect import bisect_left
+from ReferenceLine import kMathEpsilon
+from PathMatcher import PathMatcher
 
 logger = Logger("LaneInfo")
 
 kDuplicatedPointsEpsilon: float = 1e-7
 """Minimum distance to remove duplicated points."""
+
+def PointFromVec2d(point: Vec2d) -> PointENU:
+    """
+    Convert Vec2d to PointENU
+
+    :param Vec2d point: the input point
+    :returns: the output point
+    :rtype: PointENU
+    """
+
+    return PointENU(x = point.x, y = point.y)
 
 def RemoveDuplicates(points: List[Vec2d]) -> None:
     """
@@ -152,11 +166,43 @@ class LaneInfo:
 
     def Heading(self, s: float) -> float:
         
-        raise NotImplementedError
+        if len(self._accumulated_s) == 0:
+            return 0.0
+        kEpsilon: float = 0.001
+        if s + kEpsilon < self._accumulated_s[0]:
+            logger.warning(f"s: {s} should be >= {self._accumulated_s[0]}")
+            return self._headings[0]
+        if s - kEpsilon > self._accumulated_s[-1]:
+            logger.warning(f"s: {s} should be <= {self._accumulated_s[-1]}")
+            return self._headings[-1]
+        
+        index: int = bisect_left(self._accumulated_s, s)
+        if index == 0 or (index < len(self._accumulated_s) and self._accumulated_s[index] - s <= kMathEpsilon):
+            return self._headings[index]
+        return PathMatcher.slerp(self._headings[index - 1], self._accumulated_s[index - 1],
+                                 self._headings[index], self._accumulated_s[index], s)
 
     def Curvature(self, s: float) -> float:
 
-        raise NotImplementedError
+        if len(self._points) < 2:
+            logger.error(f"Not engough points to compute curvature.")
+            return 0.0
+        kEpsilon: float = 0.001
+        if s + kEpsilon < self._accumulated_s[0]:
+            logger.error(f"s: {s} should be >= {self._accumulated_s[0]}")
+            return 0.0
+        if s > self._accumulated_s[-1] + kEpsilon:
+            logger.error(f"s: {s} should be <= {self._accumulated_s[-1]}")
+            return 0.0
+        
+        index: int = bisect_left(self._accumulated_s, s)
+        if index == len(self._accumulated_s):
+            logger.debug(f"Reach the end of lane.")
+            return 0.0
+        if index == 0:
+            logger.debug(f"Reach the beginning of lane.")
+            return 0.0
+        return (self._headings[index] - self._headings[index - 1]) / (self._accumulated_s[index] - self._accumulated_s[index - 1] + kEpsilon)
 
     @property
     def headings(self) -> List[float]:
@@ -352,14 +398,17 @@ class LaneInfo:
         :rtype: Tuple[float, float, float]
         """
 
-        raise NotImplementedError
+        left_width: float = self.GetWidthFromSample(self._sampled_left_width, s)
+        right_width: float = self.GetWidthFromSample(self._sampled_right_width, s)
+        return left_width, right_width, left_width + right_width
 
     def GetEffectiveWidth(self, s: float) -> float:
         """
         Get the effective width of the lane
         """
 
-        raise NotImplementedError
+        left_width, right_width, _ = self.GetWidth(s)
+        return 2.0 * min(left_width, right_width)
 
     @property
     def sampled_left_road_width(self) -> List[Tuple[float, float]]:
@@ -390,7 +439,9 @@ class LaneInfo:
         :rtype: Tuple[float, float, float]
         """
 
-        raise NotImplementedError
+        left_width: float = self.GetWidthFromSample(self._sampled_left_road_width, s)
+        right_width: float = self.GetWidthFromSample(self._sampled_right_road_width, s)
+        return left_width, right_width, left_width + right_width
 
     def IsOnLane(self, *args) -> bool:
         
@@ -421,12 +472,33 @@ class LaneInfo:
         :rtype: PointENU
         """
 
-        raise NotImplementedError
+        point: PointENU = PointENU()
+        if len(self._points) < 2:
+            return point
+        if s <= 0.0:
+            return PointFromVec2d(self._points[0])
+        
+        if s >= self.total_length:
+            return PointFromVec2d(self._points[-1])
+        
+        index: int = bisect_left(self._accumulated_s, s)
+        if index == len(self._accumulated_s):
+            return point
+        delta_s: float = self._accumulated_s[index] - s
+        if delta_s < kMathEpsilon:
+            return PointFromVec2d(self._points[index])
+        
+        smooth_point = self._points[index] - self._unit_directions[index - 1] * delta_s
+
+        return PointFromVec2d(smooth_point)
 
     def DistanceTo(self, *args) -> float:
         """
         Get the distance to the lane
         """
+
+        self._segments[0].start.DistanceTo()
+        self._segments[0].DistanceTo()
 
         raise NotImplementedError
 
