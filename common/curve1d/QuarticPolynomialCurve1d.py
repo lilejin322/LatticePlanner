@@ -80,7 +80,7 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         return self._coef[order]
 
     @override
-    def ToString(self) -> str:
+    def __str__(self) -> str:
         """
         Convert the curve to a string
 

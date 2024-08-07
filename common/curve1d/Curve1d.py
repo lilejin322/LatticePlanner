@@ -32,7 +32,7 @@ class Curve1d(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def ToString() -> str:
+    def __str__() -> str:
         """
         Convert the curve to a string
         Note that this is an abstract method and must be implemented in the derived class

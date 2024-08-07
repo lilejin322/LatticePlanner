@@ -76,7 +76,7 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         return self._t[-1] - self._t[0]
 
     @override
-    def ToString(self) -> str:
+    def __str__(self) -> str:
         """
         Convert the trajectory to a string
 

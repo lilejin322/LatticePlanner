@@ -58,7 +58,7 @@ class PiecewiseJerkTrajectory1d(Curve1d):
         return self._param[-1]
 
     @override
-    def ToString(self) -> str:
+    def __str__(self) -> str:
         """
         Convert the trajectory to a string
 

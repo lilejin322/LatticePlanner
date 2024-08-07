@@ -40,7 +40,7 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         return self._end_t
 
     @override
-    def ToString(self) -> str:
+    def __str__(self) -> str:
         """
         Convert the trajectory to a string
 

@@ -83,15 +83,15 @@ def CreateLatticeTrajectoy1d(obj: Curve1d) -> Curve1d:
             return super().ParamLength()
 
         @override
-        def ToString(self) -> str:
+        def __str__(self) -> str:
             """
-            ToString
+            String representation of the LatticeTrajectory1d
 
             :return: String representation of the trajectory
             :rtype: str
             """
             
-            return super().ToString()
+            return super().__str__()
 
         def has_target_position(self) -> bool:
             """
