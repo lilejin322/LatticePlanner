@@ -9,6 +9,9 @@ from config import FLAGS_half_vehicle_width
 from bisect import bisect_left
 from ReferenceLine import kMathEpsilon
 from PathMatcher import PathMatcher
+from dataclasses import dataclass
+from common.AABox2d import AABox2d
+import math
 
 logger = Logger("LaneInfo")
 
@@ -17,6 +20,19 @@ kEpsilon: float = 0.1
 
 kDuplicatedPointsEpsilon: float = 1e-7
 """Minimum distance to remove duplicated points."""
+
+@dataclass
+class AABoxKDTreeParams:
+    """
+    Parameters for configuring an Axis-Aligned Bounding Box KD-Tree.
+    """
+
+    max_depth: int = -1
+    """The maximum depth of the kdtree."""
+    max_leaf_size: int = -1
+    """The maximum number of items in one leaf node."""
+    max_leaf_dimension: float = -1.0
+    """The maximum dimension size of leaf node."""
 
 def PointFromVec2d(point: Vec2d) -> PointENU:
     """
@@ -97,7 +113,7 @@ class LaneInfo:
         self._sampled_right_width: List[Tuple[float, float]] = []
         self._sampled_left_road_width: List[Tuple[float, float]] = []
         self._sampled_right_road_width: List[Tuple[float, float]] = []
-        self._segment_box_list = []
+        self._segment_box_list: List[Tuple[AABox2d, LaneInfo, LineSegment2d, int]] = []
         self._lane_segment_kdtree = None
         self.Init()
 
@@ -558,7 +574,39 @@ class LaneInfo:
         :rtype: Tuple[bool, float, float]
         """
         
-        raise NotImplementedError
+        if len(self._segments) == 0:
+            return False, float("inf"), float("inf")
+        min_dist: float = float("inf")
+        seg_num: int = len(self._segments)
+        min_index: int = 0
+        for i in range(seg_num):
+            if heading is not None:
+                if abs(AngleDiff(self._segments[i].heading(), heading)) >= math.pi / 2.0:
+                    continue
+            distance: float = self._segments[i].DistanceSquareTo(point)
+            if distance < min_dist:
+                min_index = i
+                min_dist = distance
+        min_dist = math.sqrt(min_dist)
+        nearest_seg = self._segments[min_index]
+        prod = nearest_seg.ProductOntoUnit(point)
+        proj = nearest_seg.ProjectOntoUnit(point)
+        if min_index == 0:
+            accumulated_s = min(proj, nearest_seg.length())
+            if proj < 0:
+                lateral = prod
+            else:
+                lateral = min_dist if prod > 0.0 else -min_dist
+        elif min_index == seg_num - 1:
+            accumulated_s = self._accumulated_s[min_index] + max(0.0, proj)
+            if proj > 0:
+                lateral = prod
+            else:
+                lateral = min_dist if prod > 0.0 else -min_dist
+        else:
+            accumulated_s = self._accumulated_s[min_index] + max(0.0, min(proj, nearest_seg.length()))
+            lateral = min_dist if prod > 0.0 else -min_dist
+        return True, accumulated_s, lateral
 
     def Init(self) -> None:
         """
@@ -695,7 +743,16 @@ class LaneInfo:
         Create the kd tree
         """
 
-        raise NotImplementedError
+        params = AABoxKDTreeParams()
+        params.max_leaf_dimension = 5.0
+        params.max_leaf_size = 16
+
+        self._segment_box_list.clear()
+        for id in range(len(self._segments)):
+            segment = self._segments[id]
+            self._segment_box_list.append((AABox2d(segment.start, segment.end), self, segment, id))
+
+        self._lane_segment_kdtree.reset(LaneSegmentKDTree(self._segment_box_list, params))
 
     def set_road_id(self, road_id: str) -> None:
         """
