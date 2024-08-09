@@ -12,6 +12,9 @@ from PathMatcher import PathMatcher
 
 logger = Logger("LaneInfo")
 
+kEpsilon: float = 0.1
+"""Margin for comparation"""
+
 kDuplicatedPointsEpsilon: float = 1e-7
 """Minimum distance to remove duplicated points."""
 
@@ -449,19 +452,37 @@ class LaneInfo:
             """
 
             :param Vec2d point: the point to be checked
+            :returns: whether the point is on the lane
+            :rtype: bool
             """
 
             point: Vec2d = args[0]
-            raise NotImplementedError
+            tag, accumulate_s, lateral = self.GetProjection(point)
+            if not tag:
+                return False
+            
+            if accumulate_s > self.total_length + kEpsilon or accumulate_s + kEpsilon < 0.0:
+                return False
+            
+            left_width, right_width, _ = self.GetWidth(accumulate_s)
+            if lateral < left_width and lateral > -right_width:
+                return True
+            return False
 
         elif isinstance(args[0], Box2d):
             """
 
             :param Box2d box: the box to be checked
+            :returns: whether the box is on the lane
+            :rtype: bool
             """
 
             box: Box2d = args[0]
-            raise NotImplementedError
+            corners: List[Vec2d] = box.GetAllCorners()
+            for corner in corners:
+                if not self.IsOnLane(corner):
+                    return False
+            return True
 
     def GetSmoothPoint(self, s: float) -> PointENU:
         """
@@ -492,15 +513,23 @@ class LaneInfo:
 
         return PointFromVec2d(smooth_point)
 
-    def DistanceTo(self, *args) -> float:
+    def DistanceTo(self, point: Vec2d) -> Tuple[float, Vec2d, float, int]:
         """
         Get the distance to the lane
+
+        :param Vec2d point: the point to be checked
+        :returns: the distance, th map_point, the s_offset, the s_offset_index
+        :rtype: Tuple[float, Vec2d, float, int]
         """
 
-        self._segments[0].start.DistanceTo()
-        self._segments[0].DistanceTo()
-
-        raise NotImplementedError
+        segment_box = self._lane_segment_kdtree.GetNearestObject(point)
+        if segment_box is None:
+            return float('inf'), Vec2d(), float('inf'), -1
+        index: int = segment_box.id()
+        distance, map_point = self._segments[index].DistanceTo(point)
+        s_offset_index: int = index
+        s_offset = self._accumulated_s[index] + self._segments[index].start.DistanceTo(map_point)
+        return distance, map_point, s_offset, s_offset_index
 
     def GetNearestPoint(self, point: Vec2d) -> Tuple[PointENU, float]:
         """
@@ -511,7 +540,13 @@ class LaneInfo:
         :rtype: Tuple[PointENU, float]
         """
 
-        raise NotImplementedError
+        segment_box = self._lane_segment_kdtree.GetNearestObject(point)
+        if segment_box is None:
+            return PointENU(), float("inf")
+        index: int = segment_box.id()
+        distance, nearest_point = self._segments[index].DistanceTo(point)
+
+        return PointFromVec2d(nearest_point), distance
 
     def GetProjection(self, point: Vec2d, heading: float=None) -> Tuple[bool, float, float]:
         """
@@ -588,21 +623,72 @@ class LaneInfo:
         Post process method
         """
 
-        raise NotImplementedError
+        self.UpdateOverlaps(map_instance)
 
     def UpdateOverlaps(self, map_instance: HDMapImpl):
         """
         Update overlaps method
         """
-        
-        raise NotImplementedError
+
+        for overlap_id in self._overlap_ids:
+            overlap = map_instance.GetOverlapById(MakeMapId(overlap_id))
+            if overlap is None:
+                continue
+            self._overlaps.append(overlap)
+            for obj in overlap.overlap.object:
+                object_id = obj.id.id
+                if object_id == self._lane.id.id:
+                    continue
+                object_map_id = MakeMapId(object_id)
+                if map_instance.GetLaneById(object_map_id) is not None:
+                    self._cross_lanes.append(overlap)
+                if map_instance.GetSignalById(object_map_id) is not None:
+                    self._signals.append(overlap)
+                if map_instance.GetYieldSignById(object_map_id) is not None:
+                    self._yield_signs.append(overlap)
+                if map_instance.GetStopSignById(object_map_id) is not None:
+                    self._stop_signs.append(overlap)
+                if map_instance.GetCrosswalkById(object_map_id) is not None:
+                    self._crosswalks.append(overlap)
+                if map_instance.GetJunctionById(object_map_id) is not None:
+                    self._junctions.append(overlap)
+                if map_instance.GetClearAreaById(object_map_id) is not None:
+                    self._clear_areas.append(overlap)
+                if map_instance.GetSpeedBumpById(object_map_id) is not None:
+                    self._speed_bumps.append(overlap)
+                if map_instance.GetParkingSpaceById(object_map_id) is not None:
+                    self._parking_spaces.append(overlap)
+                if map_instance.GetPncJunctionById(object_map_id) is not None:
+                    self._pnc_junctions.append(overlap)
 
     def GetWidthFromSample(self, samples: List[Tuple[float, float]], s: float) -> float:
         """
         Get the width from the sample
+
+        :param List[Tuple[float, float]] samples: the samples
+        :param float s: the s value
+        :returns: the width
+        :rtype: float
         """
         
-        raise NotImplementedError
+        if len(samples) == 0:
+            return 0.0
+        if s <= samples[0][0]:
+            return samples[0][1]
+        if s >= samples[-1][0]:
+            return samples[-1][1]
+        low: int = 0
+        high: int = len(samples)
+        while low + 1 < high:
+            mid: int = (low + high) >> 1
+            if samples[mid][0] <= s:
+                low = mid
+            else:
+                high = mid
+        sample1: Tuple[float, float] = samples[low]
+        sample2 = Tuple[float, float] = samples[high]
+        ratio: float = (sample2[0] - s) / (sample2[0] - sample1[0])
+        return sample1[1] * ratio + sample2[1] * (1.0 - ratio)
 
     def CreateKDTree(self) -> None:
         """
