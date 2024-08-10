@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from common.AABox2d import AABox2d
 import math
 from protoclass.Overlap import Overlap, ObjectOverlapInfo
+from common.LaneSegmentKDTree import AABoxKDTreeParams
 
 logger = Logger("LaneInfo")
 
@@ -79,19 +80,6 @@ class OverlapInfo:
             if obj.id.id == self.id.id:
                 return obj
         return None
-
-@dataclass
-class AABoxKDTreeParams:
-    """
-    Parameters for configuring an Axis-Aligned Bounding Box KD-Tree.
-    """
-
-    max_depth: int = -1
-    """The maximum depth of the kdtree."""
-    max_leaf_size: int = -1
-    """The maximum number of items in one leaf node."""
-    max_leaf_dimension: float = -1.0
-    """The maximum dimension size of leaf node."""
 
 def PointFromVec2d(point: Vec2d) -> PointENU:
     """
