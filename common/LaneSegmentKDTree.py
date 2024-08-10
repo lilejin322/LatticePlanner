@@ -80,7 +80,6 @@ class AABoxKDTree2dNode:
         :rtype: Any
         """
 
-        nearest_object = None
         min_distance_sqr = float("inf")
         _, nearest_object = self.GetNearestObjectInternal(point, min_distance_sqr)
         return nearest_object
@@ -142,7 +141,7 @@ class AABoxKDTree2dNode:
         :rtype: bool
         """
 
-        if params.max_depth >= 0 and self._depth >= params.max_depth:
+        if 0 <= params.max_depth <= self._depth:
             return False
         if len(objects) <= max(1, params.max_leaf_size):
             return False
@@ -362,7 +361,7 @@ class AABoxKDTree2d:
 
         self._root: AABoxKDTree2dNode = None
         if len(objects) > 0:
-            self._root.reset(AABoxKDTree2dNode(objects, params, 0))
+            self._root: AABoxKDTree2dNode = AABoxKDTree2dNode(objects, params, 0)
 
     def GetNearestObject(self, point: Vec2d) -> Any:
         """

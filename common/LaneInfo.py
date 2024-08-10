@@ -77,7 +77,7 @@ class OverlapInfo:
         """
 
         for obj in self._overlap.objects:
-            if obj.id.id == self.id.id:
+            if obj.id.id == id.id:
                 return obj
         return None
 
@@ -90,7 +90,7 @@ def PointFromVec2d(point: Vec2d) -> PointENU:
     :rtype: PointENU
     """
 
-    return PointENU(x = point.x, y = point.y)
+    return PointENU(x=point.x, y=point.y)
 
 def RemoveDuplicates(points: List[Vec2d]) -> None:
     """
@@ -165,7 +165,7 @@ class LaneInfo:
         self.Init()
 
     @property
-    def id(self) -> str:
+    def id(self) -> Id:
         """
         Get the id of the lane
 
@@ -630,7 +630,7 @@ class LaneInfo:
             if heading is not None:
                 if abs(AngleDiff(self._segments[i].heading(), heading)) >= math.pi / 2.0:
                     continue
-            distance: float = self._segments[i].DistanceSquareTo(point)
+            distance, _ = self._segments[i].DistanceSquareTo(point)
             if distance < min_dist:
                 min_index = i
                 min_dist = distance
@@ -669,10 +669,10 @@ class LaneInfo:
 
         s: float = 0
         for i in range(len(self._points) - 1):
-           self._segments.append(LineSegment2d(self._points[i], self._points[i + 1]))
-           self._accumulated_s.append(s)
-           self._unit_directions.append(self._segments[-1].unit_direction)
-           s += self._segments[-1].length()
+            self._segments.append(LineSegment2d(self._points[i], self._points[i + 1]))
+            self._accumulated_s.append(s)
+            self._unit_directions.append(self._segments[-1].unit_direction)
+            s += self._segments[-1].length()
 
         self._accumulated_s.append(s)
         self._total_length = s
@@ -781,7 +781,7 @@ class LaneInfo:
             else:
                 high = mid
         sample1: Tuple[float, float] = samples[low]
-        sample2 = Tuple[float, float] = samples[high]
+        sample2: Tuple[float, float] = samples[high]
         ratio: float = (sample2[0] - s) / (sample2[0] - sample1[0])
         return sample1[1] * ratio + sample2[1] * (1.0 - ratio)
 
