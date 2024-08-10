@@ -23,6 +23,7 @@ from enum import Enum
 from protoclass.PathPoint import PathPoint
 from common.Polygon2d import Polygon2d
 from common.Box2d import Box2d
+from protoclass.ADCTrajectory import Point3D
 
 logger = Logger("Obstacle")
 kStBoundaryDeltaS: float = 0.2;        # meters
@@ -137,19 +138,19 @@ class Obstacle:
         self._is_static: bool = is_static or (obstacle_priority == Priority.IGNORE)
         self._is_virtual: bool = perception_obstacle.id < 0
         self._speed: float = math.hypot(perception_obstacle.velocity.x, perception_obstacle.velocity.y)
-        self._trajectory: list = trajectory if trajectory is not None else []
-        if trajectory is not None:
-            trajectory_points = trajectory.mutable_trajectory.point
+        self._trajectory: Trajectory = trajectory
+        if len(trajectory.trajectory_point) > 0:
+            trajectory_points = trajectory.trajectory_point
             cumulative_s: float = 0.0
             if len(trajectory_points) > 0:
-                trajectory_points[0].mutable_path_point.set_s(0.0)
+                trajectory_points[0].path_point.s = 0.0
             for i in range(1, len(trajectory_points)):
                 prev = trajectory_points[i - 1]
                 cur = trajectory_points[i]
                 if prev.relative_time >= cur.relative_time:
                     raise ValueError(f"prediction time is not increasing. current point: {cur} previous point: {prev}")
                 cumulative_s += DistanceXY(prev.path_point, cur.path_point)
-                trajectory_points[i].mutable_path_point.set_s(cumulative_s)
+                trajectory_points[i].path_point.s = cumulative_s
 
     @property
     def Id(self) -> str:
@@ -289,10 +290,10 @@ class Obstacle:
         :rtype: TrajectoryPoint
         """
 
-        if not tp0.has_path_point or not tp1.has_path_point:
+        if tp0.path_point is None or tp1.path_point is None:
             # This part has not been implemented
             p: TrajectoryPoint = TrajectoryPoint()
-            p.mutable_path_point = PathPoint()
+            p.path_point = PathPoint()
             return p
         pp0: PathPoint = tp0.path_point
         pp1: PathPoint = tp1.path_point
@@ -325,20 +326,14 @@ class Obstacle:
         :rtype: TrajectoryPoint
         """
 
-        points: list = self._trajectory.trajectory_point
+        points: List[TrajectoryPoint] = self._trajectory.trajectory_point
         if len(points) < 2:
-            point = TrajectoryPoint()
-            point.mutable_path_point.set_x(self._perception_obstacle.position.x)
-            point.muyable_path_point.set_y(self._perception_obstacle.position.y)
-            point.mutable_path_point.set_z(self._perception_obstacle.position.z)
-            point.mutable_path_point.set_theta(self._perception_obstacle.theta)
-            point.mutable_path_point.set_s(0.0)
-            point.mutable_path_point.set_kappa(0.0)
-            point.mutable_path_point.set_dkappa(0.0)
-            point.mutable_path_point.set_ddkappa(0.0)
-            point.set_v(0.0)
-            point.set_a(0.0)
-            point.set_relative_time(0.0)
+            point = TrajectoryPoint(path_point=PathPoint(x=self._perception_obstacle.position.x,
+                                                         y=self._perception_obstacle.position.y,
+                                                         z=self._perception_obstacle.position.z,
+                                                         theta=self._perception_obstacle.theta,
+                                                         s=0.0, kappa=0.0, dkappa=0.0, ddkappa=0.0),
+                                                         v=0.0, a=0.0, relative_time=0.0)
             return point
         else:
             times = [point.relative_time for point in points]
@@ -466,31 +461,26 @@ class Obstacle:
         :rtype: Obstacle
         """
 
-        # create a "virtual" perception_obstacle
-        perception_obstacle = PerceptionObstacle()
         # simulator needs a valid integer
         negative_id = int(hashlib.md5(id.encode()).hexdigest(), 16)
         # set the first bit to 1 so negative_id became negative number
         negative_id |= (0x1 << 31)
         negative_id_signed = struct.unpack('i', struct.pack('I', negative_id & 0xFFFFFFFF))[0]
-        perception_obstacle.set_id(negative_id_signed)
-        perception_obstacle.mutable_position.set_x(obstacle_box.center.x)
-        perception_obstacle.mutable_position.set_y(obstacle_box.center.y)
-        perception_obstacle.set_theta(obstacle_box.heading)
-        perception_obstacle.mutable_velocity.set_x(0)
-        perception_obstacle.mutable_velocity.set_y(0)
-        perception_obstacle.set_length(obstacle_box.length)
-        perception_obstacle.set_width(obstacle_box.width)
-        perception_obstacle.set_height(FLAGS_virtual_stop_wall_height)
-        perception_obstacle.set_type(PerceptionObstacle.UNKNOWN_UNMOVABLE)
-        perception_obstacle.set_tracking_time(1.0)
+        # create a "virtual" perception_obstacle
+        perception_obstacle = PerceptionObstacle(id=negative_id_signed,
+                                                 position=Point3D(x=obstacle_box.center.x,y=obstacle_box.center.y),
+                                                 theta=obstacle_box.heading,
+                                                 velocity=Point3D(x=0, y=0),
+                                                 length=obstacle_box.length,
+                                                 width=obstacle_box.width,
+                                                 height=FLAGS_virtual_stop_wall_height,
+                                                 type=PerceptionObstacle.Type.UNKNOWN_UNMOVABLE,
+                                                 tracking_time=1.0)
 
         corner_points: List[Vec2d] = []
         obstacle_box.GetAllCorners(corner_points)
         for corner_point in corner_points:
-            point = perception_obstacle.add_polygon_point()
-            point.set_x(corner_point.x)
-            point.set_y(corner_point.y)
+            perception_obstacle.polygon_point.append(Point3D(x=corner_point.x, y=corner_point.y))
         obstacle = Obstacle(id, perception_obstacle, Priority.NORMAL, True)
         obstacle._is_virtual = True
         return obstacle
@@ -514,7 +504,7 @@ class Obstacle:
         if obstacle.height <= 0.0:
             logger.error(f"invalid obstacle height: {obstacle.height}")
             return False
-        if obstacle.has_velocity:
+        if obstacle.velocity is not None:
             if math.isnan(obstacle.velocity.x) or math.isnan(obstacle.velocity.y):
                 logger.error(f"invalid obstacle velocity: {obstacle.velocity}")
                 return False
@@ -534,7 +524,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        if not point.has_path_point:
+        if point.path_point is None:
             return False
         if math.isnan(point.path_point.x) or math.isnan(point.path_point.y) or math.isnan(point.path_point.z):
             return False
@@ -876,9 +866,9 @@ class Obstacle:
         :returns: True if decision is longitudinal, False otherwise
         :rtype: bool
         """
-        
-        return decision.has_ignore or decision.has_stop or decision.has_yield() or \
-               decision.has_follow or decision.has_overtake
+
+        return isinstance(decision.object_tag, ObjectStop) or isinstance(decision.object_tag, ObjectYield) or \
+               isinstance(decision.object_tag, ObjectFollow) or isinstance(decision.object_tag, ObjectOvertake)
 
     @staticmethod
     def IsLateralDecision(decision: ObjectDecisionType) -> bool:
@@ -890,7 +880,7 @@ class Obstacle:
         :rtype: bool
         """
 
-        return decision.has_ignore or decision.has_nudge
+        return isinstance(decision.object_tag, ObjectNudge) or isinstance(decision.object_tag, ObjectIgnore)
 
     def SetBlockingObstacle(self, blocking: bool) -> None:
         """
@@ -932,7 +922,7 @@ class Obstacle:
         if not self.IsStatic:
             self._is_lane_blocking = False
             return
-        assert self._sl_boundary.has_start_s and self._sl_boundary.has_end_s and self._sl_boundary.has_start_l \
+        assert self._sl_boundary.start_s is not None and self._sl_boundary.end_s is not None and self._sl_boundary.start_l is not None \
                and self._sl_boundary.has_end_l, f"Obstacle {self._id} has invalid sl_boundary"
         if self._sl_boundary.start_l * self._sl_boundary.end_l < 0.0:
             self._is_lane_blocking = True

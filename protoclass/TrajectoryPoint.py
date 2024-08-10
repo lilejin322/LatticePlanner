@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from protoclass.PathPoint import PathPoint
 from protoclass.GaussianInfo import GaussianInfo
@@ -10,7 +10,7 @@ class TrajectoryPoint:
     """
 
     # path point
-    path_point: Optional[PathPoint] = None
+    path_point: Optional[PathPoint] = field(default_factory=PathPoint)
     # linear velocity
     v: Optional[float] = None  # in [m/s]
     # linear acceleration
@@ -22,4 +22,4 @@ class TrajectoryPoint:
     # The angle between vehicle front wheel and vehicle longitudinal axis
     steer: Optional[float] = None
     # Gaussian probability information
-    gaussian_info: Optional[GaussianInfo] = None
+    gaussian_info: Optional[GaussianInfo] = field(default_factory=GaussianInfo)
