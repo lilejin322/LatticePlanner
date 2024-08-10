@@ -110,7 +110,7 @@ class Trajectory1dGenerator:
         self.GenerateSpeedProfilesForCruising(planning_target.cruise_speed, lon_trajectory_bundle)
         self.GenerateSpeedProfilesForPathTimeObstacles(lon_trajectory_bundle)
 
-        if planning_target.has_stop_point:
+        if planning_target.stop_point is not None:
             self.GenerateSpeedProfilesForStopping(planning_target.stop_point.s, lon_trajectory_bundle)
 
     def GenerateLateralTrajectoryBundle(self, lat_trajectory_bundle: List[Curve1d]) -> None:

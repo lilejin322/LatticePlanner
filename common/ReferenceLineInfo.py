@@ -286,7 +286,8 @@ class ReferenceLineInfo:
         dest = self._path_decision.Find(FLAGS_destination_obstacle_id)
         if not dest:
             return res
-        if not dest.LongitudinalDecision.has_stop():
+        lon_dec: ObjectDecisionType = dest.LongitudinalDecision
+        if not isinstance(lon_dec.object_tag, ObjectStop):
             return res
         if not self._reference_line.IsOnLane(dest.PerceptionBoundingBox.center):
             return res

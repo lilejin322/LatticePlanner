@@ -143,7 +143,7 @@ class LatticePlanner:
         reference_line_info.SetLatticeCruiseSpeed(speed_limit)
 
         planning_target = reference_line_info.planning_target
-        if planning_target.has_stop_point():
+        if planning_target.stop_point is not None:
             self.logger.debug(f"Planning target stop s: {planning_target.stop_point().s}, Current ego s: {init_s[0]}")
 
         self.logger.debug(f"Decision_Time = {time.time()-current_time}")
@@ -236,7 +236,7 @@ class LatticePlanner:
             if lattice_traj is None:
                 self.logger.debug("Dynamically casting trajectory1d failed")
 
-            if lattice_traj.has_target_position():
+            if lattice_traj.target_position is not None:
                 self.logger.debug(f"Ending Lon. State: s = {lattice_traj.target_position} ds = {lattice_traj.target_velocity}  t = {lattice_traj.target_time}")
 
             self.logger.debug(f"InputPose XY: {planning_init_point} S: ({init_s[0]}, {init_s[1]}, {init_s[2]}) L: ({init_d[0]}, {init_d[1]}, {init_d[2]})")

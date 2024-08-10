@@ -923,7 +923,7 @@ class Obstacle:
             self._is_lane_blocking = False
             return
         assert self._sl_boundary.start_s is not None and self._sl_boundary.end_s is not None and self._sl_boundary.start_l is not None \
-               and self._sl_boundary.has_end_l, f"Obstacle {self._id} has invalid sl_boundary"
+               and self._sl_boundary.end_l is not None, f"Obstacle {self._id} has invalid sl_boundary"
         if self._sl_boundary.start_l * self._sl_boundary.end_l < 0.0:
             self._is_lane_blocking = True
             return

@@ -159,7 +159,7 @@ class DiscretizedTrajectory(list):
         :rtype: TrajectoryPoint
         """
 
-        if not tp0.has_path_point or not tp1.has_path_point:
+        if tp0.path_point is None or tp1.path_point is None:
             # This part has not been implemented
             p: TrajectoryPoint = TrajectoryPoint()
             p.mutable_path_point = PathPoint()

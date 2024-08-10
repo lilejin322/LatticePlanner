@@ -61,7 +61,7 @@ class TrajectoryEvaluator:
         # if we have a stop point along the reference line,
         # filter out the lon. trajectories that pass the stop point.
         stop_point = float('inf')
-        if planning_target.has_stop_point:
+        if planning_target.stop_point is not None:
             stop_point = planning_target.stop_point.s
 
         for lon_trajectory in lon_trajectories:
@@ -332,7 +332,7 @@ class TrajectoryEvaluator:
             s: float = lon_trajectory.Evaluate(0, t)
             v: float = lon_trajectory.Evaluate(1, t)
             ref_point: PathPoint = PathMatcher.MatchToPathS(self.reference_line, s)
-            assert ref_point.has_kappa, "Reference point does not have kappa"
+            assert ref_point.kappa is not None, "Reference point does not have kappa"
             centripetal_acc: float = v * v * ref_point.kappa
             centripetal_acc_sum += abs(centripetal_acc)
             centripetal_acc_sqr_sum += centripetal_acc * centripetal_acc
@@ -352,7 +352,7 @@ class TrajectoryEvaluator:
 
         cruise_v: float = planning_target.cruise_speed
 
-        if not planning_target.has_stop_point:
+        if not planning_target.stop_point is not None:
             lon_traj: PiecewiseAccelerationTrajectory1d = PiecewiseAccelerationTrajectory1d(self.init_s[0], cruise_v)
             lon_traj.AppendSegment(0.0, FLAGS_trajectory_time_length + FLAGS_numerical_epsilon)
 
