@@ -799,7 +799,7 @@ class LaneInfo:
             segment = self._segments[id]
             self._segment_box_list.append((AABox2d(segment.start, segment.end), self, segment, id))
 
-        self._lane_segment_kdtree.reset(LaneSegmentKDTree(self._segment_box_list, params))
+        self._lane_segment_kdtree = LaneSegmentKDTree(self._segment_box_list, params)
 
     def set_road_id(self, road_id: str) -> None:
         """
