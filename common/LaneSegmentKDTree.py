@@ -95,7 +95,8 @@ class AABoxKDTree2dNode:
         :rtype: List[Any]
         """
 
-        result_objects: List[Any] = self.GetObjectsInternal(point, distance, distance ** 2)
+        result_objects: List[Any] = []
+        self.GetObjectsInternal(point, distance, distance ** 2, result_objects)
         return result_objects
 
     def GetBoundingBox(self) -> AABox2d:
