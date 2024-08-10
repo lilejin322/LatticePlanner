@@ -12,6 +12,7 @@ from PathMatcher import PathMatcher
 from dataclasses import dataclass
 from common.AABox2d import AABox2d
 import math
+from protoclass.Overlap import Overlap, ObjectOverlapInfo
 
 logger = Logger("LaneInfo")
 
@@ -20,6 +21,64 @@ kEpsilon: float = 0.1
 
 kDuplicatedPointsEpsilon: float = 1e-7
 """Minimum distance to remove duplicated points."""
+
+@dataclass
+class Id:
+    """
+    Id class
+    """
+
+    id: str = ""
+
+class OverlapInfo:
+    """
+    a wrapper class for Overlap
+    """
+
+    def __init__(self, overlap: Overlap):
+        """
+        Constructor
+
+        :param Overlap overlap: An instance of the Overlap class.
+        """
+
+        self._overlap: Overlap = overlap
+
+    @property
+    def id(self) -> Id:
+        """
+        Get the id from the overlap object.
+
+        :returns: The id of the overlap.
+        :rtype: Id
+        """
+
+        return self._overlap.id
+
+    @property
+    def overlap(self) -> Overlap:
+        """
+        Get the overlap object.
+
+        :returns: The overlap object.
+        :rtype: Overlap
+        """
+
+        return self._overlap
+
+    def GetObjectOverlapInfo(self, id: Id) -> ObjectOverlapInfo:
+        """
+        Get the ObjectOverlapInfo corresponding to a given id.
+
+        :param Id id: The id for which to retrieve the ObjectOverlapInfo
+        :returns: The ObjectOverlapInfo object or None if not found
+        :rtype: ObjectOverlapInfo
+        """
+
+        for obj in self._overlap.objects:
+            if obj.id.id == self.id.id:
+                return obj
+        return None
 
 @dataclass
 class AABoxKDTreeParams:
