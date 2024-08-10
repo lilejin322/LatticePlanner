@@ -73,13 +73,7 @@ class PathTimeGraph:
             start_l = min(start_l, sl_point[1])
             end_l = max(end_l, sl_point[1])
 
-        sl_boundary = SLBoundary()
-        sl_boundary.set_start_s(start_s)
-        sl_boundary.set_end_s(end_s)
-        sl_boundary.set_start_l(start_l)
-        sl_boundary.set_end_l(end_l)
-
-        return sl_boundary
+        return SLBoundary(start_s=start_s, end_s=end_s, start_l=start_l, end_l=end_l)
 
     def SetUpObstacles(self, obstacles: List[Obstacle], discretized_ref_points: List[PathPoint]) -> None:
         """
