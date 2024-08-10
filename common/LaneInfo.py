@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from common.AABox2d import AABox2d
 import math
 from protoclass.Overlap import Overlap, ObjectOverlapInfo
-from common.LaneSegmentKDTree import AABoxKDTreeParams
+from common.LaneSegmentKDTree import AABoxKDTree2d, AABoxKDTreeParams
 
 logger = Logger("LaneInfo")
 
@@ -756,7 +756,8 @@ class LaneInfo:
                 if map_instance.GetPncJunctionById(object_map_id) is not None:
                     self._pnc_junctions.append(overlap)
 
-    def GetWidthFromSample(self, samples: List[Tuple[float, float]], s: float) -> float:
+    @staticmethod
+    def GetWidthFromSample(samples: List[Tuple[float, float]], s: float) -> float:
         """
         Get the width from the sample
 
@@ -799,7 +800,7 @@ class LaneInfo:
             segment = self._segments[id]
             self._segment_box_list.append((AABox2d(segment.start, segment.end), self, segment, id))
 
-        self._lane_segment_kdtree = LaneSegmentKDTree(self._segment_box_list, params)
+        self._lane_segment_kdtree = AABoxKDTree2d(self._segment_box_list, params)
 
     def set_road_id(self, road_id: str) -> None:
         """
