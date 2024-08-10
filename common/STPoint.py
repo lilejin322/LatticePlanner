@@ -10,19 +10,26 @@ class STPoint(Vec2d):
     def __init__(self, *args):
         """
         Constructor
-
-        :param float s: s-coordinate
-        :param float t: t-coordinate
         """
 
         if len(args) == 1 and isinstance(args[0], Vec2d):
-            self.__dict = deepcopy(args[0].__dict)
+            """
+            :param Vec2d args[0]: Vec2d object
+            """
+
+            self.__dict__ = deepcopy(args[0].__dict)
+
         elif len(args) == 2:
+            """
+            :param float s: s-coordinate
+            :param float t: t-coordinate
+            """
+
             s, t = args
             super().__init__(t, s)
         else:
             raise ValueError("Invalid arguments")
-    
+
     @property
     @staticmethod
     def x():
