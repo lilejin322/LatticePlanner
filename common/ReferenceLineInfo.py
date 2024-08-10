@@ -24,7 +24,7 @@ from protoclass.RSSInfo import RSSInfo
 from protoclass.PathPoint import PathPoint
 from protoclass.lattice_structure import StopPoint, PlanningTarget
 from common.StGraphData import StGraphData
-from common.LaneInfo import LaneInfo
+from common.LaneInfo import LaneInfo, Id
 from config import FRONT_EDGE_TO_CENTER, BACK_EDGE_TO_CENTER, LEFT_EDGE_TO_CENTER, RIGHT_EDGE_TO_CENTER, \
                    EGO_VEHICLE_LENGTH, EGO_VEHICLE_WIDTH, FLAGS_speed_bump_speed_limit, FLAGS_default_cruise_speed, \
                    FLAGS_use_multi_thread_to_add_obstacles, FLAGS_trajectory_time_min_interval, \
@@ -820,7 +820,7 @@ class ReferenceLineInfo:
 
         return self._lanes
     
-    def TargetLaneId(self) -> List[str]:
+    def TargetLaneId(self) -> List[Id]:
         """
         Get the target lane id
 
@@ -828,7 +828,7 @@ class ReferenceLineInfo:
         :rtype: List[str]
         """
 
-        lane_ids: List[str] = []
+        lane_ids: List[Id] = []
         for lane_seg in self._lanes:
             lane_ids.append(lane_seg.lane.id)
         return lane_ids
@@ -1327,9 +1327,12 @@ class ReferenceLineInfo:
                 break
             elif turn == Lane.LaneTurn.U_TURN:
                 # check left or right by geometry.
-                start_xy = PointFactory.ToVec2d(seg.lane.GetSmoothPoint(seg.start_s))
-                middle_xy = PointFactory.ToVec2d(seg.lane.GetSmoothPoint((seg.start_s + seg.end_s) / 2.0))
-                end_xy = PointFactory.ToVec2d(seg.lane.GetSmoothPoint(seg.end_s))
+                start_xy_enu: PointENU = seg.lane.GetSmoothPoint(seg.start_s)
+                start_xy = Vec2d(start_xy_enu.x, start_xy_enu.y)
+                middle_xy_enu: PointENU = seg.lane.GetSmoothPoint((seg.start_s + seg.end_s) / 2.0)
+                middle_xy = Vec2d(middle_xy_enu.x, middle_xy_enu.y)
+                end_xy_enu: PointENU = seg.lane.GetSmoothPoint(seg.end_s)
+                end_xy = Vec2d(end_xy_enu.x, end_xy_enu.y)
                 start_to_middle = middle_xy - start_xy
                 start_to_end = end_xy - start_xy
                 if start_to_middle.CrossProd(start_to_end) < 0:
