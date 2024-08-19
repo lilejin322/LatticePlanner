@@ -14,6 +14,7 @@ from common.AABox2d import AABox2d
 import math
 from protoclass.Overlap import Overlap, ObjectOverlapInfo
 from common.LaneSegmentKDTree import AABoxKDTree2d, AABoxKDTreeParams
+from common.Path import AngleDiff
 
 logger = Logger("LaneInfo")
 
