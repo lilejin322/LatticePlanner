@@ -125,6 +125,7 @@ class ReferenceLineInfo:
         self._base_cruise_speed = 0.0
         self._path_reusable = False
         self._junction_right_of_way_map: Dict[str, bool] = {}
+        self._index: int = 0
 
     def Init(self, obstacles: List[Obstacle], target_speed: float) -> bool:
         """
@@ -1560,3 +1561,23 @@ class ReferenceLineInfo:
         """
 
         raise NotImplementedError("Deep copy operation is not allowed")
+
+    @property
+    def index(self) -> int:
+        """
+        Get the index
+
+        :returns: The index
+        :rtype: int
+        """
+
+        return self._index
+
+    def set_index(self, index: int) -> None:
+        """
+        Set the index
+
+        :param int index: The index to set
+        """
+
+        self._index = index

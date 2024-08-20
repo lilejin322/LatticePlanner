@@ -12,6 +12,11 @@ from protoclass.Pose import Pose
 from protoclass.PointENU import PointENU
 from protoclass.LaneWaypoint import LaneWaypoint
 from config import FLAGS_use_navigation_mode
+from common.ReferenceLine import ReferenceLine
+from common.RouteSegments import RouteSegments
+from common.Vec2d import Vec2d
+from protoclass.VehicleState import VehicleState
+from config import FLAGS_default_cruise_speed
 
 logger = Logger("Frame")
 
@@ -126,7 +131,51 @@ class Frame:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        self._reference_line_info.clear()
+        if len(reference_lines) == 0:
+            return True
+        ref_line_iter = iter(reference_lines)
+        segments_iter = iter(segments)
+        ref_line_index = 0
+        while True:
+            try:
+                ref_line = next(ref_line_iter)
+                segment = next(segments_iter)
+            except StopIteration:
+                break
+            if segment.StopForDestination:
+                self._is_near_destination = True
+            self._reference_line_info.append(ReferenceLineInfo(self._vehicle_state, self._planning_start_point, ref_line, segment))
+            self._reference_line_info[-1].set_index(ref_line_index)
+            ref_line_index += 1
+        
+        if len(self._reference_line_info) == 2:
+            xy_point: Vec2d = Vec2d(x=self._vehicle_state.x, y=self._vehicle_state.y)
+            tag, first_sl = self._reference_line_info[0].reference_line.XYToSL(xy_point)
+            if not tag:
+                return False
+            tag, second_sl = self._reference_line_info[-1].reference_line.XYToSL(xy_point)
+            if not tag:
+                return False
+            offset: float = first_sl.l - second_sl.l
+            self._reference_line_info[0].SetOffsetToOtherReferenceLine(offset)
+            self._reference_line_info[-1].SetOffsetToOtherReferenceLine(-offset)
+        target_speed: float = FLAGS_default_cruise_speed
+        if self._local_view.planning_command.target_speed is not None:
+            target_speed = self._local_view.planning_command.target_speed
+        has_valid_reference_line: bool = False
+        ref_line_index: int = 0
+        for ref_info in self._reference_line_info[:]:
+            if ref_info.Init(self.obstacles, target_speed):
+                self._reference_line_info.remove(ref_info)
+            else:
+                has_valid_reference_line = True
+                ref_info.set_index(ref_line_index)
+                logger.info(f"get referenceline: index: {ref_info.index}, id: {ref_info.id}, key: {ref_info.key}")
+                ref_line_index += 1
+        if not has_valid_reference_line:
+            logger.info("No valid reference line")
+        return True
 
     def InitFrameData(self, vehicle_state_provider: VehicleStateProvider, ego_info: EgoInfo) -> Status:
         """
@@ -470,7 +519,12 @@ class Frame:
         :param Dict[str, int] id_to_priority: lane id and reference line priority mapping relationship
         """
 
-        raise NotImplementedError
+        for id, priority in id_to_priority.items():
+            ref_line_info_itr = next(
+                (ref_line_info for ref_line_info in self._reference_line_info 
+                 if ref_line_info.Lanes.Id() == id), None)
+            if ref_line_info_itr is not None:
+                ref_line_info_itr.SetPriority(priority)
 
     @property
     def local_view(self) -> LocalView:
