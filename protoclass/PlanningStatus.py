@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional, List
 from enum import Enum
 from protoclass.PointENU import PointENU
@@ -173,7 +173,7 @@ class LaneFollowCommand:
     # The points between "start_pose" and "end_pose".
     way_point: List[Pose] = None
     # End pose of the lane follow command, must be given.
-    end_pose: Pose = None
+    end_pose: Pose = field(default_factory=Pose)
     # The lane segments which should not be passed by.
     blacklisted_lane: List[LaneSegment] = None
     # The road which should not be passed by.

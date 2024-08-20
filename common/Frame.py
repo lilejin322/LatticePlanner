@@ -6,6 +6,14 @@ from common.ReferenceLineInfo import ReferenceLineInfo
 from common.PlanningContext import PlanningContext
 from common.Obstacle import Obstacle
 from protoclass.PredictionObstacles import PredictionObstacles
+from logging import Logger
+from protoclass.PlanningStatus import ReroutingStatus, LaneFollowCommand
+from protoclass.Pose import Pose
+from protoclass.PointENU import PointENU
+from protoclass.LaneWaypoint import LaneWaypoint
+from config import FLAGS_use_navigation_mode
+
+logger = Logger("Frame")
 
 class Frame:
     """
@@ -15,22 +23,58 @@ class Frame:
     _pad_msg_driving_action: DrivingAction = None
     """in C++ code, this is a static member variable"""
 
-    def __init__(self, sequence_num: int, local_view: LocalView, planning_start_point: TrajectoryPoint, 
-                 vehicle_state: VehicleState, reference_line_provider: ReferenceLineProvider):
-        """
-        Constructor
+    def __init__(self, *args):
 
-        :param LocalView local_view: Local view
-        :param TrajectoryPoint planning_start_point: Planning start point
-        :param VehicleState vehicle_state: Vehicle state
-        :param ReferenceLineProvider reference_line_provider: Reference line provider
-        """
+        if len(args) == 1:
+            """
+            Constructor1
 
-        self._sequence_num = sequence_num
-        self._local_view = local_view
-        self._planning_start_point = planning_start_point
-        self._vehicle_state = vehicle_state
-        self._reference_line_provider = reference_line_provider
+            :param int sequence_num: Sequence number
+            """
+
+            sequence_num: int = args[0]
+            self._sequence_num = sequence_num
+            self._monitor_logger_buffer = MonitorMessageItem.PLANNING
+        
+        elif len(args) == 5:
+            """
+            Constructor2
+
+            :param int sequence_num: Sequence number
+            :param LocalView local_view: Local view
+            :param TrajectoryPoint planning_start_point: Planning start point
+            :param VehicleState vehicle_state: Vehicle state
+            :param ReferenceLineProvider reference_line_provider: Reference line provider
+            """
+
+            sequence_num: int = args[0]
+            local_view: LocalView = args[1]
+            planning_start_point: TrajectoryPoint = args[2]
+            vehicle_state: VehicleState = args[3]
+            reference_line_provider: RefereneceLineProvider = args[4]
+            self._sequence_num = sequence_num
+            self._local_view = local_view
+            self._planning_start_point = planning_start_point
+            self._vehicle_state = vehicle_state
+            self._reference_line_provider = reference_line_provider
+            self._monitor_logger_buffer = MonitorMessageItem.PLANNING
+
+        elif len(args) == 4:
+            """
+            Constructor3
+
+            :param int sequence_num: Sequence number
+            :param LocalView local_view: Local view
+            :param TrajectoryPoint planning_start_point: Planning start point
+            :param VehicleState vehicle_state: Vehicle state
+            """
+
+            sequence_num: int = args[0]
+            local_view: LocalView = args[1]
+            planning_start_point: TrajectoryPoint = args[2]
+            vehicle_state: VehicleState = args[3]
+            self.__init__(sequence_num, local_view, planning_start_point, vehicle_state, None)
+
         self._reference_line_info: List[ReferenceLineInfo] = []
         self._is_near_destination = False
         self._drive_reference_line_info: ReferenceLineInfo = None
@@ -42,7 +86,6 @@ class Frame:
         self._current_frame_planned_path = None
         """current frame path for future possible speed fallback"""
         self._future_route_waypoints: List[LaneWaypoint] = []
-        self._monitor_logger_buffer: MonitorLogBuffer = None
         self._open_space_info: OpenSpaceInfo = None
         self._hdmap = None
 
@@ -322,7 +365,33 @@ class Frame:
         :rtype: bool
         """
 
-        raise NotImplementedError
+        if FLAGS_use_navigation_mode:
+            logger.error("Rerouting not supported in navigation mode")
+            return False
+        if self._local_view.planning_command is None:
+            logger.error("No previous routing available")
+            return False
+        if self._hdmap is None:
+            logger.error("Invalid HD Map.")
+            return False
+        rerouting: ReroutingStatus = planning_context.planning_status.rerouting
+        rerouting.need_rerouting = True
+        lane_follow_command: LaneFollowCommand = rerouting.lane_follow_command
+        if len(self._future_route_waypoints) < 1:
+            logger.error("Failed to find future waypoints")
+            return False
+        for i in range(len(self._future_route_waypoints) - 1):
+            waypoint: Pose = Pose(position=PointENU(x=self._future_route_waypoints[i].pose.x,
+                                                    y=self._future_route_waypoints[i].pose.y),
+                                                    heading=self._future_route_waypoints[i].heading)
+            lane_follow_command.way_point.append(waypoint)
+        end_pose: Pose = lane_follow_command.end_pose
+        end_pose.position.x = self._future_route_waypoints[-1].pose.x
+        end_pose.position.y = self._future_route_waypoints[-1].pose.y
+        end_pose.heading = self._future_route_waypoints[-1].heading
+
+        self._monitor_logger_buffer.INFO("Planning send Routing request")
+        return True
 
     @property
     def vehicle_state(self) -> VehicleState:
