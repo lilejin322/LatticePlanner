@@ -19,6 +19,8 @@ from protoclass.VehicleState import VehicleState
 from config import FLAGS_default_cruise_speed, FLAGS_virtual_stop_wall_length
 from common.ReferencePoint import ReferencePoint
 from common.LaneInfo import LaneInfo
+from protoclass.SLBoundary import SLPoint
+from common.LineSegment2d import LineSegment2d
 
 logger = Logger("Frame")
 
@@ -383,6 +385,8 @@ class Frame:
             :param ReferenceLineInfo reference_line_info: Reference line info
             :param str obstacle_id: Obstacle id
             :param float obstacle_s: Obstacle s
+            :returns: Obstacle
+            :rtype: Obstacle
             """
 
             reference_line_info: ReferenceLineInfo = args[0]
@@ -407,6 +411,8 @@ class Frame:
             :param str obstacle_id: Obstacle id
             :param str lane_id: Lane id
             :param float lane_s: Lane s
+            :returns: Obstacle
+            :rtype: Obstacle
             """
 
             obstacle_id: str = args[0]
@@ -436,7 +442,7 @@ class Frame:
     def CreateStaticObstacle(self, reference_line_info: ReferenceLineInfo, obstacle_id: str,
                              obstacle_start_s: float, obstacle_end_s: float) -> Obstacle:
         """
-        Create static obstacle
+        create static virtual object with lane width
 
         :param ReferenceLineInfo reference_line_info: Reference line info
         :param str obstacle_id: Obstacle id
@@ -446,7 +452,34 @@ class Frame:
         :rtype: Obstacle
         """
 
-        raise NotImplementedError
+        if reference_line_info is None:
+            logger.error("reference_line_info is None")
+            return None
+        
+        reference_line: ReferenceLine = reference_line_info.reference_line
+
+        # start_xy
+        sl_point: SLPoint = SLPoint(s=obstacle_start_s, l=0.0)
+        tag, obstacle_start_xy = reference_line.SLToXY(sl_point)
+        if not tag:
+            logger.error(f"Failed to get start_xy from sl: {sl_point}")
+            return None
+        
+        # end_xy
+        sl_point = SLPoint(s=obstacle_end_s, l=0.0)
+        tag, obstacle_end_xy = reference_line.SLToXY(sl_point)
+        if not tag:
+            logger.error(f"Failed to get end_xy from sl: {sl_point}")
+            return None
+        
+        tag, left_lane_width, right_lane_width = reference_line.GetLaneWidth(obstacle_start_s)
+        if not tag:
+            logger.error(f"Failed to get lane width at s[{obstacle_start_s}]")
+            return None
+        
+        obstacle_box: Box2d = Box2d(LineSegment2d(obstacle_start_xy, obstacle_end_xy), left_lane_width + right_lane_width)
+
+        return self.CreateStaticVirtualObstacle(obstacle_id, obstacle_box)
 
     def Rerouting(self, planning_context: PlanningContext) -> bool:
         """
