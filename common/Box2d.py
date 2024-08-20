@@ -81,14 +81,14 @@ class Box2d:
             """
 
             center, heading, length, width = args
-            self._center = center
-            self._length = length
-            self._width = width
-            self._half_length = length / 2.0
-            self._half_width = width / 2.0
-            self._heading = heading
-            self._cos_heading = cos(heading)
-            self._sin_heading = sin(heading)
+            self._center: Vec2d = center
+            self._length: float = length
+            self._width: float = width
+            self._half_length: float = length / 2.0
+            self._half_width: float = width / 2.0
+            self._heading: float = heading
+            self._cos_heading: float = cos(heading)
+            self._sin_heading: float = sin(heading)
             assert self._length >= -kMathEpsilon
             assert self.width >= -kMathEpsilon
             self.InitCorners()

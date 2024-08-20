@@ -16,7 +16,9 @@ from common.ReferenceLine import ReferenceLine
 from common.RouteSegments import RouteSegments
 from common.Vec2d import Vec2d
 from protoclass.VehicleState import VehicleState
-from config import FLAGS_default_cruise_speed
+from config import FLAGS_default_cruise_speed, FLAGS_virtual_stop_wall_length
+from common.ReferencePoint import ReferencePoint
+from common.LaneInfo import LaneInfo
 
 logger = Logger("Frame")
 
@@ -369,26 +371,67 @@ class Frame:
 
         return self._obstacles
 
-    def CreateStopObstacle(self, reference_line_info: ReferenceLineInfo, obstacle_id: str, obstacle_s: float) -> Obstacle:
+    def CreateStopObstacle(self, *args) -> Obstacle:
         """
-        Create stop obstacle
-
-        :param ReferenceLineInfo reference_line_info: Reference line info
-        :param str obstacle_id: Obstacle id
-        :param float obstacle_s: Obstacle s
-        :returns: Obstacle
-        :rtype: Obstacle
+        create static virtual object with lane width, mainly used for virtual stop wall
         """
 
-        raise NotImplementedError
+        if isinstance(args[0], ReferenceLineInfo):
+            """
+            CreateStopObstacle_1
+            
+            :param ReferenceLineInfo reference_line_info: Reference line info
+            :param str obstacle_id: Obstacle id
+            :param float obstacle_s: Obstacle s
+            """
 
-    def CreateStopObstacle2(self, obstacle_id: str, lane_id: str, lane_s: float) -> Obstacle:
-        """
-        要注意，这块重载要着重小心重写
-        """
+            reference_line_info: ReferenceLineInfo = args[0]
+            obstacle_id: str = args[1]
+            obstacle_s: float = args[2]
+            if reference_line_info is None:
+                logger.error("reference_line_info is None")
+                return None
+            reference_line: ReferenceLine = reference_line_info.reference_line
+            box_center_s: float = obstacle_s + FLAGS_virtual_stop_wall_length / 2.0
+            box_center: ReferencePoint = reference_line.GetReferencePoint(box_center_s)
+            heading: float = reference_line.GetReferencePoint(obstacle_s).heading
+            kStopWallWidth: float = 4.0
+            stop_wall_box: Box2d = Box2d(box_center, heading, FLAGS_virtual_stop_wall_length, kStopWallWidth)
 
-        raise NotImplementedError
-        
+            return self.CreateStaticVirtualObstacle(obstacle_id, stop_wall_box)
+
+        if isinstance(args[0], str):
+            """
+            CreateStopObstacle_2
+
+            :param str obstacle_id: Obstacle id
+            :param str lane_id: Lane id
+            :param float lane_s: Lane s
+            """
+
+            obstacle_id: str = args[0]
+            lane_id: str = args[1]
+            lane_s: float = args[2]
+            if self._hdmap is None:
+                logger.error("Invalid HD Map.")
+                return None
+            lane: LaneInfo = None
+            if self._reference_line_provider is None:
+                lane = self._hdmap.GetLaneById(lane_id)
+            else:
+                lane = self._reference_line_provider.GetLaneById(lane_id)
+            if lane is None:
+                logger.error(f"Failed to find lane {lane_id}")
+                return None
+            
+            dest_lane_s: float = max(0.0, lane_s)
+            dest_point = lane.GetSmoothPoint(dest_lane_s)
+
+            lane_left_width, lane_right_width, _ = lane.GetWidth(dest_lane_s)
+            stop_wall_box: Box2d = Box2d(Vec2d(dest_point.x, dest_point.y), lane.Heading(dest_lane_s),
+                                         FLAGS_virtual_stop_wall_length, lane_left_width + lane_right_width)
+
+            return self.CreateStaticVirtualObstacle(obstacle_id, stop_wall_box)
 
     def CreateStaticObstacle(self, reference_line_info: ReferenceLineInfo, obstacle_id: str,
                              obstacle_start_s: float, obstacle_end_s: float) -> Obstacle:
