@@ -360,7 +360,11 @@ class Frame:
         :param Debug debug: Debug
         """
         
-        raise NotImplementedError
+        if debug is None:
+            logger.error("Skip record input into debug")
+            return
+        planning_debug_data = debug.planning_data
+        
 
     @property
     def reference_line_info(self) -> List[ReferenceLineInfo]:
