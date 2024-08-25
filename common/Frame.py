@@ -612,7 +612,21 @@ class Frame:
         :param PredictionObstacles prediction_obstacles: Prediction obstacles
         """
 
-        raise NotImplementedError
+        if not prediction_obstacles or not prediction_obstacles.header or \
+            not prediction_obstacles.header.timestamp_sec:
+            return
+
+        prediction_header_time: float = prediction_obstacles.header.timestamp_sec
+        for obstacle in prediction_obstacles.prediction_obstacle:
+            for trajectory in obstacle.trajectory:
+                for point in trajectory.trajectory_point:
+                    point.relative_time = prediction_header_time + point.relative_time - planning_start_time
+                
+                if trajectory.trajectory_point and trajectory.trajectory_point[0].relative_time < 0:
+                    it = iter(trajectory.trajectory_point)
+                    while next(it, None) and it.relative_time < 0:
+                        pass
+                    trajectory.trajectory_point = trajectory.trajectory_point[it:]
 
     def set_current_frame_planned_trajectory(self, current_frame_planned_trajectory: ADCTrajectory) -> None:
         """
