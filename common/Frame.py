@@ -21,6 +21,7 @@ from common.ReferencePoint import ReferencePoint
 from common.LaneInfo import LaneInfo
 from protoclass.SLBoundary import SLPoint
 from common.LineSegment2d import LineSegment2d
+from protoclass.Header import ErrorCode
 
 logger = Logger("Frame")
 
@@ -88,7 +89,7 @@ class Frame:
         self._is_near_destination = False
         self._drive_reference_line_info: ReferenceLineInfo = None
         """the reference line info that the vehicle finally choose to drive on"""
-        self._obstacles: List[Obstacles] = []
+        self._obstacles: Dict[str, Obstacle] = {}
         self._traffic_lights: Dict[str, TrafficLight] = {}
         self._current_frame_planned_trajectory = None
         """current frame published trajectory"""
@@ -113,6 +114,7 @@ class Frame:
              future_route_waypoints: List[LaneWaypoint], ego_info: EgoInfo) -> Status:
         """
         Init frame
+        TODO(QiL): refactor this to avoid redundant nullptr checks in scenarios.
 
         :param VehicleStateProvider vehicle_state_provider: Vehicle state provider
         :param List[ReferenceLine] reference_lines: Reference lines
@@ -123,7 +125,16 @@ class Frame:
         :rtype: Status
         """
         
-        raise NotImplementedError
+        status = self.InitFrameData(vehicle_state_provider, ego_info)
+        if not status.ok():
+            logger.error(f"Failed to init frame {status}")
+            return status
+        if not self.CreateReferenceLineInfo(reference_lines, segments):
+            msg = "Failed to init reference line info."
+            logger.error(msg)
+            return Status(ErrorCode.PLANNING_ERROR, msg)
+        self._future_route_waypoints = future_route_waypoints
+        return Status.OK()
 
     def CreateReferenceLineInfo(self, reference_lines: List[ReferenceLine], segments: List[RouteSegments]) -> bool:
         """
@@ -227,7 +238,16 @@ class Frame:
         :rtype: Obstacle
         """
 
-        raise NotImplementedError
+        obj = self._obstacles.get(id)
+        if obj is not None:
+            logger.warning(f"obstacle {id} already exist.")
+            return obj
+        new_obj = Obstacle.CreateStaticVirtualObstacles(id, box)
+        if new_obj is None:
+            logger.error(f"Failed to create obstacle {id}")
+            return None
+        self._obstacles[id] = new_obj 
+        return new_obj
 
     def AddObstacle(self, obstacle: Obstacle) -> None:
         """
