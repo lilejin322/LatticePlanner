@@ -22,6 +22,9 @@ from common.LaneInfo import LaneInfo
 from protoclass.SLBoundary import SLPoint
 from common.LineSegment2d import LineSegment2d
 from protoclass.Header import ErrorCode
+from common.Status import Status
+from config import FLAGS_align_prediction_time
+from common.Polygon2d import Polygon2d
 
 logger = Logger("Frame")
 
@@ -202,7 +205,37 @@ class Frame:
         :rtype: Status
         """
 
-        raise NotImplementedError
+        self._hdmap = HDMapUtil.BaseMapPtr()
+        assert self.hdmap is not None, "HDMap is null"
+
+        self._vehicle_state = vehicle_state_provider.vehicle_state()
+        if not util.IsVehicleStateValid(self._vehicle_state):
+            logger.error("Adc init point is not set")
+            return Status(ErrorCode.PLANNING_ERROR, "Adc init point is not set")
+
+        logger.debug(f"Enabled align prediction time? : {FLAGS_align_prediction_time}")
+
+        if FLAGS_align_prediction_time:
+            prediction = self._local_view.prediction_obstacles.copy()
+            self.AlignPredictionTime(self._vehicle_state.timestamp(), prediction)
+            self._local_view.prediction_obstacles = prediction
+
+        for obstacle in Obstacle.CreateObstacles(self._local_view.prediction_obstacles):
+            self.AddObstacle(obstacle)
+
+        if self._planning_start_point.v < 1e-3:
+            collision_obstacle = self.FindCollisionObstacle(ego_info)
+            if collision_obstacle is not None:
+                msg = f"Found collision with obstacle: {collision_obstacle.Id}"
+                logger.error(msg)
+                self._monitor_logger_buffer.ERROR(msg)
+                return Status(ErrorCode.PLANNING_ERROR, msg)
+
+        self.ReadTrafficLights()
+
+        self.ReadPadMsgDrivingAction()
+
+        return Status.OK()
 
     def InitForOpenSpace(self, vehicle_state_provider: VehicleStateProvider, ego_info: EgoInfo) -> Status:
         """
@@ -214,7 +247,7 @@ class Frame:
         :rtype: Status
         """
         
-        raise NotImplementedError
+        return self.InitFrameData(vehicle_state_provider, ego_info)
 
     def FindCollisionObstacle(self, ego_info: EgoInfo) -> Obstacle:
         """
@@ -226,7 +259,17 @@ class Frame:
         : rtype: Obstacle
         """
 
-        raise NotImplementedError
+        if not self._obstacles.items():
+            return None
+        adc_polygon = Polygon2d(ego_info.ego_box)
+        for _, obstacle in self._obstacles.items():
+            if obstacle.IsVirtual:
+                continue
+
+            obstacle_polygon = obstacle.PerceptionPolygon
+            if obstacle_polygon.HasOverlap(adc_polygon):
+                return obstacle
+        return None
 
     def CreateStaticVirtualObstacle(self, id: str, box: Box2d) -> Obstacle:
         """
