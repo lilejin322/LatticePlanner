@@ -4,6 +4,7 @@ from protoclass.Header import Header
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from protoclass.LocalizationEstimate import LocalizationEstimate
 from protoclass.Chassis import Chassis
+from protoclass.routing import RoutingResponse
 
 @dataclass
 class PlanningData:
