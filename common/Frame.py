@@ -25,6 +25,7 @@ from protoclass.Header import ErrorCode
 from common.Status import Status
 from config import FLAGS_align_prediction_time
 from common.Polygon2d import Polygon2d
+from protoclass.Debug import Debug
 
 logger = Logger("Frame")
 
@@ -359,12 +360,18 @@ class Frame:
 
         :param Debug debug: Debug
         """
-        
+
         if debug is None:
             logger.error("Skip record input into debug")
             return
         planning_debug_data = debug.planning_data
-        
+        planning_debug_data.adc_position = self._local_view.localization_estimate
+        planning_debug_data.chassis = self._local_view.chassis
+
+        if not FLAGS_use_navigation_mode:
+            planning_debug_data.routing = self._local_view.planning_command.lane_follow_command()
+
+        planning_debug_data.prediction_header = self._local_view.prediction_obstacles.header()
 
     @property
     def reference_line_info(self) -> List[ReferenceLineInfo]:

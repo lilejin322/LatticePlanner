@@ -3,6 +3,7 @@ from typing import List, Optional
 from protoclass.Header import Header
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from protoclass.LocalizationEstimate import LocalizationEstimate
+from protoclass.Chassis import Chassis
 
 @dataclass
 class PlanningData:
