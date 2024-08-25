@@ -300,7 +300,14 @@ class Frame:
         :param Obstacle obstacle: Obstacle
         """
 
-        raise NotImplementedError
+        if obstacle is None:
+            logger.error("Obstacle is None")
+            return
+        
+        if obstacle.Id in self._obstacles:
+            raise KeyError(f"Obstacle with ID {obstacle.Id} already exists.")
+        
+        self._obstacles[obstacle.Id] = obstacle
 
     def ReadTrafficLights(self) -> None:
         """
@@ -342,7 +349,7 @@ class Frame:
         :rtype: str
         """
 
-        raise NotImplementedError
+        return f"Frame: {self._sequence_num}"
 
     def ComputedTrajectory(self) -> PublishableTrajectory:
         """
