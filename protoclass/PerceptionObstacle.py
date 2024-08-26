@@ -4,6 +4,7 @@ from enum import Enum
 from protoclass.ADCTrajectory import Point3D
 from protoclass.Trajectory import Trajectory
 import math
+from protoclass.Lane import LaneBoundaryType
 
 @dataclass
 class BBox2D:
@@ -155,11 +156,11 @@ class PerceptionObstacle:
     # acceleration covariance which is a row-majored 3x3 matrix
     acceleration_covariance: List[float] = field(default_factory=list)
 
-    # lights of vehicles
     light_status: Optional[LightStatus] = None
+    """lights of vehicles"""
 
-    # Debug Message
     msg: Optional[DebugMessage] = None
+    """Debug Message"""
     
     class Source(Enum):
 
@@ -183,3 +184,34 @@ class PerceptionObstacle:
         SM_MAX_OBJECT_SEMANTIC_LABEL = 9
     
     semantic_type: Optional[SemanticType] = None
+
+@dataclass
+class LaneMarker:
+    """
+    LaneMarker class, oriented from protobuf message
+    """
+
+    lane_type: Optional[LaneBoundaryType.Type] = None
+    quality: Optional[float] = None
+    """range = [0,1]; 1 = the best quality"""
+    model_degree: Optional[int] = None
+
+    # equation X = c3 * Z^3 + c2 * Z^2 + c1 * Z + c0
+    c0_position: Optional[float] = None
+    c1_heading_angle: Optional[float] = None
+    c2_curvature: Optional[float] = None
+    c3_curvature_derivative: Optional[float] = None
+    view_range: Optional[float] = None
+    longitude_start: Optional[float] = None
+    longitude_end: Optional[float] = None
+
+@dataclass
+class LaneMarkers:
+    """
+    LaneMarkers class, oriented from protobuf message
+    """
+
+    left_lane_marker: Optional[LaneMarker] = None
+    right_lane_marker: Optional[LaneMarker] = None
+    next_left_lane_marker: List[LaneMarker] = field(default_factory=list)
+    next_right_lane_marker: List[LaneMarker] = field(default_factory=list)

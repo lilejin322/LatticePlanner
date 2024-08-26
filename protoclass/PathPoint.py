@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Optional, List
 
 @dataclass
 class PathPoint:
@@ -28,3 +28,12 @@ class PathPoint:
     # derivative of x and y w.r.t parametric parameter t in CosThetareferenceline
     x_derivative: Optional[float] = None
     y_derivative: Optional[float] = None
+
+@dataclass
+class Path:
+    """
+    Path class, oriented from protobuf message
+    """
+
+    name: Optional[str] = None
+    path_point: List[PathPoint] = field(default_factory=list)
