@@ -7,6 +7,11 @@ from protoclass.DecisionResult import ObjectDecisionType
 from protoclass.Header import Header
 from protoclass.LocalizationEstimate import LocalizationEstimate
 from protoclass.PathPoint import Path
+from protoclass.PerceptionObstacle import LaneMarkers
+from protoclass.TrajectoryPoint import TrajectoryPoint
+from protoclass.PointENU import PointENU
+from protoclass.Trajectory import Trajectory
+import math
 
 @dataclass
 class StGraphBoundaryDebug:
@@ -256,3 +261,229 @@ class MapMsg:
     """Lane marker information from perception"""
     localization: Optional[LocalizationEstimate] = None
     """Localization"""
+
+@dataclass
+class CostComponents:
+    """
+    CostComponents class, oriented from protobuf message
+    """
+
+    cost_component: List[float] = field(default_factory=list)
+
+@dataclass
+class AutoTuningTrainingData:
+    """
+    AutoTuningTrainingData class, oriented from protobuf message
+    """
+
+    teacher_component: Optional[CostComponents] = None
+    student_component: Optional[CostComponents] = None
+
+@dataclass
+class Car:
+    """
+    Car class, oriented from protobuf message
+    """
+
+    label: Optional[str] = None
+    hide_label_in_legend: Optional[bool] = False
+    
+    x: Optional[float] = None
+    y: Optional[float] = None
+    heading: Optional[float] = None
+    color: Optional[str] = None
+
+@dataclass
+class Point2D:
+    """
+    A general 2D point. Its meaning and units depend on context, and must be
+    explained in comments.
+    """
+
+    x: Optional[float] = math.nan
+    y: Optional[float] = math.nan
+
+@dataclass
+class Polygon:
+    """
+    Polygon class, oriented from protobuf message
+    """
+
+    label: Optional[str] = None
+    hide_label_in_legend: Optional[bool] = False
+    point: List[Point2D] = field(default_factory=list)
+
+    # If the 'color' property is undefined, a random one will be assigned.
+    # See http://www.chartjs.org/docs/latest/charts/line.html
+    # for all supported properties from chart.js
+    properties: Dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class Line:
+    """
+    Line class, oriented from protobuf message
+    """
+
+    label: Optional[str] = None
+    hide_label_in_legend: Optional[bool] = False
+    point: List[Point2D] = field(default_factory=list)
+
+    """
+    If the 'color' property is undefined, a random one will be assigned.
+    See http://www.chartjs.org/docs/latest/charts/line.html
+    for all supported properties from chart.js
+    """
+    properties: Dict[str, str] = field(default_factory=dict)
+
+@dataclass
+class Options:
+    """
+    Options class, oriented from protobuf message
+    """
+
+    @dataclass
+    class Axis:
+
+        min: Optional[float] = None
+        max: Optional[float] = None
+        label_string: Optional[str] = None
+
+        window_size: Optional[float] = None
+        """size of the axis of your graph which is then divided into measuring grades"""
+
+        step_size: Optional[float] = None
+        """size of the smaller measuring grades in the axis found between two larger measuring grades"""
+
+        mid_value: Optional[float] = None
+        """midpoint taken within the dataset. If it is not specified, we will calculate it for you."""
+
+    legend_display: Optional[bool] = True
+    x: Optional[Axis] = None
+    y: Optional[Axis] = None
+
+    aspect_ratio: Optional[float] = None
+    """This is the aspect ratio (width/height) of the entire chart."""
+
+    sync_xy_window_size: Optional[bool] = False
+    """
+    Same window size for x-Axis and y-Axis. It is
+    effective only if x/y window_size is NOT set.
+    """
+
+@dataclass
+class Chart:
+    """
+    Chart class, oriented from protobuf message
+    """
+
+    title: Optional[str] = None
+    options: Optional[Options] = None
+
+    # Data sets
+    line: List[Line] = field(default_factory=list)
+    polygon: List[Polygon] = field(default_factory=list)
+    car: List[Car] = field(default_factory=list)
+
+@dataclass
+class ScenarioDebug:
+    """
+    ScenarioDebug class, oriented from protobuf message
+    """
+
+    msg: Optional[str] = None
+    scenario_plugin_type: Optional[str] = None
+    stage_plugin_type: Optional[str] = None
+
+@dataclass
+class Trajectories:
+    """
+    Trajectories class, oriented from protobuf message
+    """
+
+    trajectory: List[Trajectory] = field(default_factory=list)
+
+@dataclass
+class VehicleMotionPoint:
+    """
+    VehicleMotionPoint class, oriented from protobuf message
+    """
+
+    trajectory_point: Optional[TrajectoryPoint] = None
+    """trajectory point"""
+    steer: Optional[float] = None
+    """The angle between vehicle front wheel and vehicle longitudinal axis"""
+
+@dataclass
+class VehicleMotion:
+    """
+    VehicleMotion class, oriented from protobuf message
+    """
+
+    name: Optional[str] = None
+    vehicle_motion_point: List[VehicleMotionPoint] = field(default_factory=list)
+
+@dataclass
+class OpenSpaceDebug:
+    """
+    OpenSpaceDebug class, oriented from protobuf message
+    """
+
+    trajectories: Optional[Trajectories] = None
+    warm_start_trajectory: Optional[VehicleMotion] = None
+    smoothed_trajectory: Optional[VehicleMotion] = None
+    warm_start_dual_lambda: List[float] = field(default_factory=list)
+    warm_start_dual_miu: List[float] = field(default_factory=list)
+    optimized_dual_lambda: List[float] = field(default_factory=list)
+    optimized_dual_miu: List[float] = field(default_factory=list)
+    xy_boundary: List[float] = field(default_factory=list)
+    obstacles: List[ObstacleDebug] = field(default_factory=list)
+    roi_shift_point: Optional[TrajectoryPoint] = None
+    end_point: Optional[TrajectoryPoint] = None
+    partitioned_trajectories: Optional[Trajectories] = None
+    chosen_trajectory: Optional[Trajectories] = None
+    is_fallback_trajectory: Optional[bool] = None
+    fallback_trajectory: Optional[Trajectories] = None
+    trajectory_stitching_point: Optional[TrajectoryPoint] = None
+    future_collision_point: Optional[TrajectoryPoint] = None
+    time_latency: Optional[float] = 0.0
+    origin_point: Optional[PointENU] = None
+    origin_heading_rad: Optional[float] = None
+
+@dataclass
+class SmootherDebug:
+    """
+    SmootherDebug class, oriented from protobuf message
+    """
+
+    class SmootherType(Enum):
+
+        SMOOTHER_NONE = 1
+        SMOOTHER_CLOSE_STOP = 2
+
+    is_smoothed: Optional[bool] = None
+
+    type: SmootherType = SmootherType.SMOOTHER_NONE
+    reason: Optional[str] = None
+
+class PullOverDebug:
+    """
+    PullOverDebug class, oriented from protobuf message
+    """
+
+    position: Optional[PointENU] = None
+    theta: Optional[float] = None
+    length_front: Optional[float] = None
+    length_back: Optional[float] = None
+    width_left: Optional[float] = None
+    width_right: Optional[float] = None
+
+@dataclass
+class HybridModelDebug:
+    """
+    HybridModelDebug class, oriented from protobuf message
+    """
+
+    using_learning_model_output: Optional[bool] = False
+    learning_model_output_usage_ratio: Optional[float] = None
+    learning_model_output_fail_reason: Optional[str] = None
+    evaluated_path_reference: Optional[Path] = None

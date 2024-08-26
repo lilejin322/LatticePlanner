@@ -6,9 +6,10 @@ from protoclass.LocalizationEstimate import LocalizationEstimate
 from protoclass.Chassis import Chassis
 from protoclass.routing import RoutingResponse
 from protoclass.PathPoint import Path
-from protoclass.SpeedPoint import SpeedPlan, SpeedPoint
+from protoclass.SpeedPoint import SpeedPlan
 from protoclass.planning_internal import STGraphDebug, SLFrameDebug, SignalLightDebug, ObstacleDebug, ReferenceLineDebug, DpPolyGraphDebug, \
-                                         LatticeStTraining, MapMsg
+                                         LatticeStTraining, MapMsg, AutoTuningTrainingData, Chart, ScenarioDebug, OpenSpaceDebug, SmootherDebug, \
+                                         PullOverDebug, HybridModelDebug
 
 @dataclass
 class PlanningData:
