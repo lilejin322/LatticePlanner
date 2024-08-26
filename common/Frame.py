@@ -1,5 +1,5 @@
 from protoclass.TrajectoryPoint import TrajectoryPoint
-from typing import List, Dict
+from typing import List, Dict, Optional
 from protoclass.ADCTrajectory import ADCTrajectory
 from common.Box2d import Box2d
 from common.ReferenceLineInfo import ReferenceLineInfo
@@ -16,7 +16,7 @@ from common.ReferenceLine import ReferenceLine
 from common.RouteSegments import RouteSegments
 from common.Vec2d import Vec2d
 from protoclass.VehicleState import VehicleState
-from config import FLAGS_default_cruise_speed, FLAGS_virtual_stop_wall_length
+from config import FLAGS_default_cruise_speed, FLAGS_virtual_stop_wall_length, FLAGS_signal_expire_time_sec
 from common.ReferencePoint import ReferencePoint
 from common.LaneInfo import LaneInfo
 from protoclass.SLBoundary import SLPoint
@@ -26,8 +26,29 @@ from common.Status import Status
 from config import FLAGS_align_prediction_time
 from common.Polygon2d import Polygon2d
 from protoclass.Debug import Debug
+from dataclasses import dataclass
+from datetime import datetime
+from protoclass.planning_internal import TrafficLight
+import math
 
 logger = Logger("Frame")
+
+@dataclass
+class LocalView:
+    """
+    LocalView contains all necessary data as planning input
+    """
+
+    prediction_obstacles: Optional[PredictionObstacles] = None
+    chassis: Optional[Chassis] = None
+    localization_estimate: Optional[LocalizationEstimate] = None
+    traffic_light: Optional[TrafficLightDetection] = None
+    relative_map: Optional[MapMsg] = None
+    pad_msg: Optional[PadMessage] = None
+    stories: Optional[Stories] = None
+    planning_command: Optional[PlanningCommand] = None
+    end_lane_way_point: Optional[LaneWaypoint] = None
+    perception_road_edge: Optional[PerceptionEdgeInfo] = None
 
 class Frame:
     """
@@ -314,21 +335,32 @@ class Frame:
         Read traffic lights
         """
 
-        raise NotImplementedError
+        self._traffic_lights.clear()
+        traffic_light_detection = self._local_view.traffic_light
+        if traffic_light_detection is None:
+            return
+        delay: float = traffic_light_detection.header.timestamp_sec - datetime.now().timestamp()
+        if delay > FLAGS_signal_expire_time_sec:
+            logger.debug(f"traffic signals msg is expired, delay = {delay} seconds.")
+            return
+        for traffic_light in traffic_light_detection.traffic_light:
+            self._traffic_lights[traffic_light.id] = traffic_light
 
     def ReadPadMsgDrivingAction(self) -> None:
         """
         Read pad message driving action
         """
 
-        raise NotImplementedError
+        if self._local_view.pad_msg is None:
+            if self._local_view.pad_msg.action is not None:
+                self._pad_msg_driving_action = self._local_view.pad_msg.action
 
     def ResetPadMsgDrivingAction(self) -> None:
         """
         Reset pad message driving action
         """
 
-        raise NotImplementedError
+        self._pad_msg_driving_action = PadMessage.NONE
 
     @property
     def SequenceNum(self) -> int:
@@ -400,7 +432,7 @@ class Frame:
         :rtype: Obstacle
         """
 
-        raise NotImplementedError
+        return self._obstacles.get(id)
 
     def FindDriveReferenceLineInfo(self) -> ReferenceLineInfo:
         """
@@ -410,7 +442,13 @@ class Frame:
         :rtype: ReferenceLineInfo
         """
 
-        raise NotImplementedError
+        min_cost: float = math.inf
+        self._drive_reference_line_info = None
+        for reference_line_info in self._reference_line_info:
+            if reference_line_info.IsDrivable() and reference_line_info.Cost < min_cost:
+                self._drive_reference_line_info = reference_line_info
+                min_cost = reference_line_info.Cost
+        return self._drive_reference_line_info
 
     def FindTargetReferenceLineInfo(self) -> ReferenceLineInfo:
         """
@@ -420,7 +458,12 @@ class Frame:
         :rtype: ReferenceLineInfo
         """
 
-        raise NotImplementedError
+        target_reference_line_info = None
+        for reference_line_info in self._reference_line_info:
+            if reference_line_info.IsChangeLanePath():
+                return reference_line_info
+            target_reference_line_info = reference_line_info
+        return target_reference_line_info
 
     def FindFailedReferenceLineInfo(self) -> ReferenceLineInfo:
         """
@@ -430,7 +473,11 @@ class Frame:
         :rtype: ReferenceLineInfo
         """
 
-        raise NotImplementedError
+        for reference_line_info in self._reference_line_info:
+            # Find the unsuccessful lane-change path
+            if not reference_line_info.IsDrivable() and reference_line_info.IsChangeLanePath:
+                return reference_line_info
+        return None
 
     @property
     def DriveReferenceLineInfo(self) -> ReferenceLineInfo:
@@ -739,7 +786,10 @@ class Frame:
         :rtype: TrafficLight
         """
 
-        raise NotImplementedError
+        result = self._traffic_lights.get(traffic_light_id)
+        if result is None:
+            return TrafficLight(id=traffic_light_id, color=TrafficLight.Color.UNKNOWN, confidence=0.0, tracking_time=0.0)
+        return result
 
     @property
     def GetPadMsgDrivingAction(self) -> DrivingAction:
