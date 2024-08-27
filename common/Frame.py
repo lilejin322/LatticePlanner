@@ -37,6 +37,7 @@ from protoclass.planning_internal import MapMsg
 from protoclass.Stories import Stories
 from protoclass.planning_command import PlanningCommand
 from common.DiscretizedPath import DiscretizedPath
+from common.VehicleStateProvider import VehicleStateProvider
 
 logger = Logger("Frame")
 
