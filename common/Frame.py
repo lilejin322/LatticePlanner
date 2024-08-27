@@ -1,5 +1,5 @@
 from protoclass.TrajectoryPoint import TrajectoryPoint
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from protoclass.ADCTrajectory import ADCTrajectory, Point3D
 from common.Box2d import Box2d
 from common.ReferenceLineInfo import ReferenceLineInfo
@@ -36,6 +36,7 @@ from protoclass.TrafficLightDetection import TrafficLightDetection, TrafficLight
 from protoclass.planning_internal import MapMsg
 from protoclass.Stories import Stories
 from protoclass.planning_command import PlanningCommand
+from common.DiscretizedPath import DiscretizedPath
 
 logger = Logger("Frame")
 
@@ -124,7 +125,7 @@ class Frame:
             local_view: LocalView = args[1]
             planning_start_point: TrajectoryPoint = args[2]
             vehicle_state: VehicleState = args[3]
-            reference_line_provider: RefereneceLineProvider = args[4]
+            reference_line_provider: ReferenceLineProvider = args[4]
             self._sequence_num = sequence_num
             self._local_view = local_view
             self._planning_start_point = planning_start_point
@@ -421,7 +422,7 @@ class Frame:
 
         return f"Frame: {self._sequence_num}"
 
-    def ComputedTrajectory(self) -> PublishableTrajectory:
+    def ComputedTrajectory(self) -> Any:
         """
         Get computed trajectory
 
@@ -738,7 +739,7 @@ class Frame:
 
         return self._current_frame_planned_trajectory
 
-    def set_current_frame_planned_path(self, current_frame_planned_path: DiscrtizedPath) -> None:
+    def set_current_frame_planned_path(self, current_frame_planned_path: DiscretizedPath) -> None:
         """
         Set current frame planned path
 
@@ -748,7 +749,7 @@ class Frame:
         self._current_frame_planned_path = current_frame_planned_path
 
     @property
-    def current_frame_planned_path(self) -> DiscrtizedPath:
+    def current_frame_planned_path(self) -> DiscretizedPath:
         """
         Get current frame planned path
 
