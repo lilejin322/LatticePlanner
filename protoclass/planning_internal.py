@@ -11,6 +11,7 @@ from protoclass.PerceptionObstacle import LaneMarkers
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from protoclass.PointENU import PointENU
 from protoclass.Trajectory import Trajectory
+from protoclass.TrafficLightDetection import TrafficLight
 import math
 
 @dataclass
@@ -93,32 +94,6 @@ class SLFrameDebug:
     aggregated_boundary_s: List[float] = field(default_factory=list)
     aggregated_boundary_low: List[float] = field(default_factory=list)
     aggregated_boundary_high: List[float] = field(default_factory=list)
-
-@dataclass
-class TrafficLight:
-    """
-    TrafficLight class, oriented from protobuf message
-    """
-
-    class Color(Enum):
-
-        UNKNOWN = 0
-        RED = 1
-        YELLOW = 2
-        GREEN = 3
-        BLACK = 4
-
-    color: Optional[Color] = None
-    id: Optional[str] = None
-    """Traffic light string-ID in the map data"""
-    confidence: Optional[float] = 1.0
-    """Confidence about the detected results, between 0 and 1"""
-    tracking_time: Optional[float] = None
-    """Duration of the traffic light since detected"""
-    blink: Optional[bool] = None
-    """Is the traffic light blinking"""
-    remaining_time: Optional[float] = None
-    """v2x traffic light remaining time"""
 
 @dataclass
 class SignalLightDebug:

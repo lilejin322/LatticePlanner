@@ -1,6 +1,6 @@
 from protoclass.TrajectoryPoint import TrajectoryPoint
 from typing import List, Dict, Optional
-from protoclass.ADCTrajectory import ADCTrajectory
+from protoclass.ADCTrajectory import ADCTrajectory, Point3D
 from common.Box2d import Box2d
 from common.ReferenceLineInfo import ReferenceLineInfo
 from common.PlanningContext import PlanningContext
@@ -16,22 +16,60 @@ from common.ReferenceLine import ReferenceLine
 from common.RouteSegments import RouteSegments
 from common.Vec2d import Vec2d
 from protoclass.VehicleState import VehicleState
-from config import FLAGS_default_cruise_speed, FLAGS_virtual_stop_wall_length, FLAGS_signal_expire_time_sec
+from config import FLAGS_default_cruise_speed, FLAGS_virtual_stop_wall_length, FLAGS_signal_expire_time_sec, FLAGS_align_prediction_time
 from common.ReferencePoint import ReferencePoint
 from common.LaneInfo import LaneInfo
 from protoclass.SLBoundary import SLPoint
 from common.LineSegment2d import LineSegment2d
 from protoclass.Header import ErrorCode
 from common.Status import Status
-from config import FLAGS_align_prediction_time
 from common.Polygon2d import Polygon2d
 from protoclass.Debug import Debug
 from dataclasses import dataclass
 from datetime import datetime
-from protoclass.planning_internal import TrafficLight
 import math
+from enum import Enum
+from protoclass.Header import Header
+from protoclass.Chassis import Chassis
+from protoclass.LocalizationEstimate import LocalizationEstimate
+from protoclass.TrafficLightDetection import TrafficLightDetection, TrafficLight
+from protoclass.planning_internal import MapMsg
+from protoclass.Stories import Stories
+from protoclass.planning_command import PlanningCommand
 
 logger = Logger("Frame")
+
+class DrivingAction(Enum):
+
+    START = 1
+    RESET = 2
+    VIN_REQ = 3
+
+@dataclass
+class PadMessage:
+    """
+    PadMessage class, oriented from protobuf message
+    """
+
+    header: Optional[Header] = None
+    """control mode, set mode according to low level definition"""
+    action: Optional[int] = None
+    """action in the driving_mode"""
+
+@dataclass
+class PerceptionEdgeInfo:
+    """
+    PerceptionEdgeInfo class, oriented from protobuf message
+    """
+
+    header: Optional[Header] = None
+    is_useable: Optional[bool] = False
+    edge_point: List[Point3D] = None
+    edge_relative_point: List[Point3D] = None
+    delta_s: Optional[float] = 0.2
+    edge_length: Optional[float] = None
+    is_smoother_succ: Optional[bool] = False
+    is_cross_localization: Optional[bool] = False
 
 @dataclass
 class LocalView:
@@ -391,6 +429,7 @@ class Frame:
         :rtype: PublishableTrajectory
         """
 
+        # This function is weird, no implementation in .cc file
         raise NotImplementedError
 
     def RecordInputDebug(self, debug: Debug) -> None:
@@ -491,12 +530,12 @@ class Frame:
         return self._drive_reference_line_info
 
     @property
-    def obstacles(self) -> List[Obstacle]:
+    def obstacles(self) -> Dict[str, Obstacle]:
         """
         Get obstacles
 
         :returns: Obstacles
-        :rtype: List[Obstacle]
+        :rtype: Dict[str, Obstacle]
         """
 
         return self._obstacles
@@ -756,15 +795,15 @@ class Frame:
         return self._local_view
 
     @property
-    def GetObstacleList(self) -> IndexedObstacles:
+    def GetObstacleList(self) -> List[Obstacle]:
         """
-        Get obstacle list，这个函数我认为可以删掉在py里面，先放在这
+        Get obstacle list
 
         :returns: Obstacle list
-        :rtype: IndexedObstacles
+        :rtype: List[Obstacle]
         """
 
-        return self._obstacles
+        return list(self._obstacles.values())
 
     @property
     def open_space_info(self) -> OpenSpaceInfo:
@@ -801,15 +840,3 @@ class Frame:
         """
 
         return self._pad_msg_driving_action
-
-class FrameHistory(IndexedQueue):
-    """
-    Frame history
-    """
-
-    def __init__(self):
-        """
-        Constructor
-        """
-
-        raise NotImplementedError
