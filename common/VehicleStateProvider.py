@@ -13,8 +13,26 @@ from copy import deepcopy
 import math
 import numpy as np
 from scipy.spatial.transform import Rotation
+from common.Path import NormalizeAngle
 
 logger = Logger("VehicleStateProvider")
+
+def QuaternionToHeading(qw: float, qx: float, qy: float, qz: float) -> float:
+    """
+    Returns heading (in radians) in [-PI, PI), with 0 being East.
+    Note that x/y/z is East/North/Up.
+
+    :param float qw: Quaternion w-coordinate
+    :param float qx: Quaternion x-coordinate
+    :param float qy: Quaternion y-coordinate
+    :param float qz: Quaternion z-coordinate
+    :returns: Heading encoded by given quaternion
+    :rtype: float
+    """
+
+    yaw = math.atan2(2 * (qw * qz - qx * qy), 2 * (qw**2 + qy**2) - 1)
+    # yaw is zero when the car is pointing North, but the heading is zero when the car is pointing East.
+    return NormalizeAngle(yaw + math.pi / 2)
 
 class VehicleStateProvider:
     """
