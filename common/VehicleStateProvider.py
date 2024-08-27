@@ -7,9 +7,12 @@ from protoclass.Pose import Pose, Quaternion
 from common.Status import Status
 from protoclass.Header import ErrorCode
 from logging import Logger
-from config import FLAGS_reverse_heading_vehicle_state, FLAGS_use_navigation_mode, FLAGS_enable_map_reference_unify
+from config import FLAGS_reverse_heading_vehicle_state, FLAGS_use_navigation_mode, FLAGS_enable_map_reference_unify, \
+                   FLAGS_state_transform_to_com_reverse, FLAGS_state_transform_to_com_drive
 from copy import deepcopy
 import math
+import numpy as np
+from scipy.spatial.transform import Rotation
 
 logger = Logger("VehicleStateProvider")
 
@@ -281,7 +284,29 @@ class VehicleStateProvider:
         :rtype: Vec2d
         """
 
-        raise NotImplementedError
+        vec_distance = np.array([0.0, 0.0, 0.0])
+        v: float = self._vehicle_state.linear_velocity
+        # Predict distance travel vector
+        if np.abs(self._vehicle_state.angular_velocity) < 0.0001:
+            vec_distance[0] = 0.0
+            vec_distance[1] = v * t
+        else:
+            angular_velocity = self._vehicle_state.angular_velocity
+            vec_distance[0] = -v / angular_velocity * (1.0 - np.cos(angular_velocity * t))
+            vec_distance[1] = np.sin(angular_velocity * t) * v / angular_velocity
+
+        # If we have rotation information, take it into consideration.
+        if self._vehicle_state.pose.orientation is not None:
+            orientation = self._vehicle_state.pose.orientation
+            quaternion = Rotation.from_quat([orientation.qx, orientation.qy, orientation.qz, orientation.qw])
+            pos_vec = np.array([self._vehicle_state.x, self._vehicle_state.y, self._vehicle_state.z])
+            future_pos_3d = quaternion.apply(vec_distance) + pos_vec
+            return Vec2d(future_pos_3d[0], future_pos_3d[1])
+
+        # If no valid rotation information provided from localization,
+        # return the estimated future position without rotation.
+        return Vec2d(vec_distance[0] + self._vehicle_state.x,
+                     vec_distance[1] + self._vehicle_state.y)
 
     def ComputeCOMPosition(self, rear_to_com_distance: float) -> Vec2d:
         """
@@ -293,7 +318,25 @@ class VehicleStateProvider:
         :rtype: Vec2d
         """
 
-        raise NotImplementedError
+        # set length as distance between rear wheel and center of mass.
+        v = np.array([0.0, 0.0, 0.0])
+        if (FLAGS_state_transform_to_com_reverse and self._vehicle_state.gear == Chassis.GearPosition.GEAR_REVERSE) or \
+           (FLAGS_state_transform_to_com_drive and self._vehicle_state.gear == Chassis.GearPosition.GEAR_DRIVE):
+            v = np.array([0.0, rear_to_com_distance, 0.0])
+        else:
+            v = np.array([0.0, 0.0, 0.0])
+        pos_vec = np.array([self._vehicle_state.x, self._vehicle_state.y, self._vehicle_state.z])
+        # Initialize the COM position without rotation
+        com_pos_3d = v + pos_vec
+
+        # If we have rotation information, take it into consideration.
+        if self._vehicle_state.pose.orientation is not None:
+            orientation = self._vehicle_state.pose.orientation
+            quaternion = Rotation.from_quat([orientation.qx, orientation.qy, orientation.qz, orientation.qw])
+            # Update the COM position with rotation
+            com_pos_3d = quaternion.apply(v) + pos_vec
+        
+        return Vec2d(com_pos_3d[0], com_pos_3d[1])
 
     @property
     def vehicle_state(self) -> VehicleState:
