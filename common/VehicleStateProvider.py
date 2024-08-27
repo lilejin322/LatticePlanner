@@ -3,6 +3,7 @@ from protoclass.VehicleState import VehicleState
 from protoclass.LocalizationEstimate import LocalizationEstimate
 from protoclass.Chassis import Chassis
 from common.Vec2d import Vec2d
+from protoclass.Pose import Pose
 
 class VehicleStateProvider:
     """
