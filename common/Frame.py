@@ -38,6 +38,7 @@ from protoclass.Stories import Stories
 from protoclass.planning_command import PlanningCommand
 from common.DiscretizedPath import DiscretizedPath
 from common.VehicleStateProvider import VehicleStateProvider
+from common.ReferenceLineProvider import ReferenceLineProvider
 
 logger = Logger("Frame")
 
