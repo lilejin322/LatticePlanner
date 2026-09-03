@@ -14,7 +14,6 @@ from bisect import bisect_left, bisect_right
 from cartesian_frenet_converter import CartesianFrenetConverter
 from scipy.optimize import minimize_scalar
 from math import sin, cos, hypot, pi, fmod
-from protoclass.sl_boundary import SLBoundary
 from common.map_path_point import MapPathPoint, LaneWaypoint
 from protoclass.point_enu import PointENU
 import config as config_module

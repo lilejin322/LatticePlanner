@@ -27,6 +27,7 @@ import config as config_module
 from protoclass.adc_trajectory import ADCTrajectory, GearPosition
 from protoclass.decision_result import DecisionResult
 from protoclass.header import ErrorCode
+from protoclass.localization_estimate import LocalizationEstimate
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
 
@@ -225,7 +226,6 @@ class OnLanePlanning:
     def _resolve_vehicle_state(self, local_view: LocalView) -> Tuple[Optional[VehicleState], Optional[Status]]:
         """Fuse localization + chassis like on_lane_planning.cc VehicleStateProvider."""
         from protoclass.chassis import Chassis
-        from protoclass.localization_estimate import LocalizationEstimate
 
         if local_view.localization_estimate is None and local_view.chassis is None:
             return None, Status(ErrorCode.PLANNING_ERROR, "vehicle state is unavailable")
