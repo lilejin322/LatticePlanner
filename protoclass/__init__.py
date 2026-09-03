@@ -1,0 +1,3 @@
+"""
+Protobuf-aligned dataclasses module
+"""

@@ -1,0 +1,1294 @@
+#!/usr/bin/env python3
+"""Run focused smoke checks for Apollo lattice components."""
+
+from pathlib import Path
+import importlib
+import sys
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from lattice_planner import ToDiscretizedReferenceLine
+from behavior.collision_checker import CollisionChecker
+from behavior.path_time_graph import PathTimeGraph
+from behavior.prediction_querier import PredictionQuerier
+from common.discretized_trajectory import DiscretizedTrajectory
+from common.frame import Frame, LocalView
+from common.hd_map import HDMap, HDMapUtil, MakeMapId, BaseMapFile
+from common.map_path_point import MapPathPoint
+from common.obstacle import Obstacle
+from common.path import Path as MapPath, PathOverlap
+from common.pnc_map import PncMap
+from reference_line import ReferenceLine
+from reference_line.reference_line_info import ReferenceLineInfo
+from reference_line.reference_line_provider import ReferenceLineProvider
+from reference_line.reference_point import ReferencePoint
+from common.route_segments import RouteSegments
+from common.st_boundary import STBoundary
+from common.vec2d import Vec2d
+from common.constraint_checker import ConstraintChecker
+from common.constraint_checker1d import ConstraintChecker1d
+from common.lane_types import LaneSegment
+from protoclass.adc_trajectory import ADCTrajectory
+from protoclass.lane import Curve, CurveSegment, Lane, LaneBoundary, LaneBoundaryType, LaneSampleAssociation, LineSegment
+from protoclass.point_enu import PointENU
+from lattice_planner import LatticePlanner
+from common.curve1d.quartic_polynomial_curve1d import QuarticPolynomialCurve1d
+from config import FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_time_length
+from protoclass.adc_trajectory import Point3D
+from protoclass.header import Header
+from protoclass.path_point import PathPoint
+from protoclass.perception_obstacle import PerceptionObstacle
+from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles, Trajectory as PredictionTrajectory
+from protoclass.trajectory import Trajectory
+from protoclass.trajectory_point import TrajectoryPoint
+from protoclass.vehicle_state import VehicleState
+from protoclass.decision_result import ChangeLaneType
+from protoclass.lane_waypoint import LaneWaypoint as RoutingLaneWaypoint
+from protoclass.routing import Passage, RoadSegment, RoutingRequest, RoutingResponse
+from protoclass.planning_status import LaneSegment as RoutingLaneSegment
+from protoclass.lattice_structure import StopPoint
+from traffic_rules.traffic_decider import TrafficDecider, TrafficRuleConfig, TrafficRuleConfigs
+from trajectory_generation.backup_trajectory_generator import BackupTrajectoryGenerator
+from trajectory_generation.end_condition_sampler import EndConditionSampler
+from trajectory_generation.lattice_trajectory1d import CreateLatticeTrajectory1d
+from trajectory_generation.lateral_osqp_optimizer import LateralOSQPOptimizer
+from trajectory_generation.trajectory1d_generator import Trajectory1dGenerator
+
+
+def _build_reference_line():
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(_build_straight_lane(length=100.0))
+    HDMapUtil.SetBaseMap(hdmap)
+
+    route_segments = RouteSegments()
+    route_segments.SetIsOnSegment(True)
+    route_segments.SetId("mock")
+    route_segments.append(LaneSegment(lane_info, 0.0, 99.0))
+
+    reference_line = ReferenceLine(MapPath(route_segments))
+    discretized_ref_points = ToDiscretizedReferenceLine(reference_line.reference_points)
+
+    start_point = TrajectoryPoint(
+        path_point=PathPoint(
+            x=0.0,
+            y=0.0,
+            z=0.0,
+            theta=0.0,
+            kappa=0.0,
+            s=0.0,
+            dkappa=0.0,
+            ddkappa=0.0,
+        ),
+        v=1.0,
+        a=0.0,
+        relative_time=0.0,
+    )
+
+    vehicle_state = VehicleState()
+    vehicle_state.x = 0.0
+    vehicle_state.y = 0.0
+    vehicle_state.heading = 0.0
+    reference_line_info = ReferenceLineInfo(
+        vehicle_state, start_point, reference_line, route_segments
+    )
+    return reference_line, discretized_ref_points, reference_line_info
+
+
+def _build_path_time_graph(obstacles):
+    _, discretized_ref_points, reference_line_info = _build_reference_line()
+    init_s = [0.0, 1.0, 0.0]
+    init_d = [0.0, 0.0, 0.0]
+    return PathTimeGraph(
+        obstacles,
+        discretized_ref_points,
+        reference_line_info,
+        init_s[0],
+        init_s[0] + FLAGS_speed_lon_decision_horizon,
+        0.0,
+        FLAGS_trajectory_time_length,
+        init_d,
+    )
+
+
+def check_lattice_trajectory_extrapolation():
+    base = QuarticPolynomialCurve1d([0.0, 1.0, 0.0], [1.0, 0.0], 1.0)
+    lattice = CreateLatticeTrajectory1d(base)
+    end_s = lattice.Evaluate(0, 1.0)
+    extrapolated_s = lattice.Evaluate(0, 2.0)
+    assert extrapolated_s >= end_s
+
+
+def check_backup_generator():
+    _, discretized_ref_points, reference_line_info = _build_reference_line()
+    init_s = [0.0, 1.0, 0.0]
+    init_d = [0.0, 0.0, 0.0]
+    path_time_graph = _build_path_time_graph([])
+    prediction_querier = PredictionQuerier([], discretized_ref_points)
+    trajectory1d_generator = Trajectory1dGenerator(
+        init_s, init_d, path_time_graph, prediction_querier
+    )
+    collision_checker = CollisionChecker(
+        [],
+        init_s[0],
+        init_d[0],
+        discretized_ref_points,
+        reference_line_info,
+        path_time_graph,
+    )
+    backup_generator = BackupTrajectoryGenerator(
+        init_s, init_d, 0.0, collision_checker, trajectory1d_generator
+    )
+    trajectory = backup_generator.GenerateTrajectory(discretized_ref_points)
+    assert len(trajectory) > 0
+
+
+def check_collision_checker_lane_width_fallback():
+    class ReferenceLineStub:
+        def GetLaneWidth(self, s):
+            return False, 0.0, 0.0
+
+    class ReferenceLineInfoStub:
+        reference_line = ReferenceLineStub()
+
+    import config as config_module
+
+    checker = CollisionChecker.__new__(CollisionChecker)
+    checker.reference_line_info = ReferenceLineInfoStub()
+    assert checker.IsEgoVehicleInLane(10.0, 0.0)
+    assert checker.IsEgoVehicleInLane(10.0, 0.49 * config_module.FLAGS_default_reference_line_width)
+    assert not checker.IsEgoVehicleInLane(10.0, 0.51 * config_module.FLAGS_default_reference_line_width)
+
+
+def check_constraint_checker_dynamic_speed_bound():
+    import config as config_module
+
+    trajectory = DiscretizedTrajectory([
+        TrajectoryPoint(
+            path_point=PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0),
+            v=2.0,
+            a=0.0,
+            relative_time=0.0,
+        ),
+        TrajectoryPoint(
+            path_point=PathPoint(x=1.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=1.0),
+            v=2.0,
+            a=0.0,
+            relative_time=0.1,
+        ),
+    ])
+    old_upper = config_module.FLAGS_speed_upper_bound
+    try:
+        config_module.FLAGS_speed_upper_bound = 1.0
+        assert ConstraintChecker.ValidTrajectory(trajectory) == ConstraintChecker.Result.LON_VELOCITY_OUT_OF_BOUND
+    finally:
+        config_module.FLAGS_speed_upper_bound = old_upper
+
+
+def check_constraint_checker1d_dynamic_speed_bound():
+    import config as config_module
+
+    class ConstantSpeedCurve:
+        def ParamLength(self):
+            return 0.2
+
+        def Evaluate(self, order, param):
+            if order == 1:
+                return 2.0
+            return 0.0
+
+    old_upper = config_module.FLAGS_speed_upper_bound
+    try:
+        config_module.FLAGS_speed_upper_bound = 1.0
+        assert not ConstraintChecker1d.IsValidLongitudinalTrajectory(ConstantSpeedCurve())
+    finally:
+        config_module.FLAGS_speed_upper_bound = old_upper
+
+
+def check_dynamic_obstacle_sampling():
+    _, discretized_ref_points, _ = _build_reference_line()
+    obstacle = _build_dynamic_obstacle()
+    path_time_graph = _build_path_time_graph([obstacle])
+    prediction_querier = PredictionQuerier([obstacle], discretized_ref_points)
+    sampler = EndConditionSampler(
+        [0.0, 1.0, 0.0], [0.0, 0.0, 0.0], path_time_graph, prediction_querier
+    )
+    assert len(path_time_graph.GetPathTimeObstacles()) == 1
+    assert len(sampler.SampleLonEndConditionsForPathTimePoints()) > 0
+
+
+def check_lateral_osqp_optimizer():
+    optimizer = LateralOSQPOptimizer()
+    assert optimizer.Optimize([0.0, 0.0, 0.0], 1.0, [(-1.0, 1.0)] * 12)
+    trajectory = optimizer.GetOptimalTrajectory()
+    frenet_path = optimizer.GetFrenetFramePath()
+    assert len(frenet_path) == 12
+    assert abs(trajectory.Evaluate(0, 0.0)) < 1e-6
+    assert abs(frenet_path[-1].dl) < 1e-6
+    assert abs(frenet_path[-1].ddl) < 1e-6
+
+
+def check_prediction_time_alignment():
+    prediction = PredictionObstacles(
+        header=Header(timestamp_sec=10.0),
+        prediction_obstacle=[
+            PredictionObstacle(
+                perception_obstacle=PerceptionObstacle(
+                    id=2,
+                    position=Point3D(x=0.0, y=0.0, z=0.0),
+                    theta=0.0,
+                    velocity=Point3D(x=0.0, y=0.0, z=0.0),
+                    length=4.0,
+                    width=2.0,
+                    height=1.5,
+                ),
+                trajectory=[
+                    PredictionTrajectory(
+                        trajectory_point=[
+                            TrajectoryPoint(path_point=PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0), relative_time=0.0),
+                            TrajectoryPoint(path_point=PathPoint(x=1.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0), relative_time=1.0),
+                            TrajectoryPoint(path_point=PathPoint(x=2.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0), relative_time=2.0),
+                        ]
+                    )
+                ],
+            )
+        ],
+    )
+    Frame.AlignPredictionTime(11.0, prediction)
+    aligned_points = prediction.prediction_obstacle[0].trajectory[0].trajectory_point
+    assert [point.relative_time for point in aligned_points] == [0.0, 1.0]
+
+
+def _build_straight_lane(lane_id="lane_1", length: float = 50.0):
+    return Lane(
+        id=Lane.Id(lane_id),
+        central_curve=Curve(
+            segment=[
+                CurveSegment(
+                    curve_type=LineSegment(
+                        point=[PointENU(x=0.0, y=0.0), PointENU(x=length, y=0.0)]
+                    )
+                )
+            ]
+        ),
+        length=length,
+        speed_limit=10.0,
+        left_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        right_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        left_road_sample=[LaneSampleAssociation(s=0.0, width=3.0)],
+        right_road_sample=[LaneSampleAssociation(s=0.0, width=3.0)],
+        type=Lane.LaneType.CITY_DRIVING,
+    )
+
+
+def check_hdmap_basic_queries():
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(_build_straight_lane())
+    HDMapUtil.SetBaseMap(hdmap)
+
+    assert HDMapUtil.BaseMap().GetLaneById(MakeMapId("lane_1")) is lane_info
+    ok, nearest_lane, nearest_s, nearest_l = hdmap.GetNearestLane(PointENU(x=5.0, y=1.0))
+    assert ok
+    assert nearest_lane is lane_info
+    assert abs(nearest_s - 5.0) < 1e-6
+    assert abs(nearest_l - 1.0) < 1e-6
+    heading_lanes = hdmap.GetLanesWithHeading(PointENU(x=5.0, y=0.2), 5.0, 0.0, 0.2)
+    assert heading_lanes == [lane_info]
+
+    provider = ReferenceLineProvider()
+    vehicle_state = VehicleState(x=5.0, y=0.0, heading=0.0)
+    ok, route_segments = provider.CreateRouteSegments(vehicle_state)
+    assert ok
+    assert route_segments[0][0].lane is lane_info
+
+
+def check_map_path_route_segment_regressions():
+    hdmap = HDMapUtil.BaseMap()
+    lane_info = hdmap.GetLaneById(MakeMapId("lane_1"))
+    if lane_info is None:
+        lane_info = hdmap.AddLane(_build_straight_lane())
+
+    route_segments = RouteSegments()
+    route_segments.SetIsOnSegment(True)
+    route_segments.SetId("lane_1")
+    route_segments.append(LaneSegment(lane_info, 0.0, 20.0))
+
+    map_path = MapPath(route_segments)
+    assert map_path.length > 0.0
+    ok, s, l, _ = map_path.GetProjection(Vec2d(5.0, 1.0))
+    assert ok
+    assert abs(s - 5.0) < 1e-6
+    assert abs(l - 1.0) < 1e-6
+    ok, left_width, right_width = map_path.GetLaneWidth(5.0)
+    assert ok
+    assert left_width > 0.0 and right_width > 0.0
+    assert map_path.dead_end_overlaps == []
+
+    reference_line = ReferenceLine(map_path)
+    ok, sl = reference_line.XYToSL(Vec2d(5.0, 1.0))
+    assert ok
+    assert abs(sl.s - 5.0) < 1e-6
+    assert reference_line.GetSpeedLimitFromS(5.0) == 10.0
+
+    other = RouteSegments()
+    other.append(LaneSegment(lane_info, 10.0, 30.0))
+    assert route_segments.Stitch(other)
+    assert route_segments.Shrink(8.0, 3.0, 10.0)
+
+
+def check_lattice_main_path_without_backup():
+    import config as config_module
+
+    old_backup_flag = config_module.FLAGS_enable_backup_trajectory
+    config_module.FLAGS_enable_backup_trajectory = False
+    try:
+        reference_line, _, reference_line_info = _build_reference_line()
+        frame = Frame(0)
+        frame._reference_line_info = [reference_line_info]
+        frame._obstacles = {}
+        start_point = reference_line_info._adc_planning_point
+        ok = LatticePlanner().Plan(start_point, frame, ADCTrajectory())
+        assert ok
+        assert reference_line_info.trajectory is not None
+        assert len(reference_line_info.trajectory) > 0
+    finally:
+        config_module.FLAGS_enable_backup_trajectory = old_backup_flag
+
+
+def _build_parallel_lanes():
+    left_lane = _build_straight_lane("lane_left")
+    left_lane.left_neighbor_forward_lane_id = []
+    left_lane.right_neighbor_forward_lane_id = [Lane.Id("lane_right")]
+    left_lane.successor_id = []
+    left_lane.predecessor_id = []
+
+    right_lane = Lane(
+        id=Lane.Id("lane_right"),
+        central_curve=Curve(
+            segment=[
+                CurveSegment(
+                    curve_type=LineSegment(
+                        point=[PointENU(x=0.0, y=-3.5), PointENU(x=50.0, y=-3.5)]
+                    )
+                )
+            ]
+        ),
+        length=50.0,
+        speed_limit=10.0,
+        left_neighbor_forward_lane_id=[Lane.Id("lane_left")],
+        right_neighbor_forward_lane_id=[],
+        left_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        right_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        type=Lane.LaneType.CITY_DRIVING,
+    )
+    return left_lane, right_lane
+
+
+def _build_change_lane_routing():
+    return RoutingResponse(
+        routing_request=RoutingRequest(
+            waypoint=[
+                RoutingLaneWaypoint(id="lane_left", s=0.0),
+                RoutingLaneWaypoint(id="lane_right", s=45.0),
+            ]
+        ),
+        road=[
+            RoadSegment(
+                id="road_1",
+                passage=[
+                    Passage(
+                        segment=[RoutingLaneSegment(id="lane_left", start_s=0.0, end_s=50.0)],
+                        can_exit=False,
+                        change_lane_type=ChangeLaneType.RIGHT,
+                    ),
+                    Passage(
+                        segment=[RoutingLaneSegment(id="lane_right", start_s=0.0, end_s=50.0)],
+                        can_exit=True,
+                        change_lane_type=ChangeLaneType.FORWARD,
+                    ),
+                ],
+            )
+        ],
+    )
+
+
+def check_pnc_map_multi_reference_lines():
+    hdmap = HDMap()
+    left_lane, right_lane = _build_parallel_lanes()
+    hdmap.AddLane(left_lane)
+    hdmap.AddLane(right_lane)
+    HDMapUtil.SetBaseMap(hdmap)
+
+    pnc_map = PncMap(hdmap)
+    routing = _build_change_lane_routing()
+    assert pnc_map.UpdateRoutingResponse(routing)
+
+    vehicle_state = VehicleState(x=45.0, y=0.0, heading=0.0, linear_velocity=5.0)
+    segments = pnc_map.GetRouteSegments(vehicle_state)
+    assert len(segments) == 2
+    on_segment = [seg for seg in segments if seg.IsOnSegment()]
+    neighbor = [seg for seg in segments if not seg.IsOnSegment()]
+    assert len(on_segment) == 1
+    assert len(neighbor) == 1
+    assert on_segment[0].NextAction() == ChangeLaneType.RIGHT
+    assert neighbor[0].PreviousAction() == ChangeLaneType.RIGHT
+
+
+def check_reference_line_provider_with_routing():
+    hdmap = HDMapUtil.BaseMap()
+    if hdmap.GetLaneById(MakeMapId("lane_left")) is None:
+        left_lane, right_lane = _build_parallel_lanes()
+        hdmap.AddLane(left_lane)
+        hdmap.AddLane(right_lane)
+
+    provider = ReferenceLineProvider()
+    provider.UpdateRoutingResponse(_build_change_lane_routing())
+    provider.UpdateVehicleState(VehicleState(x=45.0, y=0.0, heading=0.0, linear_velocity=5.0))
+    ok, reference_lines, route_segments = provider.CreateReferenceLine()
+    assert ok
+    assert len(reference_lines) >= 2
+    assert len(reference_lines) == len(route_segments)
+
+
+def check_traffic_decider_stop_point():
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(_build_straight_lane("short_lane", length=30.0))
+    HDMapUtil.SetBaseMap(hdmap)
+    segments = RouteSegments()
+    segments.SetIsOnSegment(True)
+    segments.SetId("short")
+    segments.append(LaneSegment(lane_info, 0.0, 29.0))
+    reference_line = ReferenceLine(MapPath(segments))
+    vehicle_state = VehicleState(x=0.0, y=0.0, heading=0.0)
+    start_point = TrajectoryPoint(
+        path_point=PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
+        v=1.0,
+        a=0.0,
+        relative_time=0.0,
+    )
+    reference_line_info = ReferenceLineInfo(vehicle_state, start_point, reference_line, segments)
+    reference_line_info.Init([], 10.0)
+
+    frame = Frame(0)
+    frame._reference_line_info = [reference_line_info]
+    frame._local_view = LocalView()
+    frame._hdmap = HDMapUtil.BaseMap()
+
+    decider = TrafficDecider()
+    decider.Init()
+    decider.Execute(frame, reference_line_info)
+    stop_point = reference_line_info.planning_target.stop_point
+    assert stop_point is not None
+    assert stop_point.s is not None
+    assert stop_point.s < reference_line.Length()
+    assert stop_point.type == StopPoint.Type.HARD
+
+
+def _build_lane_reference_line_info():
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(_build_straight_lane())
+    HDMapUtil.SetBaseMap(hdmap)
+
+    route_segments = RouteSegments()
+    route_segments.SetIsOnSegment(True)
+    route_segments.SetId("lane_1")
+    route_segments.append(LaneSegment(lane_info, 0.0, 50.0))
+
+    reference_line = ReferenceLine(MapPath(route_segments))
+    vehicle_state = VehicleState(x=0.0, y=0.0, heading=0.0, linear_velocity=1.0)
+    start_point = TrajectoryPoint(
+        path_point=PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
+        v=1.0,
+        a=0.0,
+        relative_time=0.0,
+    )
+    reference_line_info = ReferenceLineInfo(vehicle_state, start_point, reference_line, route_segments)
+    assert reference_line_info.Init([], 10.0)
+
+    frame = Frame(0)
+    frame._reference_line_info = [reference_line_info]
+    frame._local_view = LocalView()
+    frame._hdmap = hdmap
+    return frame, reference_line_info
+
+
+def check_yield_sign_rule_stop_point():
+    frame, reference_line_info = _build_lane_reference_line_info()
+    reference_line_info.reference_line.map_path._yield_sign_overlaps = [
+        PathOverlap("yield_1", 20.0, 21.0)
+    ]
+    decider = TrafficDecider()
+    decider.Init(TrafficRuleConfigs([TrafficRuleConfig("YIELD_SIGN")]))
+    status = decider.Execute(frame, reference_line_info)
+    assert status.ok()
+    stop_point = reference_line_info.planning_target.stop_point
+    assert stop_point is not None
+    assert stop_point.type == StopPoint.Type.HARD
+    assert "YS_yield_1" in reference_line_info.path_decision.obstacles
+
+
+def check_keep_clear_rule_obstacle():
+    frame, reference_line_info = _build_lane_reference_line_info()
+    reference_line_info.reference_line.map_path._clear_area_overlaps = [
+        PathOverlap("clear_1", 15.0, 20.0)
+    ]
+    decider = TrafficDecider()
+    decider.Init(TrafficRuleConfigs([TrafficRuleConfig("KEEP_CLEAR")]))
+    status = decider.Execute(frame, reference_line_info)
+    assert status.ok()
+    obstacle = reference_line_info.path_decision.obstacles.get("KC_clear_1")
+    assert obstacle is not None
+    assert obstacle.reference_line_st_boundary().boundary_type == STBoundary.BoundaryType.KEEP_CLEAR
+
+
+def check_path_decider_static_nudge():
+    from common.path_decider import PathDecider
+    from common.obstacle import Obstacle
+    from common.planning_util import SetupNominalPathData, GetADCStopDeceleration
+    from protoclass.adc_trajectory import Point3D
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info._vehicle_state.linear_velocity = 5.0
+    reference_line_info.Init([], 10.0)
+    init_s = [0.0, 0.0, 0.0]
+    init_d = [0.0, 0.0, 0.0]
+    SetupNominalPathData(reference_line_info, init_s[0], init_d, 80.0)
+    perception = PerceptionObstacle(
+        id=2,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=20.0, y=0.3, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("static_1", perception, is_static=True)
+    reference_line_info.AddObstacle(obs)
+    status = PathDecider(reference_line_info).Execute(reference_line_info)
+    assert status.ok()
+    assert obs.HasLateralDecision() or obs.HasLongitudinalDecision()
+    assert GetADCStopDeceleration(reference_line_info._vehicle_state, 0.0, 50.0) > 0.0
+
+
+def check_hdmap_load_from_file_if_available():
+    map_file = BaseMapFile()
+    if map_file is None:
+        return
+    hdmap = HDMap()
+    try:
+        assert hdmap.LoadMapFromFile(map_file) == 0
+    except ImportError:
+        return
+    assert len(hdmap._lanes) > 0
+
+
+def check_build_frenet_path_from_lat_trajectory():
+    from common.curve1d.piecewise_jerk_trajectory1d import PiecewiseJerkTrajectory1d
+    from common.planning_util import BuildFrenetPathFromLatTrajectory
+
+    _, _, reference_line_info = _build_reference_line()
+    lat = PiecewiseJerkTrajectory1d(0.5, 0.0, 0.0)
+    lat.AppendSegment(0.0, 40.0)
+    path_data = BuildFrenetPathFromLatTrajectory(reference_line_info, 0.0, lat, 30.0, step=1.0)
+    frenet_path = path_data.frenet_frame_path
+    assert len(frenet_path) >= 30
+    assert abs(frenet_path[0].l - 0.5) < 1e-6
+    assert abs(frenet_path[-1].l - 0.5) < 1e-6
+
+
+def check_path_decider_after_lateral_trajectory():
+    from common.path_decider import PathDecider
+    from common.obstacle import Obstacle
+    from common.curve1d.piecewise_jerk_trajectory1d import PiecewiseJerkTrajectory1d
+    from common.planning_util import BuildFrenetPathFromLatTrajectory
+    from protoclass.perception_obstacle import PerceptionObstacleType
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    lat = PiecewiseJerkTrajectory1d(0.0, 0.0, 0.0)
+    lat.AppendSegment(0.0, 80.0)
+    BuildFrenetPathFromLatTrajectory(reference_line_info, 0.0, lat, 80.0)
+    perception = PerceptionObstacle(
+        id=3,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=20.0, y=0.3, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("static_2", perception, is_static=True)
+    reference_line_info.AddObstacle(obs)
+    status = PathDecider(reference_line_info).Execute(reference_line_info)
+    assert status.ok()
+    assert obs.HasLateralDecision() or obs.HasLongitudinalDecision()
+
+
+def check_qp_spline_reference_line_smoothing():
+    old_qp = None
+    old_smooth = None
+    try:
+        import config as config_module
+
+        old_qp = config_module.FLAGS_enable_qp_spline_reference_line
+        old_smooth = config_module.FLAGS_enable_smooth_reference_line
+        config_module.FLAGS_enable_qp_spline_reference_line = True
+        config_module.FLAGS_enable_smooth_reference_line = True
+        hdmap = HDMap()
+        hdmap.AddLane(_build_straight_lane())
+        HDMapUtil.SetBaseMap(hdmap)
+        provider = ReferenceLineProvider()
+        provider.UpdateVehicleState(VehicleState(x=10.0, y=0.0, heading=0.0))
+        ok, reference_lines, _ = provider.CreateReferenceLine()
+        assert ok
+        assert reference_lines[0].Length() > 0.0
+    finally:
+        if old_qp is not None:
+            import config as config_module
+            config_module.FLAGS_enable_qp_spline_reference_line = old_qp
+            config_module.FLAGS_enable_smooth_reference_line = old_smooth
+
+
+def check_qp_spline_solver_basic():
+    from planning_math.smoothing_spline.osqp_spline_2d_solver import OsqpSpline2dSolver
+    from common.vec2d import Vec2d
+
+    t_knots = [0.0, 1.0, 2.0]
+    solver = OsqpSpline2dSolver(t_knots, 5)
+    solver.reset(t_knots, 5)
+    evaluated_t = [0.0, 0.5, 1.0, 1.5, 2.0]
+    headings = [0.0] * 5
+    xy_points = [Vec2d(t, 0.0) for t in evaluated_t]
+    bounds_lon = [1.0] * 5
+    bounds_lat = [0.5] * 5
+    constraint = solver.mutable_constraint
+    assert constraint.add_2d_boundary(evaluated_t, headings, xy_points, bounds_lon, bounds_lat)
+    assert constraint.add_second_derivative_smooth_constraint()
+    kernel = solver.mutable_kernel
+    kernel.add_second_order_derivative_matrix(200.0)
+    kernel.add_third_order_derivative_matrix(1000.0)
+    kernel.add_regularization(1e-5)
+    assert solver.solve()
+    assert abs(solver.spline.y(1.0)) < 0.5
+
+
+def check_obstacle_decision_property_api():
+    from common.obstacle import Obstacle
+    from protoclass.decision_result import ObjectDecisionType, ObjectIgnore
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+
+    perception = PerceptionObstacle(
+        id=9,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=1.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("obs_prop", perception, is_static=True)
+    ignore = ObjectDecisionType()
+    ignore.object_tag = ObjectIgnore()
+    obs.AddLongitudinalDecision("test", ignore)
+    assert obs.HasNonIgnoreDecision() is False
+
+
+def check_obstacle_copies_trajectory():
+    """
+    Regression test: Apollo's C++ Obstacle stores trajectory_/perception_obstacle_
+    as value members, copy-constructed from the constructor arguments, then
+    recomputes cumulative path_point.s on its OWN copy. The Python port must
+    copy too - it must never rewrite path_point.s on the caller's original
+    trajectory object.
+    """
+    from common.obstacle import Obstacle
+    from protoclass.trajectory import Trajectory
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+
+    trajectory = Trajectory(trajectory_point=[
+        TrajectoryPoint(path_point=PathPoint(x=float(i), y=0.0, theta=0.0, s=100.0 + i), relative_time=float(i) * 0.1)
+        for i in range(3)
+    ])
+    original_s_values = [tp.path_point.s for tp in trajectory.trajectory_point]
+
+    perception = PerceptionObstacle(
+        id=13,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=0.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("obs_traj_copy", perception, trajectory=trajectory)
+
+    assert [tp.path_point.s for tp in trajectory.trajectory_point] == original_s_values, (
+        "Obstacle(...) must not mutate the caller's original trajectory's path_point.s"
+    )
+    assert obs.Trajectory() is not trajectory
+    assert [tp.path_point.s for tp in obs.Trajectory().trajectory_point] == [0.0, 1.0, 2.0]
+
+
+def check_reference_line_provider_history_fallback():
+    provider = ReferenceLineProvider()
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(_build_straight_lane("history_lane", length=10.0))
+    HDMapUtil.SetBaseMap(hdmap)
+    segments = RouteSegments()
+    segments.SetIsOnSegment(True)
+    segments.SetId("history")
+    segments.append(LaneSegment(lane_info, 0.0, 9.0))
+    reference_line = ReferenceLine(MapPath(segments))
+    provider.UpdateReferenceLine([reference_line], [segments])
+    provider._reference_lines = []
+    refs, segs = provider.GetReferenceLines()
+    assert len(refs) == 1
+    assert len(segs) == 1
+
+
+def check_trajectory_stitcher_reinit():
+    from common.trajectory_stitcher import TrajectoryStitcher
+
+    vehicle_state = VehicleState(x=0.0, y=0.0, heading=0.0, linear_velocity=0.0, linear_acceleration=0.0)
+    stitching = TrajectoryStitcher.compute_stitching_trajectory(
+        vehicle_state, 1.0, 0.1, 20, True, None, []
+    )
+    assert len(stitching) == 1
+    assert stitching[0].path_point.s == 0.0
+
+
+def check_trajectory_stitcher_preserves_previous_trajectory():
+    """
+    Regression test: with a real (non-None) previous trajectory, stitching must
+    return independent copies of the points it re-bases, not aliases of the
+    points still owned by prev_trajectory. It must also not crash when slicing
+    a PublishableTrajectory.
+    """
+    from common.publishable_trajectory import PublishableTrajectory
+    from common.trajectory_stitcher import TrajectoryStitcher
+
+    points = [
+        TrajectoryPoint(
+            path_point=PathPoint(x=float(i), y=0.0, theta=0.0, s=float(i)),
+            v=1.0,
+            a=0.0,
+            relative_time=float(i) * 0.1,
+        )
+        for i in range(5)
+    ]
+    prev_trajectory = PublishableTrajectory(header_time=100.0, discretized_trajectory=points)
+    snapshot = [(tp.path_point.s, tp.relative_time) for tp in prev_trajectory]
+
+    vehicle_state = VehicleState(x=0.0, y=0.0, heading=0.0, linear_velocity=1.0, linear_acceleration=0.0)
+    replan_reason = []
+    stitching = TrajectoryStitcher.compute_stitching_trajectory(
+        vehicle_state, 100.05, 0.1, 5, False, prev_trajectory, replan_reason
+    )
+
+    assert replan_reason == [], f"expected the real stitching path, got a replan: {replan_reason}"
+    assert len(stitching) > 1
+    assert [(tp.path_point.s, tp.relative_time) for tp in prev_trajectory] == snapshot, (
+        "compute_stitching_trajectory must not mutate points still owned by prev_trajectory"
+    )
+    for i in range(min(len(stitching), len(prev_trajectory))):
+        assert stitching[i] is not prev_trajectory[i], (
+            "stitched points must be independent copies, not aliases of prev_trajectory's points"
+        )
+
+
+def check_lattice_path_assessment_blocking():
+    from common.path_assessment_decider import ApplyLatticePathAssessment, FindBlockingObstacleId
+    from common.obstacle import Obstacle
+    from common.planning_util import SetupNominalPathData
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    SetupNominalPathData(reference_line_info, 0.0, [0.0, 0.0, 0.0], 80.0)
+    perception = PerceptionObstacle(
+        id=10,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=20.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("block_1", perception, is_static=True)
+    reference_line_info.AddObstacle(obs)
+    ApplyLatticePathAssessment(reference_line_info)
+    assert FindBlockingObstacleId(reference_line_info) == "block_1"
+    assert reference_line_info.GetBlockingObstacle() is not None
+
+
+def check_on_lane_planning_output():
+    import config as config_module
+    from on_lane_planning import OnLanePlanning
+    from common.frame import LocalView
+    from protoclass.chassis import Chassis
+    from protoclass.header import Header
+    from protoclass.pose import Pose
+    from protoclass.localization_estimate import LocalizationEstimate
+    from protoclass.prediction_obstacles import PredictionObstacles
+
+    reference_line, _, reference_line_info = _build_reference_line()
+    provider = ReferenceLineProvider()
+    provider._reference_lines = [reference_line]
+    provider._route_segments = [reference_line_info.Lanes()]
+    local_view = LocalView(
+        localization_estimate=LocalizationEstimate(
+            pose=Pose(
+                position=PointENU(x=0.0, y=0.0, z=0.0),
+                heading=0.0,
+            ),
+            measurement_time=0.0,
+        ),
+        chassis=Chassis(speed_mps=0.1, header=Header(timestamp_sec=0.0)),
+        prediction_obstacles=PredictionObstacles(),
+    )
+    old_thread = config_module.FLAGS_enable_reference_line_provider_thread
+    try:
+        config_module.FLAGS_enable_reference_line_provider_thread = True
+        planner = OnLanePlanning(provider)
+        adc_trajectory = ADCTrajectory()
+        status = planner.RunOnce(local_view, adc_trajectory)
+        assert status.ok()
+        assert len(adc_trajectory.trajectory_point) > 0
+        assert adc_trajectory.decision is not None
+        assert planner._vehicle_state_provider.vehicle_state is not None
+        assert planner._vehicle_state_provider.vehicle_state.linear_velocity == 0.1
+    finally:
+        config_module.FLAGS_enable_reference_line_provider_thread = old_thread
+
+
+def check_path_assessment_compare_paths():
+    from common.path_assessment_decider import ComparePathData, PathAssessmentDecider
+    from common.planning_util import BuildLatticeCandidatePath
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    short_path = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 20.0, path_label="regular/self"
+    )
+    long_path = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 60.0, path_label="regular/self"
+    )
+    assert ComparePathData(long_path, short_path, None)
+    reference_line_info.SetCandidatePathData([short_path, long_path])
+    status = PathAssessmentDecider().Process(None, reference_line_info, None)
+    assert status.ok()
+    assert reference_line_info.path_data.frenet_frame_path[-1].s >= 59.0
+
+
+def check_combine_path_and_speed_profile():
+    from common.discretized_trajectory import DiscretizedTrajectory
+    from common.planning_util import BuildLatticeCandidatePath, BuildSpeedDataFromLonTrajectory
+    from common.curve1d.piecewise_jerk_trajectory1d import PiecewiseJerkTrajectory1d
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    path_data = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 80.0, path_label="regular/self"
+    )
+    reference_line_info.SetPathData(path_data)
+    lon = PiecewiseJerkTrajectory1d(0.0, 5.0, 0.0)
+    lon.AppendSegment(0.0, 8.0)
+    reference_line_info.SetSpeedData(BuildSpeedDataFromLonTrajectory(lon, 0.0))
+    trajectory = DiscretizedTrajectory()
+    assert reference_line_info.CombinePathAndSpeedProfile(0.0, 0.0, trajectory)
+    assert len(trajectory) > 0
+
+
+def check_path_assessment_set_obstacle_distance():
+    from common.path_assessment_decider import SetPathInfo
+    from common.obstacle import Obstacle
+    from common.planning_util import BuildLatticeCandidatePath
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    perception = PerceptionObstacle(
+        id=11,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=15.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    reference_line_info.AddObstacle(Obstacle("dist_obs", perception, is_static=True))
+    path_data = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 40.0, path_label="regular/self"
+    )
+    SetPathInfo(reference_line_info, path_data)
+    assert path_data.path_point_decision_guide
+    start_dist = path_data.path_point_decision_guide[0][2]
+    end_dist = path_data.path_point_decision_guide[-1][2]
+    assert start_dist < float("inf")
+    assert start_dist > 0.0
+    assert end_dist > start_dist
+
+
+def check_polygon_box_distance():
+    from common.box2d import Box2d
+    from common.polygon2d import Polygon2d
+    from common.vec2d import Vec2d
+
+    box = Box2d(Vec2d(10.0, 0.0), 0.0, 4.0, 2.0)
+    polygon = Polygon2d(box)
+    ego = Box2d(Vec2d(0.0, 0.0), 0.0, 4.8, 2.0)
+    dist = polygon.DistanceTo(ego)
+    assert dist > 5.0
+    assert dist < 8.0
+    overlap_ego = Box2d(Vec2d(10.0, 0.0), 0.0, 4.8, 2.0)
+    assert polygon.DistanceTo(overlap_ego) == 0.0
+
+
+def check_path_bounds_decider_multi_candidates():
+    from common.obstacle import Obstacle
+    from common.path_bounds_decider import PathBoundsDecider, BuildCandidatePathsFromBoundaries
+    from common.planning_util import SetupNominalPathData
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    SetupNominalPathData(reference_line_info, 0.0, [0.0, 0.0, 0.0], 80.0)
+    perception = PerceptionObstacle(
+        id=12,
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=25.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    reference_line_info.AddObstacle(Obstacle("bounds_block", perception, is_static=True))
+    reference_line_info.SetBlockingObstacle("bounds_block")
+
+    status = PathBoundsDecider().Process(None, reference_line_info, None)
+    assert status.ok()
+    boundaries = reference_line_info.GetCandidatePathBoundaries()
+    assert len(boundaries) >= 2
+    labels = {b.label for b in boundaries}
+    assert "fallback" in labels
+    assert any("left" in label or "right" in label or "self" in label for label in labels)
+
+    candidates = BuildCandidatePathsFromBoundaries(reference_line_info)
+    assert len(candidates) >= 1
+    candidate_labels = {c.path_label for c in candidates}
+    assert "fallback" not in candidate_labels
+    assert any("left" in label or "right" in label or "self" in label for label in candidate_labels)
+
+
+def check_record_debug_info():
+    from common.path_assessment_decider import PathAssessmentDecider, RecordDebugInfo
+    from common.path_bounds_decider import PathBoundsDecider
+    from common.planning_debug import RecordPathBoundaryDebugInfo
+    from common.planning_util import BuildLatticeCandidatePath
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    short_path = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 20.0, path_label="regular/self"
+    )
+    long_path = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 60.0, path_label="regular/left/forward"
+    )
+    reference_line_info.SetCandidatePathData([short_path, long_path])
+    status = PathAssessmentDecider().Process(None, reference_line_info, None)
+    assert status.ok()
+
+    debug_paths = reference_line_info.debug.planning_data.path
+    assert debug_paths
+    names = {p.name for p in debug_paths}
+    assert "Planning PathData" in names
+    assert any(name.startswith("Candidate/") for name in names)
+
+    PathBoundsDecider().Process(None, reference_line_info, None)
+    boundary = reference_line_info.GetCandidatePathBoundaries()[0]
+    RecordPathBoundaryDebugInfo(boundary, "test_boundary", reference_line_info)
+    names = {p.name for p in reference_line_info.debug.planning_data.path}
+    assert any("test_boundary/left" in name for name in names)
+    assert any("test_boundary/right" in name for name in names)
+
+    RecordDebugInfo(short_path, "ManualPath", reference_line_info)
+    assert "ManualPath" in {p.name for p in reference_line_info.debug.planning_data.path}
+
+
+def check_box_polygon_overlap():
+    from common.box2d import Box2d
+    from common.polygon2d import Polygon2d
+    from common.vec2d import Vec2d
+
+    box = Box2d(Vec2d(10.0, 0.0), 0.0, 4.0, 2.0)
+    polygon = Polygon2d(box)
+    separated = Box2d(Vec2d(0.0, 0.0), 0.0, 4.0, 2.0)
+    assert not separated.HasOverlap(polygon)
+    assert not polygon.HasOverlap(separated)
+    overlapping = Box2d(Vec2d(10.0, 0.0), 0.0, 4.8, 2.0)
+    assert box.HasOverlap(polygon)
+    assert overlapping.HasOverlap(polygon)
+
+
+def check_box_distance_to_segment_canonical_state():
+    from common.box2d import Box2d
+    from common.line_segment2d import LineSegment2d
+    from common.vec2d import Vec2d
+
+    box = Box2d(Vec2d(0.0, 0.0), 0.0, 2.0, 2.0)
+    segment = LineSegment2d(Vec2d(3.0, 1.5), Vec2d(-1.0, 1.5))
+    assert abs(box.DistanceTo(segment) - 0.5) < 1e-6
+
+
+def check_lattice_migration_pipeline():
+    """PathBounds + PathAssessment decider stack (OnLane layer, not LatticePlanner core)."""
+    from common.path_assessment_decider import PathAssessmentDecider, RecordDebugInfo
+    from common.path_bounds_decider import BuildCandidatePathsFromBoundaries, PathBoundsDecider
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+
+    PathBoundsDecider().Process(None, reference_line_info, None)
+    candidates = BuildCandidatePathsFromBoundaries(reference_line_info)
+    assert candidates
+    reference_line_info.SetCandidatePathData(candidates)
+
+    status = PathAssessmentDecider().Process(None, reference_line_info, None)
+    assert status.ok()
+    assert reference_line_info.path_data is not None
+    assert reference_line_info.path_data.path_label
+
+    RecordDebugInfo(reference_line_info.path_data, "Planning PathData", reference_line_info)
+    debug_paths = reference_line_info.debug.planning_data.path
+    assert debug_paths
+    debug_names = {p.name for p in debug_paths}
+    assert "Planning PathData" in debug_names
+
+    boundaries = reference_line_info.GetCandidatePathBoundaries()
+    assert len(boundaries) >= 2
+
+
+def check_infer_lattice_path_label():
+    from common.planning_util import InferLatticePathLabel
+    from common.curve1d.piecewise_jerk_trajectory1d import PiecewiseJerkTrajectory1d
+
+    lat = PiecewiseJerkTrajectory1d(1.2, 0.0, 0.0)
+    lat.AppendSegment(0.0, 10.0)
+    assert InferLatticePathLabel(0.0, 50.0, [0.0, 0.0, 0.0], lat) == "regular/left/forward"
+    lat2 = PiecewiseJerkTrajectory1d(-1.2, 0.0, 0.0)
+    lat2.AppendSegment(0.0, 10.0)
+    assert InferLatticePathLabel(0.0, 50.0, [0.0, 0.0, 0.0], lat2) == "regular/right/forward"
+
+
+def check_relative_map_reference_lines():
+    from protoclass.planning_internal import MapMsg, NavigationPath
+    from protoclass.path_point import Path, PathPoint as NavPathPoint
+
+    hdmap = HDMap()
+    lane = _build_straight_lane()
+    lane_info = hdmap.AddLane(lane)
+    HDMapUtil.SetBaseMap(hdmap)
+    lane_id = lane_info.id.id
+    nav_points = [
+        NavPathPoint(x=float(i), y=0.0, z=0.0, theta=0.0, kappa=0.0, s=float(i), dkappa=0.0)
+        for i in range(20)
+    ]
+    relative_map = MapMsg(
+        navigation_path={
+            lane_id: NavigationPath(path=Path(path_point=nav_points), path_priority=0)
+        }
+    )
+    provider = ReferenceLineProvider(relative_map=relative_map)
+    provider.UpdateVehicleState(VehicleState(x=5.0, y=0.0, heading=0.0))
+    import config as config_module
+
+    old_flag = config_module.FLAGS_use_navigation_mode
+    try:
+        config_module.FLAGS_use_navigation_mode = True
+        reference_lines, route_segments = provider.GetReferenceLinesFromRelativeMap()
+        assert len(reference_lines) >= 1
+        assert len(route_segments) == len(reference_lines)
+        assert reference_lines[0].Length() > 0.0
+    finally:
+        config_module.FLAGS_use_navigation_mode = old_flag
+
+
+def check_reference_line_smoothing():
+    import config as config_module
+
+    old_flag = config_module.FLAGS_enable_smooth_reference_line
+    try:
+        config_module.FLAGS_enable_smooth_reference_line = True
+        hdmap = HDMap()
+        hdmap.AddLane(_build_straight_lane())
+        HDMapUtil.SetBaseMap(hdmap)
+        provider = ReferenceLineProvider()
+        provider.UpdateVehicleState(VehicleState(x=10.0, y=0.0, heading=0.0))
+        ok, reference_lines, _ = provider.CreateReferenceLine()
+        assert ok
+        assert reference_lines[0].Length() > 0.0
+    finally:
+        config_module.FLAGS_enable_smooth_reference_line = old_flag
+
+
+def check_reference_line_anchor_curb_shift():
+    hdmap = HDMap()
+    lane = _build_straight_lane()
+    lane.right_boundary = LaneBoundary(
+        boundary_type=[
+            LaneBoundaryType(s=0.0, types=[LaneBoundaryType.LaneBoundaryTypeEnum.CURB])
+        ]
+    )
+    lane_info = hdmap.AddLane(lane)
+    HDMapUtil.SetBaseMap(hdmap)
+
+    route_segments = RouteSegments()
+    route_segments.SetIsOnSegment(True)
+    route_segments.SetId("curb_lane")
+    route_segments.append(LaneSegment(lane_info, 0.0, 50.0))
+    reference_line = ReferenceLine(MapPath(route_segments))
+    anchor = ReferenceLineProvider().GetAnchorPoint(reference_line, 10.0)
+    assert anchor.path_point.s == 10.0
+    assert anchor.path_point.y > 0.0
+    assert anchor.lateral_bound <= 0.5
+
+
+def check_reference_line_info_copies_reference_line():
+    """
+    Regression test: Apollo's C++ ReferenceLineInfo stores reference_line_/lanes_
+    as value members, copy-constructed from the constructor arguments - so
+    mutating a ReferenceLineInfo's reference line can never affect the caller's
+    original ReferenceLine (e.g. one still cached in ReferenceLineProvider's
+    history). The Python port must copy on construction too, not alias.
+    """
+    reference_line, _, reference_line_info = _build_reference_line()
+    original_priority = reference_line.GetPriority()
+
+    assert reference_line_info.reference_line is not reference_line
+
+    reference_line_info.SetPriority(original_priority + 1)
+    assert reference_line.GetPriority() == original_priority, (
+        "ReferenceLineInfo.SetPriority must not mutate the caller's original ReferenceLine"
+    )
+    assert reference_line_info.GetPriority() == original_priority + 1
+
+
+def _build_dynamic_obstacle():
+    perception = PerceptionObstacle(
+        id=1,
+        position=Point3D(x=10.0, y=0.0, z=0.0),
+        theta=0.0,
+        velocity=Point3D(x=1.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+    )
+    trajectory = Trajectory(
+        trajectory_point=[
+            TrajectoryPoint(
+                path_point=PathPoint(
+                    x=10.0,
+                    y=0.0,
+                    z=0.0,
+                    theta=0.0,
+                    kappa=0.0,
+                    s=0.0,
+                    dkappa=0.0,
+                    ddkappa=0.0,
+                ),
+                v=1.0,
+                a=0.0,
+                relative_time=0.0,
+            ),
+            TrajectoryPoint(
+                path_point=PathPoint(
+                    x=11.0,
+                    y=0.0,
+                    z=0.0,
+                    theta=0.0,
+                    kappa=0.0,
+                    s=0.0,
+                    dkappa=0.0,
+                    ddkappa=0.0,
+                ),
+                v=1.0,
+                a=0.0,
+                relative_time=1.0,
+            ),
+            TrajectoryPoint(
+                path_point=PathPoint(
+                    x=12.0,
+                    y=0.0,
+                    z=0.0,
+                    theta=0.0,
+                    kappa=0.0,
+                    s=0.0,
+                    dkappa=0.0,
+                    ddkappa=0.0,
+                ),
+                v=1.0,
+                a=0.0,
+                relative_time=2.0,
+            ),
+        ]
+    )
+    return Obstacle("obs_1", perception, is_static=False, trajectory=trajectory)
+
+
+def main():
+    check_lattice_trajectory_extrapolation()
+    check_backup_generator()
+    check_collision_checker_lane_width_fallback()
+    check_constraint_checker_dynamic_speed_bound()
+    check_constraint_checker1d_dynamic_speed_bound()
+    check_dynamic_obstacle_sampling()
+    check_lateral_osqp_optimizer()
+    check_prediction_time_alignment()
+    check_hdmap_basic_queries()
+    check_map_path_route_segment_regressions()
+    check_pnc_map_multi_reference_lines()
+    check_reference_line_provider_with_routing()
+    check_traffic_decider_stop_point()
+    check_yield_sign_rule_stop_point()
+    check_keep_clear_rule_obstacle()
+    check_path_decider_static_nudge()
+    check_build_frenet_path_from_lat_trajectory()
+    check_path_decider_after_lateral_trajectory()
+    check_hdmap_load_from_file_if_available()
+    check_reference_line_smoothing()
+    check_reference_line_anchor_curb_shift()
+    check_reference_line_info_copies_reference_line()
+    check_qp_spline_reference_line_smoothing()
+    check_qp_spline_solver_basic()
+    check_obstacle_decision_property_api()
+    check_obstacle_copies_trajectory()
+    check_reference_line_provider_history_fallback()
+    check_trajectory_stitcher_reinit()
+    check_trajectory_stitcher_preserves_previous_trajectory()
+    check_lattice_path_assessment_blocking()
+    check_path_assessment_compare_paths()
+    check_combine_path_and_speed_profile()
+    check_path_assessment_set_obstacle_distance()
+    check_polygon_box_distance()
+    check_box_polygon_overlap()
+    check_box_distance_to_segment_canonical_state()
+    check_path_bounds_decider_multi_candidates()
+    check_record_debug_info()
+    check_lattice_migration_pipeline()
+    check_infer_lattice_path_label()
+    check_on_lane_planning_output()
+    check_relative_map_reference_lines()
+    check_lattice_main_path_without_backup()
+    print("lattice component checks succeeded")
+
+
+if __name__ == "__main__":
+    main()

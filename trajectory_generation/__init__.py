@@ -1,0 +1,3 @@
+"""
+Lattice trajectory generation module
+"""

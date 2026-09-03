@@ -1,0 +1,7 @@
+numpy
+shapely
+scipy
+osqp
+matplotlib
+pillow
+z3-solver
