@@ -34,7 +34,7 @@ from protoclass.lane import Curve, CurveSegment, Lane, LaneBoundary, LaneBoundar
 from protoclass.point_enu import PointENU
 from lattice_planner import LatticePlanner
 from common.curve1d.quartic_polynomial_curve1d import QuarticPolynomialCurve1d
-from config import FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_time_length
+from config import FLAGS_destination_obstacle_id, FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_time_length
 from protoclass.adc_trajectory import Point3D
 from protoclass.header import Header
 from protoclass.path_point import PathPoint
@@ -539,6 +539,42 @@ def check_keep_clear_rule_obstacle():
     obstacle = reference_line_info.path_decision.obstacles.get("KC_clear_1")
     assert obstacle is not None
     assert obstacle.reference_line_st_boundary().boundary_type == STBoundary.BoundaryType.KEEP_CLEAR
+
+
+def check_destination_rule_respects_passed_destination():
+    """
+    Regression test: Apollo's C++ Destination::MakeDecisions skips the
+    destination stop wall only if the ADC is past it AND the destination
+    hasn't already been marked reached (`!dest.has_passed_destination()`).
+    The Python port must honor that override too, not just the position
+    check, otherwise the stop wall can vanish on a later planning cycle
+    after the destination was already marked reached.
+    """
+    frame, reference_line_info = _build_lane_reference_line_info()
+    frame._is_near_destination = True
+    frame._reference_line_provider = None
+
+    start_wp = RoutingLaneWaypoint(id="start_lane", s=0.0, pose=PointENU(x=0.0, y=0.0, z=0.0))
+    dest_wp = RoutingLaneWaypoint(id="lane_1", s=5.0, pose=PointENU(x=-10.0, y=0.0, z=0.0))
+    frame._local_view.routing = RoutingResponse(
+        routing_request=RoutingRequest(waypoint=[start_wp, dest_wp])
+    )
+
+    decider = TrafficDecider()
+    decider.Init(TrafficRuleConfigs([TrafficRuleConfig("DESTINATION")]), frame.planning_context)
+
+    status = decider.Execute(frame, reference_line_info)
+    assert status.ok()
+    assert FLAGS_destination_obstacle_id not in reference_line_info.path_decision.obstacles, (
+        "destination is behind the ADC and not yet marked passed: should not stop here"
+    )
+
+    frame.planning_context.planning_status.destination.has_passed_destination = True
+    status = decider.Execute(frame, reference_line_info)
+    assert status.ok()
+    assert FLAGS_destination_obstacle_id in reference_line_info.path_decision.obstacles, (
+        "once marked passed, the destination stop wall must still be (re)built"
+    )
 
 
 def check_path_decider_static_nudge():
@@ -1259,6 +1295,7 @@ def main():
     check_traffic_decider_stop_point()
     check_yield_sign_rule_stop_point()
     check_keep_clear_rule_obstacle()
+    check_destination_rule_respects_passed_destination()
     check_path_decider_static_nudge()
     check_build_frenet_path_from_lat_trajectory()
     check_path_decider_after_lateral_trajectory()

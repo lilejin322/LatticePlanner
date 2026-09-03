@@ -123,7 +123,7 @@ def BuildStopDecisionOnLane(
         return -1
 
     stop_wall_box = stop_wall.PerceptionBoundingBox()
-    if not reference_line.IsOnLane(stop_wall_box.center()):
+    if not reference_line.IsOnLane(stop_wall_box.center):
         return 0
 
     stop_point = reference_line.GetReferencePoint(

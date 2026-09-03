@@ -54,7 +54,7 @@ class OnLanePlanning:
         start_timestamp = time.time()
         vehicle_state, vehicle_status = self._resolve_vehicle_state(local_view)
         if vehicle_state is None:
-            msg = vehicle_status.error_message() if vehicle_status is not None else "vehicle state is unavailable"
+            msg = vehicle_status.error_message if vehicle_status is not None else "vehicle state is unavailable"
             GenerateStopTrajectory(adc_trajectory, VehicleState(x=0.0, y=0.0, heading=0.0))
             FillPlanningPb(start_timestamp, adc_trajectory, local_view)
             return Status(ErrorCode.PLANNING_ERROR, msg)

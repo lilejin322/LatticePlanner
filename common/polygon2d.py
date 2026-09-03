@@ -507,7 +507,7 @@ class Polygon2d:
             end_proj: float = projections[i + 1]
             if end_proj - start_proj <= kMathEpsilon:
                 continue
-            reference_point: Vec2d = line_segment.start + (start_proj + end_proj) / 2.0 * line_segment.unit_direction()
+            reference_point: Vec2d = line_segment.start + (start_proj + end_proj) / 2.0 * line_segment.unit_direction
             if not self.IsPointIn(reference_point):
                 continue
             if len(overlaps) == 0 or start_proj > overlaps[-1][1] + kMathEpsilon:
@@ -516,7 +516,7 @@ class Polygon2d:
                 overlaps[-1][1] = end_proj
         overlap_line_segments : List[LineSegment2d] = []
         for overlap in overlaps:
-            overlap_line_segments.append(LineSegment2d(line_segment.start + overlap[0] * line_segment.unit_direction(), line_segment.start + overlap[1] * line_segment.unit_direction()))        
+            overlap_line_segments.append(LineSegment2d(line_segment.start + overlap[0] * line_segment.unit_direction, line_segment.start + overlap[1] * line_segment.unit_direction))
         return overlap_line_segments
 
     def ComputeOverlap(self, other_polygon: 'Polygon2d') -> Tuple[bool, 'Polygon2d']:

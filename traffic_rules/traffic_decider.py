@@ -161,7 +161,10 @@ class DestinationRule(TrafficRule):
             return Status.OK()
 
         adc_sl = reference_line_info.AdcSlBoundary()
-        if adc_sl.start_s > dest_sl.s:
+        has_passed_destination = False
+        if self.planning_context is not None:
+            has_passed_destination = bool(self.planning_context.planning_status.destination.has_passed_destination)
+        if adc_sl.start_s > dest_sl.s and not has_passed_destination:
             return Status.OK()
 
         stop_wall_id = FLAGS_destination_obstacle_id

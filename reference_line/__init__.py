@@ -926,7 +926,7 @@ class ReferenceLine:
             """
 
             sl_point: SLPoint = args[0]
-            if sl_point.s <= 0 or sl_point.s > self._map_path.length():
+            if sl_point.s <= 0 or sl_point.s > self._map_path.length:
                 return False
             left_width: float = 0.0
             right_width: float = 0.0
@@ -1000,7 +1000,7 @@ class ReferenceLine:
             """
 
             sl_point: SLPoint = args[0]
-            if sl_point.s <= 0 or sl_point.s > self._map_path.length():
+            if sl_point.s <= 0 or sl_point.s > self._map_path.length:
                 return False
             tag, road_left_width, road_right_width = self.GetRoadWidth(sl_point.s)
             if not tag:

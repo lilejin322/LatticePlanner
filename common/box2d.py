@@ -355,6 +355,7 @@ class Box2d:
         return (abs(dx - self._half_length) <= kMathEpsilon and dy <= self._half_width + kMathEpsilon) \
             or (abs(dy - self._half_width) <= kMathEpsilon and dx <= self._half_length + kMathEpsilon)
 
+    @staticmethod
     def CrossProd(start_point: Vec2d, end_point_1: Vec2d, end_point_2: Vec2d) -> float:
         """
         CrossProd util function
