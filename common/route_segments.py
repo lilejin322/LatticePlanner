@@ -13,7 +13,7 @@ from common.path import AngleDiff
 
 logger = Logger("RouteSegments")
 
-kSegmentationEpsilon: float = 0.5   # Minimum error in lane segmentation.
+kSegmentationEpsilon: float = 0.2   # Minimum error in lane segmentation.
 
 def DistanceXY(u: Any, v: Any) -> float:
     """

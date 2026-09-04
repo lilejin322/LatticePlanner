@@ -59,6 +59,7 @@ class OnLanePlanning:
         planning_context: Optional[PlanningContext] = None,
     ) -> Status:
         start_timestamp = time.time()
+        ctx = planning_context if planning_context is not None else self._planning_context
         vehicle_state, vehicle_status = self._resolve_vehicle_state(local_view)
         if vehicle_state is None:
             msg = vehicle_status.error_message if vehicle_status is not None else "vehicle state is unavailable"
@@ -90,7 +91,7 @@ class OnLanePlanning:
         frame_num = self._seq_num
         self._seq_num += 1
         init_status, frame = self._init_frame(
-            frame_num, local_view, stitching_trajectory[-1], vehicle_state
+            frame_num, local_view, stitching_trajectory[-1], vehicle_state, ctx
         )
         self._last_frame = frame
         if not init_status.ok():
@@ -98,7 +99,6 @@ class OnLanePlanning:
             FillPlanningPb(start_timestamp, adc_trajectory, local_view)
             return init_status
 
-        ctx = planning_context or self._planning_context
         if config_module.FLAGS_enable_traffic_rules:
             frame.ApplyTrafficRules(planning_context=ctx)
         plan_ok = self._try_path_bounds_lane_follow(
@@ -294,6 +294,7 @@ class OnLanePlanning:
         local_view: LocalView,
         planning_start_point: TrajectoryPoint,
         vehicle_state: VehicleState,
+        planning_context: PlanningContext,
     ) -> Tuple[Status, Frame]:
         frame = Frame(
             sequence_num,
@@ -301,8 +302,8 @@ class OnLanePlanning:
             planning_start_point,
             vehicle_state,
             self._reference_line_provider,
+            planning_context=planning_context,
         )
-        frame._planning_context = self._planning_context
         reference_lines, segments = self._reference_line_provider.GetReferenceLines()
         if not reference_lines or len(reference_lines) != len(segments):
             return Status(ErrorCode.PLANNING_ERROR, "Failed to create reference line"), frame

@@ -84,20 +84,8 @@ class LatticePlanner:
     ) -> bool:
         del computed_trajectory, planning_context
 
-        obstacles = list(frame.obstacles) if frame.obstacles else []
-        failed_init_ids = set()
-        for reference_line_info in frame.mutable_reference_line_info:
-            if not reference_line_info.Init(obstacles):
-                self.logger.error(
-                    f"Failed to init reference line info for {reference_line_info.Lanes().Id()}"
-                )
-                reference_line_info.SetDrivable(False)
-                failed_init_ids.add(id(reference_line_info))
-
         success_line_count = 0
         for index, reference_line_info in enumerate(frame.mutable_reference_line_info):
-            if id(reference_line_info) in failed_init_ids:
-                continue
             if index != 0:
                 reference_line_info.SetPriorityCost(config.FLAGS_cost_non_priority_reference_line)
             else:
@@ -239,6 +227,11 @@ class LatticePlanner:
                 trajectory1d_generator,
             )
             trajectory = backup_generator.GenerateTrajectory(reference_line)
+            if not trajectory:
+                self.logger.error("Backup trajectory generator returned an empty trajectory")
+                reference_line_info.SetCost(float("inf"))
+                reference_line_info.SetDrivable(False)
+                return False
             reference_line_info.AddCost(config.FLAGS_backup_trajectory_cost)
             reference_line_info.SetTrajectory(trajectory)
             reference_line_info.SetDrivable(True)

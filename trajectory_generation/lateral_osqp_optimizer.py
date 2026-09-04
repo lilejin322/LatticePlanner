@@ -5,6 +5,10 @@ import config as config_module
 from osqp import OSQP
 from scipy import sparse
 import numpy as np
+from logging import Logger
+
+
+logger = Logger("LateralOSQPOptimizer")
 
 
 class LateralOSQPOptimizer(LateralQPOptimizer):
@@ -126,11 +130,17 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
 
         res = optimizer.solve()
         status = (res.info.status or "").lower()
-        if res.x is None or "solved" not in status:
+        if (
+            res.x is None
+            or len(res.x) < kNumParam
+            or not np.all(np.isfinite(res.x[:kNumParam]))
+        ):
             self._opt_d = []
             self._opt_d_prime = []
             self._opt_d_pprime = []
             return False
+        if "solved" not in status:
+            logger.warning(f"OSQP returned usable primal solution with status: {res.info.status}")
 
         self._opt_d = res.x[:num_var].tolist()
         self._opt_d_prime = res.x[num_var : 2 * num_var].tolist()

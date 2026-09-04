@@ -164,7 +164,10 @@ class Obstacle:
                 prev = trajectory_points[i - 1]
                 cur = trajectory_points[i]
                 if prev.relative_time >= cur.relative_time:
-                    raise ValueError(f"prediction time is not increasing. current point: {cur} previous point: {prev}")
+                    logger.error(
+                        "prediction time is not increasing. "
+                        f"current point: {cur} previous point: {prev}"
+                    )
                 cumulative_s += DistanceXY(prev.path_point, cur.path_point)
                 trajectory_points[i].path_point.s = cumulative_s
 
@@ -847,14 +850,14 @@ class Obstacle:
         Build reference line ST boundary
         """
 
-        half_adc_width: float = config_module.EGO_VEHICLE_WIDTH / 2
+        adc_width: float = config_module.EGO_VEHICLE_WIDTH
         if self._is_static or not self._trajectory.trajectory_point:
             point_pairs: List[Tuple[STPoint, STPoint]] = []
             start_s: float = self._sl_boundary.start_s
             end_s: float = self._sl_boundary.end_s
             if end_s - start_s < kStBoundaryDeltaS:
                 end_s = start_s + kStBoundaryDeltaS
-            if not reference_line.IsBlockRoad(self._perception_bounding_box, half_adc_width):
+            if not reference_line.IsBlockRoad(self._perception_bounding_box, adc_width):
                 return
             point_pairs.append((STPoint(start_s - adc_start_s, 0.0), STPoint(end_s - adc_start_s, 0.0)))
             point_pairs.append((STPoint(start_s - adc_start_s, config_module.FLAGS_st_max_t), STPoint(end_s - adc_start_s, config_module.FLAGS_st_max_t)))
@@ -1017,7 +1020,12 @@ class Obstacle:
         adc_half_length = config_module.EGO_VEHICLE_LENGTH / 2
         adc_width = config_module.EGO_VEHICLE_WIDTH
         polygon_points: List[Tuple[STPoint, STPoint]] = []
-        last_sl_boundary = SLBoundary()
+        last_sl_boundary = SLBoundary(
+            start_s=0.0,
+            end_s=0.0,
+            start_l=0.0,
+            end_l=0.0,
+        )
         last_index: int = 0
 
         for i in range(1, len(trajectory_points)):
@@ -1036,11 +1044,11 @@ class Obstacle:
             # straight. Need double loop to cover all corner cases.
             # Roughly skip points that are too close to the previous SL box.
             distance_xy = DistanceXY(trajectory_points[last_index].path_point, trajectory_points[i].path_point)
-            if last_index != 0 and (last_sl_boundary.start_l > distance_xy or last_sl_boundary.end_l < -distance_xy):
+            if last_sl_boundary.start_l > distance_xy or last_sl_boundary.end_l < -distance_xy:
                 continue
 
             ref_length = reference_line.Length()
-            mid_s: float = (last_sl_boundary.start_s + last_sl_boundary.end_s) / 2.0 if last_index != 0 else adc_start_s
+            mid_s: float = (last_sl_boundary.start_s + last_sl_boundary.end_s) / 2.0
             start_s: float = max(0.0, mid_s - 2.0 * distance_xy)
             end_s: float = ref_length if i == 1 else min(ref_length, mid_s + 2.0 * distance_xy)
             ok, object_boundary = reference_line.GetApproximateSLBoundary(object_moving_box, start_s, end_s)
@@ -1095,9 +1103,13 @@ class Obstacle:
         if polygon_points:
             polygon_points.sort(key=lambda p: p[0].t)
             unique_polygon_points = []
-            for i in range(len(polygon_points)):
-                if i == 0 or abs(polygon_points[i][0].t - polygon_points[i - 1][0].t) >= kStBoundaryDeltaT:
-                    unique_polygon_points.append(polygon_points[i])
+            for point_pair in polygon_points:
+                if (
+                    not unique_polygon_points
+                    or abs(point_pair[0].t - unique_polygon_points[-1][0].t)
+                    >= kStBoundaryDeltaT
+                ):
+                    unique_polygon_points.append(point_pair)
             polygon_points[:] = unique_polygon_points
             if len(polygon_points) > 2:
                 st_boundary = STBoundary(polygon_points)

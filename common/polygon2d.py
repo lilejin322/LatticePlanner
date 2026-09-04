@@ -649,7 +649,7 @@ class Polygon2d:
         :rtype: Tuple[Vec2d, Vec2d]
         """
 
-        assert len(self._points) > 3, f"len(self._points) should be greater than 3, but got {len(self._points)}"
+        assert len(self._points) >= 3, f"len(self._points) should be at least 3, but got {len(self._points)}"
 
         direction_vec = Vec2d.CreateUnitVec2d(heading)
         min_proj: float = float('inf')

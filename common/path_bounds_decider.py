@@ -146,7 +146,7 @@ class PathBoundsDecider:
         end_s = min(self.adc_frenet_s + horizon, reference_line.Length())
         path_bound: PathBound = []
         s = self.adc_frenet_s
-        while s <= end_s + 1e-6:
+        while s < end_s:
             path_bound.append((s, float("-inf"), float("inf")))
             s += K_PATH_BOUNDS_DECIDER_RESOLUTION
         return path_bound
@@ -222,7 +222,8 @@ class PathBoundsDecider:
             curr_left = max(curr_left, self.adc_frenet_l + half_width)
             curr_right = min(curr_right, self.adc_frenet_l - half_width)
             if curr_left <= curr_right:
-                return False
+                del path_bound[i:]
+                break
             path_bound[i] = (s, curr_right, curr_left)
         return True
 
@@ -247,11 +248,9 @@ class PathBoundsDecider:
                 obs_l_max = sl.end_l + buffer
                 path_center = 0.5 * (l_min + l_max)
                 if obs_l_max < path_center:
-                    new_right = max(l_min, obs_l_max + half_width)
-                    l_min = min(l_min, new_right)
+                    l_min = max(l_min, obs_l_max + half_width)
                 elif obs_l_min > path_center:
-                    new_left = min(l_max, obs_l_min - half_width)
-                    l_max = max(l_max, new_left)
+                    l_max = min(l_max, obs_l_min - half_width)
                 else:
                     if sl.start_s < best_block_s:
                         best_block_s = sl.start_s
@@ -259,7 +258,7 @@ class PathBoundsDecider:
                     l_max = min(l_max, obs_l_min - half_width)
                     l_min = max(l_min, obs_l_max + half_width)
                 if l_min >= l_max:
-                    path_bound[:] = path_bound[: i + 1]
+                    path_bound[:] = path_bound[:i]
                     return True
                 path_bound[i] = (s, l_min, l_max)
         return True

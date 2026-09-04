@@ -704,7 +704,7 @@ class STBoundary(Polygon2d):
         
         if t < points[0].t or t > points[-1].t:
             logger.error(f"t is out of range. t = {t}")
-            return False, int('-inf'), int('inf')
+            return False, 0, 0
         index: int = bisect_left([point.t for point in points], t)
         if index == 0:
             left, right = 0, 0

@@ -88,7 +88,8 @@ class DiscretePointsReferenceLineSmoother:
             return ReferenceLine(raw_reference_line)
 
         raw_point2d = [(ap.path_point.x, ap.path_point.y) for ap in self._anchor_points]
-        bounds = [ap.lateral_bound for ap in self._anchor_points]
+        box_ratio = 1.0 / math.sqrt(2.0)
+        bounds = [ap.lateral_bound * box_ratio for ap in self._anchor_points]
         bounds[0] = 0.0
         bounds[-1] = 0.0
 

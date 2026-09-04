@@ -233,6 +233,34 @@ def check_lateral_osqp_optimizer():
     assert abs(frenet_path[-1].ddl) < 1e-6
 
 
+def check_lateral_osqp_keeps_usable_non_solved_result():
+    import numpy as np
+    import trajectory_generation.lateral_osqp_optimizer as optimizer_module
+
+    class Info:
+        status = "maximum iterations reached"
+
+    class Result:
+        info = Info()
+        x = np.zeros(36)
+
+    class FakeOSQP:
+        def setup(self, **_kwargs):
+            return None
+
+        def solve(self):
+            return Result()
+
+    original_osqp = optimizer_module.OSQP
+    optimizer_module.OSQP = FakeOSQP
+    try:
+        optimizer = optimizer_module.LateralOSQPOptimizer()
+        assert optimizer.Optimize([0.0, 0.0, 0.0], 1.0, [(-1.0, 1.0)] * 12)
+        assert len(optimizer.GetFrenetFramePath()) == 12
+    finally:
+        optimizer_module.OSQP = original_osqp
+
+
 def check_prediction_time_alignment():
     prediction = PredictionObstacles(
         header=Header(timestamp_sec=10.0),
@@ -348,10 +376,14 @@ def check_lattice_main_path_without_backup():
     config_module.FLAGS_enable_backup_trajectory = False
     try:
         reference_line, _, reference_line_info = _build_reference_line()
+        assert reference_line_info.Init([], 10.0)
         frame = Frame(0)
         frame._reference_line_info = [reference_line_info]
         frame._obstacles = {}
         start_point = reference_line_info._adc_planning_point
+        reference_line_info.Init = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("LatticePlanner must not initialize ReferenceLineInfo twice")
+        )
         ok = LatticePlanner().Plan(start_point, frame, ADCTrajectory())
         assert ok
         assert reference_line_info.trajectory is not None
@@ -927,6 +959,7 @@ def check_on_lane_planning_output():
     from protoclass.pose import Pose
     from protoclass.localization_estimate import LocalizationEstimate
     from protoclass.prediction_obstacles import PredictionObstacles
+    from common.planning_context import PlanningContext
 
     reference_line, _, reference_line_info = _build_reference_line()
     provider = ReferenceLineProvider()
@@ -948,12 +981,14 @@ def check_on_lane_planning_output():
         config_module.FLAGS_enable_reference_line_provider_thread = True
         planner = OnLanePlanning(provider)
         adc_trajectory = ADCTrajectory()
-        status = planner.RunOnce(local_view, adc_trajectory)
+        planning_context = PlanningContext()
+        status = planner.RunOnce(local_view, adc_trajectory, planning_context)
         assert status.ok()
         assert len(adc_trajectory.trajectory_point) > 0
         assert adc_trajectory.decision is not None
         assert planner._vehicle_state_provider.vehicle_state is not None
         assert planner._vehicle_state_provider.vehicle_state.linear_velocity == 0.1
+        assert planner._last_frame.planning_context is planning_context
     finally:
         config_module.FLAGS_enable_reference_line_provider_thread = old_thread
 
@@ -996,7 +1031,7 @@ def check_combine_path_and_speed_profile():
     assert len(trajectory) > 0
 
 
-def check_path_assessment_set_obstacle_distance():
+def check_path_assessment_keeps_cpp_default_obstacle_distance():
     from common.path_assessment_decider import SetPathInfo
     from common.obstacle import Obstacle
     from common.planning_util import BuildLatticeCandidatePath
@@ -1020,11 +1055,10 @@ def check_path_assessment_set_obstacle_distance():
     )
     SetPathInfo(reference_line_info, path_data)
     assert path_data.path_point_decision_guide
-    start_dist = path_data.path_point_decision_guide[0][2]
-    end_dist = path_data.path_point_decision_guide[-1][2]
-    assert start_dist < float("inf")
-    assert start_dist > 0.0
-    assert end_dist > start_dist
+    assert all(
+        distance == float("inf")
+        for _, _, distance in path_data.path_point_decision_guide
+    )
 
 
 def check_polygon_box_distance():
@@ -1068,6 +1102,25 @@ def check_polygon_bounding_box_with_heading_uses_cross_projection():
     box = polygon.BoundingBoxWithHeading(math.pi / 2.0)
     assert abs(box.length - 2.0) < 1e-6
     assert abs(box.width - 4.0) < 1e-6
+
+
+def check_polygon_extreme_points_accepts_triangle():
+    from common.polygon2d import Polygon2d
+
+    triangle = Polygon2d([
+        Vec2d(0.0, 0.0),
+        Vec2d(2.0, 0.0),
+        Vec2d(1.0, 1.0),
+    ])
+    first, last = triangle.ExtremePoints(0.0)
+    assert first.x == 0.0
+    assert last.x == 2.0
+
+
+def check_route_segments_uses_cpp_segmentation_epsilon():
+    from common.route_segments import kSegmentationEpsilon
+
+    assert kSegmentationEpsilon == 0.2
 
 
 def check_path_bounds_decider_multi_candidates():
@@ -1124,6 +1177,34 @@ def check_path_bounds_decider_respects_committed_borrow_direction():
     labels = {b.label for b in reference_line_info.GetCandidatePathBoundaries()}
     assert any("left" in label for label in labels)
     assert not any("right" in label for label in labels)
+
+
+def check_path_bounds_static_obstacle_tightens_boundary():
+    from common.path_bounds_decider import PathBoundsDecider
+    from protoclass.sl_boundary import SLBoundary
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    perception = PerceptionObstacle(
+        id=121,
+        position=Point3D(x=10.0, y=-1.25, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=0.5,
+        height=1.5,
+        theta=0.0,
+    )
+    obstacle = Obstacle("right_side", perception, is_static=True)
+    obstacle.SetPerceptionSlBoundary(
+        SLBoundary(start_s=9.0, end_s=11.0, start_l=-1.5, end_l=-1.0)
+    )
+    reference_line_info.path_decision.AddObstacle(obstacle)
+    path_bound = [(10.0, -2.0, 2.0)]
+    blocking_id = [""]
+    assert PathBoundsDecider()._get_boundary_from_static_obstacles(
+        reference_line_info, path_bound, blocking_id
+    )
+    assert path_bound[0][1] > -2.0
 
 
 def check_record_debug_info():
@@ -1277,6 +1358,34 @@ def check_reference_line_smoothing():
         config_module.FLAGS_enable_smooth_reference_line = old_flag
 
 
+def check_reference_line_smoothing_shrinks_box_bounds():
+    import math
+    from reference_line.discrete_points_reference_line_smoother import (
+        AnchorPoint,
+        DiscretePointsReferenceLineSmoother,
+    )
+
+    reference_line, _, _ = _build_reference_line()
+    smoother = DiscretePointsReferenceLineSmoother()
+    smoother.SetAnchorPoints([
+        AnchorPoint(PathPoint(x=0.0, y=0.0), lateral_bound=2.0),
+        AnchorPoint(PathPoint(x=10.0, y=0.0), lateral_bound=2.0),
+        AnchorPoint(PathPoint(x=20.0, y=0.0), lateral_bound=2.0),
+    ])
+    captured_bounds = []
+
+    class CapturingSolver:
+        def Solve(self, points, bounds):
+            captured_bounds.extend(bounds)
+            return [point[0] for point in points], [point[1] for point in points]
+
+    smoother._solver = CapturingSolver()
+    assert smoother.Smooth(reference_line) is not None
+    assert captured_bounds[0] == 0.0
+    assert abs(captured_bounds[1] - math.sqrt(2.0)) < 1e-9
+    assert captured_bounds[-1] == 0.0
+
+
 def check_reference_line_anchor_curb_shift():
     hdmap = HDMap()
     lane = _build_straight_lane()
@@ -1408,6 +1517,70 @@ def _build_dynamic_obstacle():
     return Obstacle("obs_1", perception, is_static=False, trajectory=trajectory)
 
 
+def check_obstacle_non_increasing_prediction_time_does_not_abort():
+    perception = PerceptionObstacle(
+        id=101,
+        position=Point3D(x=10.0, y=0.0, z=0.0),
+        theta=0.0,
+        velocity=Point3D(x=1.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+    )
+    trajectory = Trajectory(trajectory_point=[
+        TrajectoryPoint(path_point=PathPoint(x=10.0, y=0.0), relative_time=1.0),
+        TrajectoryPoint(path_point=PathPoint(x=11.0, y=0.0), relative_time=1.0),
+    ])
+    obstacle = Obstacle("non_monotonic", perception, trajectory=trajectory)
+    assert obstacle.Trajectory().trajectory_point[-1].path_point.s == 1.0
+
+
+def check_obstacle_uses_full_adc_width_for_blocking():
+    import config as config_module
+    from protoclass.sl_boundary import SLBoundary
+
+    perception = PerceptionObstacle(
+        id=102,
+        position=Point3D(x=10.0, y=0.0, z=0.0),
+        theta=0.0,
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+    )
+    obstacle = Obstacle("static_width", perception, is_static=True)
+    obstacle.SetPerceptionSlBoundary(
+        SLBoundary(start_s=8.0, end_s=12.0, start_l=-1.0, end_l=1.0)
+    )
+
+    class ReferenceLineStub:
+        gap = None
+
+        def IsBlockRoad(self, _box, gap):
+            self.gap = gap
+            return False
+
+    reference_line = ReferenceLineStub()
+    obstacle.BuildReferenceLineStBoundary(reference_line, 0.0)
+    assert reference_line.gap == config_module.EGO_VEHICLE_WIDTH
+
+
+def check_obstacle_first_st_search_window_matches_cpp():
+    reference_line, _, _ = _build_reference_line()
+    obstacle = _build_dynamic_obstacle()
+    original = reference_line.GetApproximateSLBoundary
+    starts = []
+
+    def capture_start(box, start_s, end_s):
+        starts.append(start_s)
+        return original(box, start_s, end_s)
+
+    reference_line.GetApproximateSLBoundary = capture_start
+    obstacle.BuildTrajectoryStBoundary(reference_line, 50.0)
+    assert starts
+    assert starts[0] == 0.0
+
+
 def check_collision_checker_obstacle_behind_ego_no_crash():
     """
     Regression test: CollisionChecker.__init__ used to call
@@ -1451,6 +1624,16 @@ def check_st_boundary_expand_by_t():
     expanded = boundary.ExpandByT(1.0)
     assert expanded.min_t < boundary.min_t
     assert expanded.max_t > boundary.max_t
+
+
+def check_st_boundary_out_of_range_index_does_not_raise():
+    boundary = STBoundary()
+    ok, left, right = boundary.GetIndexRange(
+        [STPoint(0.0, 0.0), STPoint(1.0, 1.0)], 2.0
+    )
+    assert not ok
+    assert left == 0
+    assert right == 0
 
 
 def check_st_graph_data_set_st_drivable_boundary():
@@ -1590,6 +1773,7 @@ def main():
     check_constraint_checker1d_dynamic_speed_bound()
     check_dynamic_obstacle_sampling()
     check_lateral_osqp_optimizer()
+    check_lateral_osqp_keeps_usable_non_solved_result()
     check_prediction_time_alignment()
     check_hdmap_basic_queries()
     check_map_path_route_segment_regressions()
@@ -1604,6 +1788,7 @@ def main():
     check_path_decider_after_lateral_trajectory()
     check_hdmap_load_from_file_if_available()
     check_reference_line_smoothing()
+    check_reference_line_smoothing_shrinks_box_bounds()
     check_reference_line_anchor_curb_shift()
     check_reference_point_remove_duplicates_uses_euclidean_distance()
     check_reference_line_get_sl_boundary_failure_is_false()
@@ -1620,14 +1805,17 @@ def main():
     check_lattice_path_assessment_blocking()
     check_path_assessment_compare_paths()
     check_combine_path_and_speed_profile()
-    check_path_assessment_set_obstacle_distance()
+    check_path_assessment_keeps_cpp_default_obstacle_distance()
     check_polygon_box_distance()
     check_polygon_overlap_contains_line_segment()
     check_polygon_bounding_box_with_heading_uses_cross_projection()
+    check_polygon_extreme_points_accepts_triangle()
+    check_route_segments_uses_cpp_segmentation_epsilon()
     check_box_polygon_overlap()
     check_box_distance_to_segment_canonical_state()
     check_path_bounds_decider_multi_candidates()
     check_path_bounds_decider_respects_committed_borrow_direction()
+    check_path_bounds_static_obstacle_tightens_boundary()
     check_record_debug_info()
     check_lattice_migration_pipeline()
     check_infer_lattice_path_label()
@@ -1636,8 +1824,12 @@ def main():
     check_lattice_main_path_without_backup()
     check_collision_checker_obstacle_behind_ego_no_crash()
     check_st_boundary_expand_by_t()
+    check_st_boundary_out_of_range_index_does_not_raise()
     check_st_graph_data_set_st_drivable_boundary()
     check_obstacle_build_trajectory_st_boundary()
+    check_obstacle_non_increasing_prediction_time_does_not_abort()
+    check_obstacle_uses_full_adc_width_for_blocking()
+    check_obstacle_first_st_search_window_matches_cpp()
     check_path_approximation_matches_exact_projection()
     check_path_get_projection_with_warm_start_s()
     check_vec2d_rmul()

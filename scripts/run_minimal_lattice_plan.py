@@ -21,6 +21,7 @@ from protoclass.path_point import PathPoint
 from protoclass.point_enu import PointENU
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
+import config as config_module
 
 
 def build_reference_line(length: float = 100.0) -> tuple[ReferenceLine, RouteSegments]:
@@ -86,13 +87,14 @@ def main() -> int:
     frame = Frame(0)
     frame._reference_line_info = [reference_line_info]
     frame._obstacles = {}
+    if not reference_line_info.Init([], config_module.FLAGS_default_cruise_speed):
+        print("failed to initialize reference line info", file=sys.stderr)
+        return 1
 
     ok = LatticePlanner().Plan(planning_start_point, frame, ADCTrajectory())
     if not ok:
         print("minimal lattice plan failed", file=sys.stderr)
         return 1
-
-    import config as config_module
 
     if config_module.FLAGS_enable_lattice_path_assessment:
         assert reference_line_info.path_data is not None

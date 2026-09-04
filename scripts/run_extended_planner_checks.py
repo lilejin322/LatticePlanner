@@ -34,6 +34,7 @@ from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.frenet_frame_point import FrenetFramePoint
 from protoclass.path_point import PathPoint
 from scripts.planner_test_fixtures import (
+    build_lattice_plan_frame,
     build_reference_line,
     build_static_obstacle,
 )
@@ -424,6 +425,29 @@ def check_lattice_fails_when_blocked_without_backup():
         config_module.FLAGS_enable_backup_trajectory = old_backup
 
 
+def check_lattice_rejects_empty_backup_trajectory():
+    import config as config_module
+    from common.discretized_trajectory import DiscretizedTrajectory
+    from unittest.mock import patch
+
+    obs = build_static_obstacle("block_empty_backup", 8.0)
+    frame, reference_line_info, start_point = build_lattice_plan_frame(
+        [obs], blocking_obstacle_id="block_empty_backup"
+    )
+    old_backup = config_module.FLAGS_enable_backup_trajectory
+    try:
+        config_module.FLAGS_enable_backup_trajectory = True
+        with patch(
+            "lattice_planner.BackupTrajectoryGenerator.GenerateTrajectory",
+            return_value=DiscretizedTrajectory(),
+        ):
+            ok = LatticePlanner().Plan(start_point, frame, ADCTrajectory())
+        assert not ok
+        assert not reference_line_info.IsDrivable()
+    finally:
+        config_module.FLAGS_enable_backup_trajectory = old_backup
+
+
 def check_on_lane_aggregate_path_speed():
     import config as config_module
     from common.discretized_trajectory import DiscretizedTrajectory
@@ -494,6 +518,7 @@ CHECKS = [
     ("path_decider_after_lateral_pipeline", check_path_decider_after_lateral_pipeline),
     ("path_bounds_uses_planning_start_frenet", check_path_bounds_uses_planning_start_frenet),
     ("lattice_fails_when_blocked_without_backup", check_lattice_fails_when_blocked_without_backup),
+    ("lattice_rejects_empty_backup_trajectory", check_lattice_rejects_empty_backup_trajectory),
     ("on_lane_aggregate_path_speed", check_on_lane_aggregate_path_speed),
     ("module_import_surface", check_module_import_surface),
 ]

@@ -276,7 +276,6 @@ def IsStopOnReverseNeighborLane(
     for point in path_data.frenet_frame_path:
         if abs(point.s - check_s) < 0.3:
             path_point_l = point.l
-            break
     if path_point_l is None:
         return False
 
@@ -456,7 +455,6 @@ def SetPathInfo(reference_line_info: ReferenceLineInfo, path_data: PathData) -> 
         SetPathPointType(reference_line_info, path_data, True, path_decision)
     elif "fallback" not in path_data.path_label and "self" not in path_data.path_label:
         SetPathPointType(reference_line_info, path_data, False, path_decision)
-    SetObstacleDistance(reference_line_info, path_data, path_decision)
     path_data.SetPathPointDecisionGuide(path_decision)
 
 

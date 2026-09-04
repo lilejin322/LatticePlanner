@@ -137,7 +137,7 @@ class Frame:
     _pad_msg_driving_action: DrivingAction = DrivingAction.NONE
     """in C++ code, this is a static member variable"""
 
-    def __init__(self, *args):
+    def __init__(self, *args, planning_context: Optional[PlanningContext] = None):
 
         if len(args) == 1:
             """
@@ -202,7 +202,7 @@ class Frame:
         self._future_route_waypoints: List[LaneWaypoint] = []
         self._open_space_info: OpenSpaceInfo = None
         self._hdmap = None
-        self._planning_context = PlanningContext()
+        self._planning_context = planning_context or PlanningContext()
 
     @property
     def planning_context(self) -> PlanningContext:
