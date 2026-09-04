@@ -1199,12 +1199,17 @@ def check_path_bounds_static_obstacle_tightens_boundary():
         SLBoundary(start_s=9.0, end_s=11.0, start_l=-1.5, end_l=-1.0)
     )
     reference_line_info.path_decision.AddObstacle(obstacle)
-    path_bound = [(10.0, -2.0, 2.0)]
+    path_bound = [
+        (5.0, -2.0, 2.0),
+        (10.0, -2.0, 2.0),
+        (12.0, -2.0, 2.0),
+    ]
     blocking_id = [""]
     assert PathBoundsDecider()._get_boundary_from_static_obstacles(
         reference_line_info, path_bound, blocking_id
     )
-    assert path_bound[0][1] > -2.0
+    assert path_bound[0][1] == -2.0
+    assert path_bound[1][1] > -2.0
 
 
 def check_record_debug_info():

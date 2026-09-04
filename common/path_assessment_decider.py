@@ -16,6 +16,7 @@ from common.status import Status
 from common.vec2d import Vec2d
 from common.planning_debug import RecordPathDataDebugInfo
 from common.path_decider_obstacle_utils import IsWithinPathDeciderScopeObstacle
+from common.polygon2d import Polygon2d
 import config as config_module
 from protoclass.header import ErrorCode
 from protoclass.sl_boundary import SLBoundary
@@ -211,38 +212,37 @@ def IsCollidingWithStaticObstacles(
     if not path_data.discretized_path or not path_data.frenet_frame_path:
         return False
 
-    obstacle_boxes = []
+    obstacle_polygons = []
     for obstacle in reference_line_info.path_decision.obstacles.values():
         if not _is_within_path_decider_scope(obstacle):
             continue
-        obstacle_box = obstacle.PerceptionBoundingBox()
-        if obstacle_box is None or obstacle_box.area < K_MIN_OBSTACLE_AREA:
+        sl = obstacle.PerceptionSLBoundary()
+        if (sl.end_s - sl.start_s) * (sl.end_l - sl.start_l) < K_MIN_OBSTACLE_AREA:
             continue
-        obstacle_boxes.append(obstacle_box)
+        obstacle_polygons.append(
+            Polygon2d(
+                [
+                    Vec2d(sl.start_s, sl.start_l),
+                    Vec2d(sl.start_s, sl.end_l),
+                    Vec2d(sl.end_s, sl.end_l),
+                    Vec2d(sl.end_s, sl.start_l),
+                ]
+            )
+        )
 
     tail_s = path_data.frenet_frame_path[-1].s
-    half_width = config_module.FLAGS_half_vehicle_width
     for i, path_point in enumerate(path_data.discretized_path):
         if tail_s - path_data.frenet_frame_path[i].s < (
             (K_NUM_EXTRA_TAIL_BOUND_POINT + 1) * K_PATH_BOUNDS_DECIDER_RESOLUTION
         ):
             break
         ego_box = _ego_center_box_at_path_point(path_point)
-        for obstacle_box in obstacle_boxes:
-            if ego_box.HasOverlap(obstacle_box):
+        for corner in ego_box.GetAllCorners():
+            ok, corner_sl = reference_line_info.reference_line.XYToSL(corner)
+            if not ok or corner_sl is None:
                 return True
-
-        frenet_point = path_data.frenet_frame_path[i]
-        path_l = frenet_point.l
-        for obstacle in reference_line_info.path_decision.obstacles.values():
-            if not _is_within_path_decider_scope(obstacle):
-                continue
-            sl = obstacle.PerceptionSLBoundary()
-            if sl.start_l > path_l + half_width:
-                continue
-            if sl.end_l < path_l - half_width:
-                continue
-            if sl.start_s <= frenet_point.s <= sl.end_s:
+            sl_point = Vec2d(corner_sl.s, corner_sl.l)
+            if any(polygon.IsPointIn(sl_point) for polygon in obstacle_polygons):
                 return True
     return False
 

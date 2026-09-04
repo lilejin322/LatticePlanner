@@ -166,6 +166,14 @@ FLAGS_lateral_ignore_buffer = 3.0
 FLAGS_path_decider_static_obstacle_buffer = 0.3
 FLAGS_static_obstacle_speed_threshold = 0.5
 FLAGS_enable_skip_path_tasks = False
+FLAGS_obstacle_lat_buffer = 0.4
+FLAGS_obstacle_lon_start_buffer = 3.0
+FLAGS_obstacle_lon_end_buffer = 2.0
+FLAGS_lane_borrow_max_speed = 5.0
+FLAGS_long_term_blocking_obstacle_cycle_threshold = 3
+FLAGS_allow_lane_borrowing = True
+FLAGS_path_bounds_decider_adc_buffer_coeff = 1.0
+FLAGS_path_bounds_decider_extend_lane_bounds_to_include_adc = False
 FLAGS_max_abs_speed_when_stopped = 0.2
 
 # Reference line stitching (planning_gflags.cc).

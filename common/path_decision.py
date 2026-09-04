@@ -97,7 +97,7 @@ class PathDecision:
         :rtype: Obstacle
         """
 
-        return self._obstacles[object_id]
+        return self._obstacles.get(object_id)
 
     def FindPerceptionObstacle(self, perception_obstacle_id: str) -> PerceptionObstacle:
         """

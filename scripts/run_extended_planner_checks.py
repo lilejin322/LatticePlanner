@@ -35,6 +35,7 @@ from protoclass.frenet_frame_point import FrenetFramePoint
 from protoclass.path_point import PathPoint
 from scripts.planner_test_fixtures import (
     build_lattice_plan_frame,
+    build_left_lane_reference_line,
     build_reference_line,
     build_static_obstacle,
 )
@@ -142,11 +143,27 @@ def check_path_assessment_collision_detection():
 
     _, _, reference_line_info = build_reference_line()
     reference_line_info.Init([], 10.0)
-    reference_line_info.AddObstacle(build_static_obstacle("col_1", 15.0, y=0.0))
+    reference_line_info.AddObstacle(
+        build_static_obstacle("col_1", 15.0, y=0.0, width=3.0)
+    )
     on_obstacle = BuildLatticeCandidatePath(
         reference_line_info, 0.0, [0.0, 0.0, 0.0], 40.0, path_label="regular/self"
     )
     assert IsCollidingWithStaticObstacles(reference_line_info, on_obstacle)
+
+
+def check_path_assessment_projection_failure_is_unsafe():
+    from common.path_assessment_decider import IsCollidingWithStaticObstacles
+    from common.planning_util import BuildLatticeCandidatePath
+
+    _, _, reference_line_info = build_reference_line()
+    reference_line_info.Init([], 10.0)
+    reference_line_info.AddObstacle(build_static_obstacle("projection_guard", 15.0))
+    path_data = BuildLatticeCandidatePath(
+        reference_line_info, 0.0, [0.0, 0.0, 0.0], 40.0, path_label="regular/self"
+    )
+    reference_line_info.reference_line.XYToSL = lambda *args: (False, None)
+    assert IsCollidingWithStaticObstacles(reference_line_info, path_data)
 
 
 def check_compare_path_data_prefers_longer_self_lane():
@@ -186,6 +203,8 @@ def check_path_bounds_lane_borrow_from_context():
 
     ctx = PlanningContext()
     ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    ctx.planning_status.path_decider.decided_side_pass_direction = [1, 2]
+    reference_line_info.set_is_path_lane_borrow(True)
 
     status = PathBoundsDecider().Process(None, reference_line_info, ctx)
     assert status.ok()
@@ -198,6 +217,86 @@ def check_path_bounds_lane_borrow_from_context():
     infos = decider._lane_borrow_infos(reference_line_info, ctx)
     assert LaneBorrowInfo.LEFT_BORROW in infos
     assert LaneBorrowInfo.RIGHT_BORROW in infos
+
+
+def check_path_bounds_requires_decided_borrow_direction():
+    _, _, reference_line_info = build_reference_line()
+    reference_line_info.Init([], 10.0)
+    reference_line_info.set_is_path_lane_borrow(True)
+    ctx = PlanningContext()
+    ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+
+    from common.path_bounds_decider import PathBoundsDecider
+
+    status = PathBoundsDecider().Process(None, reference_line_info, ctx)
+    assert status.ok()
+    labels = {b.label for b in reference_line_info.GetCandidatePathBoundaries()}
+    assert not any("left" in label or "right" in label for label in labels)
+
+
+def check_path_bounds_uses_real_neighbor_lane_width():
+    _, reference_line_info = build_left_lane_reference_line()
+    reference_line_info.Init([], 10.0)
+    reference_line_info.set_is_path_lane_borrow(True)
+    ctx = PlanningContext()
+    ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    ctx.planning_status.path_decider.decided_side_pass_direction = [2]
+
+    from common.path_bounds_decider import PathBoundsDecider
+
+    status = PathBoundsDecider().Process(None, reference_line_info, ctx)
+    assert status.ok()
+    boundaries = {
+        boundary.label: boundary for boundary in reference_line_info.GetCandidatePathBoundaries()
+    }
+    self_boundary = next(value for key, value in boundaries.items() if "self" in key)
+    right_boundary = next(value for key, value in boundaries.items() if "right" in key)
+    assert right_boundary[0].l_lower.l < self_boundary[0].l_lower.l - 2.0
+
+
+def check_path_lane_borrow_state_machine():
+    from common.path_lane_borrow_decider import PathLaneBorrowDecider
+
+    obstacle = build_static_obstacle("long_term_block", 25.0)
+    frame, reference_line_info, start = build_lattice_plan_frame([obstacle], init_v=2.0)
+    frame._planning_start_point = start
+    reference_line_info.SetBlockingObstacle(obstacle.Id())
+    context = PlanningContext()
+    status = context.planning_status.path_decider
+    status.front_static_obstacle_id = obstacle.Id()
+    status.front_static_obstacle_cycle_counter = 3
+
+    result = PathLaneBorrowDecider().Process(frame, reference_line_info, context)
+    assert result.ok()
+    assert reference_line_info.is_path_lane_borrow()
+    assert status.is_in_path_lane_borrow_scenario
+    assert status.decided_side_pass_direction == [1, 2]
+
+    status.able_to_use_self_lane_counter = 6
+    PathLaneBorrowDecider().Process(frame, reference_line_info, context)
+    assert not reference_line_info.is_path_lane_borrow()
+    assert not status.is_in_path_lane_borrow_scenario
+    assert status.decided_side_pass_direction == []
+
+
+def check_static_obstacle_sweep_keeps_pass_direction():
+    from common.path_bounds_decider import PathBoundsDecider
+
+    _, _, reference_line_info = build_reference_line()
+    reference_line_info.Init([], 10.0)
+    reference_line_info.AddObstacle(
+        build_static_obstacle("sweep_right", 30.0, y=-1.2, width=0.5)
+    )
+    status = PathBoundsDecider().Process(None, reference_line_info, PlanningContext())
+    assert status.ok()
+    self_boundary = next(
+        boundary
+        for boundary in reference_line_info.GetCandidatePathBoundaries()
+        if "regular/self" in boundary.label
+    )
+    affected = [point for point in self_boundary if 26.0 <= point.s <= 33.0]
+    assert affected
+    assert all(point.l_lower.l > 0.4 for point in affected)
 
 
 def check_lattice_plan_blocking_with_backup():
@@ -297,6 +396,135 @@ def check_frame_has_planning_context():
     frame = Frame(1)
     assert frame.planning_context is not None
     assert frame.planning_context.planning_status.path_decider is not None
+
+
+def check_stopped_ego_collision_uses_vehicle_box():
+    from common.frame import EgoInfo
+    from protoclass.vehicle_state import VehicleState
+
+    frame = Frame(1)
+    obstacle = build_static_obstacle("ego_overlap", 0.0)
+    frame._obstacles = {obstacle.Id(): obstacle}
+    ego_info = EgoInfo.FromVehicleState(
+        VehicleState(x=0.0, y=0.0, heading=0.0)
+    )
+    assert ego_info.ego_box is not None
+    assert frame.FindCollisionObstacle(ego_info) is obstacle
+
+
+def check_vehicle_state_timestamp_falls_back_to_chassis():
+    from common.vehicle_state_provider import VehicleStateProvider
+    from on_lane_planning import OnLanePlanning
+    from protoclass.adc_trajectory import Point3D
+    from protoclass.chassis import Chassis
+    from protoclass.header import Header
+    from protoclass.localization_estimate import LocalizationEstimate
+    from protoclass.point_enu import PointENU
+    from protoclass.pose import Pose
+
+    localization = LocalizationEstimate(
+        pose=Pose(
+            position=PointENU(x=1.0, y=2.0, z=0.0),
+            heading=0.0,
+            angular_velocity=Point3D(x=0.0, y=0.0, z=0.0),
+            linear_acceleration=Point3D(x=0.0, y=0.0, z=0.0),
+            euler_angles=Point3D(x=0.0, y=0.0, z=0.0),
+        )
+    )
+    localization = OnLanePlanning._normalize_localization(localization)
+    provider = VehicleStateProvider()
+    status = provider.Update(
+        localization,
+        Chassis(speed_mps=0.0, header=Header(timestamp_sec=123.0)),
+    )
+    assert status.ok()
+    assert provider.vehicle_state.timestamp == 123.0
+
+
+def check_traffic_light_without_header_is_safe():
+    from common.frame import LocalView
+    from protoclass.traffic_light_detection import TrafficLightDetection
+    from protoclass.trajectory_point import TrajectoryPoint
+    from protoclass.vehicle_state import VehicleState
+
+    frame = Frame(
+        1,
+        LocalView(traffic_light=TrafficLightDetection()),
+        TrajectoryPoint(),
+        VehicleState(),
+    )
+    frame.ReadTrafficLights()
+    assert frame._traffic_lights == {}
+
+
+def check_vehicle_state_nan_is_invalid():
+    from common.frame import util
+    from protoclass.vehicle_state import VehicleState
+
+    assert util.IsVehicleStateValid(VehicleState())
+    assert not util.IsVehicleStateValid(VehicleState(heading=float("nan")))
+
+
+def check_routing_sequence_change_semantics():
+    from on_lane_planning import OnLanePlanning
+    from protoclass.header import Header
+    from protoclass.routing import RoutingResponse
+
+    first = RoutingResponse(header=Header(sequence_num=7))
+    same = RoutingResponse(header=Header(sequence_num=7))
+    changed = RoutingResponse(header=Header(sequence_num=8))
+    assert not OnLanePlanning._is_different_routing(first, same)
+    assert OnLanePlanning._is_different_routing(first, changed)
+    assert OnLanePlanning._is_different_routing(None, first)
+
+
+def check_routing_change_clears_planning_context():
+    from on_lane_planning import OnLanePlanning
+    from protoclass.header import Header
+    from protoclass.routing import RoutingResponse
+
+    planner = OnLanePlanning()
+    context = PlanningContext()
+    first = RoutingResponse(header=Header(sequence_num=7))
+    changed = RoutingResponse(header=Header(sequence_num=8))
+
+    context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    assert planner._update_routing(first, context)
+    assert not context.planning_status.path_decider.is_in_path_lane_borrow_scenario
+
+    context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    assert not planner._update_routing(first, context)
+    assert context.planning_status.path_decider.is_in_path_lane_borrow_scenario
+
+    assert planner._update_routing(changed, context)
+    assert not context.planning_status.path_decider.is_in_path_lane_borrow_scenario
+
+
+def check_failed_reference_line_update_stops_planning():
+    from common.frame import LocalView
+    from on_lane_planning import OnLanePlanning
+    from protoclass.adc_trajectory import ADCTrajectory
+    from protoclass.chassis import Chassis
+    from protoclass.localization_estimate import LocalizationEstimate
+    from protoclass.point_enu import PointENU
+    from protoclass.pose import Pose
+    from reference_line.reference_line_provider import ReferenceLineProvider
+
+    provider = ReferenceLineProvider()
+    provider._is_reference_line_updated = False
+    planner = OnLanePlanning(provider)
+    local_view = LocalView(
+        localization_estimate=LocalizationEstimate(
+            pose=Pose(position=PointENU(x=0.0, y=0.0, z=0.0), heading=0.0),
+            measurement_time=0.0,
+        ),
+        chassis=Chassis(speed_mps=0.0),
+    )
+    output = ADCTrajectory()
+    status = planner.RunOnce(local_view, output)
+    assert not status.ok()
+    assert "reference line" in status.error_message
+    assert output.trajectory_point
 
 
 def check_build_cruise_speed_data():
@@ -504,15 +732,27 @@ CHECKS = [
     ("assign_frenet_path_large_lateral_has_xy", check_assign_frenet_path_large_lateral_has_xy),
     ("path_assessment_off_reference_invalid", check_path_assessment_off_reference_invalid),
     ("path_assessment_collision_detection", check_path_assessment_collision_detection),
+    ("path_assessment_projection_failure_is_unsafe", check_path_assessment_projection_failure_is_unsafe),
     ("compare_path_data_prefers_longer_self_lane", check_compare_path_data_prefers_longer_self_lane),
     ("path_boundary_boundary_api", check_path_boundary_boundary_api),
     ("path_bounds_lane_borrow_from_context", check_path_bounds_lane_borrow_from_context),
+    ("path_bounds_requires_decided_borrow_direction", check_path_bounds_requires_decided_borrow_direction),
+    ("path_bounds_uses_real_neighbor_lane_width", check_path_bounds_uses_real_neighbor_lane_width),
+    ("path_lane_borrow_state_machine", check_path_lane_borrow_state_machine),
+    ("static_obstacle_sweep_keeps_pass_direction", check_static_obstacle_sweep_keeps_pass_direction),
     ("lattice_plan_blocking_with_backup", check_lattice_plan_blocking_with_backup),
     ("lattice_default_plan", check_lattice_default_plan),
     ("path_decider_with_path_assessment_pipeline", check_path_decider_with_path_assessment_pipeline),
     ("set_path_info_skips_empty_discretized", check_set_path_info_skips_empty_discretized),
     ("line_segment_distance_scalar_for_polygon", check_line_segment_distance_scalar_for_polygon),
     ("frame_has_planning_context", check_frame_has_planning_context),
+    ("stopped_ego_collision_uses_vehicle_box", check_stopped_ego_collision_uses_vehicle_box),
+    ("vehicle_state_timestamp_falls_back_to_chassis", check_vehicle_state_timestamp_falls_back_to_chassis),
+    ("traffic_light_without_header_is_safe", check_traffic_light_without_header_is_safe),
+    ("vehicle_state_nan_is_invalid", check_vehicle_state_nan_is_invalid),
+    ("routing_sequence_change_semantics", check_routing_sequence_change_semantics),
+    ("routing_change_clears_planning_context", check_routing_change_clears_planning_context),
+    ("failed_reference_line_update_stops_planning", check_failed_reference_line_update_stops_planning),
     ("build_cruise_speed_data", check_build_cruise_speed_data),
     ("boundary_only_path_assessment_combine", check_boundary_only_path_assessment_combine),
     ("path_decider_after_lateral_pipeline", check_path_decider_after_lateral_pipeline),

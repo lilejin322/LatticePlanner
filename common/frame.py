@@ -48,7 +48,21 @@ logger = Logger("Frame")
 class _VehicleStateUtil:
     @staticmethod
     def IsVehicleStateValid(vehicle_state: VehicleState) -> bool:
-        return vehicle_state is not None and vehicle_state.x is not None and vehicle_state.y is not None
+        if vehicle_state is None:
+            return False
+        values = (
+            vehicle_state.x,
+            vehicle_state.y,
+            vehicle_state.z,
+            vehicle_state.heading,
+            vehicle_state.kappa,
+            vehicle_state.linear_velocity,
+            vehicle_state.linear_acceleration,
+        )
+        try:
+            return all(value is not None and not math.isnan(float(value)) for value in values)
+        except (TypeError, ValueError):
+            return False
 
 
 util = _VehicleStateUtil()
@@ -61,7 +75,28 @@ class OpenSpaceInfo:
 
 @dataclass
 class EgoInfo:
-    ego_box: Box2d
+    ego_box: Optional[Box2d] = None
+
+    @classmethod
+    def FromVehicleState(cls, vehicle_state: VehicleState) -> "EgoInfo":
+        longitudinal_offset = (
+            config_module.FRONT_EDGE_TO_CENTER - config_module.BACK_EDGE_TO_CENTER
+        ) / 2.0
+        lateral_offset = (
+            config_module.LEFT_EDGE_TO_CENTER - config_module.RIGHT_EDGE_TO_CENTER
+        ) / 2.0
+        center_offset = Vec2d(longitudinal_offset, lateral_offset).rotate(
+            vehicle_state.heading
+        )
+        center = Vec2d(vehicle_state.x, vehicle_state.y) + center_offset
+        return cls(
+            Box2d(
+                center,
+                vehicle_state.heading,
+                config_module.EGO_VEHICLE_LENGTH,
+                config_module.EGO_VEHICLE_WIDTH,
+            )
+        )
 
 
 class _NoOpMonitor:
@@ -373,6 +408,9 @@ class Frame:
 
         if not self._obstacles.items():
             return None
+        if ego_info is None or ego_info.ego_box is None:
+            logger.error("Ego box is not initialized")
+            return None
         adc_polygon = Polygon2d(ego_info.ego_box)
         for _, obstacle in self._obstacles.items():
             if obstacle.IsVirtual():
@@ -429,7 +467,9 @@ class Frame:
         traffic_light_detection = self._local_view.traffic_light
         if traffic_light_detection is None:
             return
-        delay: float = traffic_light_detection.header.timestamp_sec - datetime.now().timestamp()
+        header = traffic_light_detection.header
+        timestamp_sec = getattr(header, "timestamp_sec", 0.0) or 0.0
+        delay: float = timestamp_sec - datetime.now().timestamp()
         if delay > config_module.FLAGS_signal_expire_time_sec:
             logger.debug(f"traffic signals msg is expired, delay = {delay} seconds.")
             return

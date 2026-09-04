@@ -71,7 +71,7 @@ class VehicleStateProvider:
                 return Status(ErrorCode.LOCALIZATION_ERROR, msg)
             if localization.measurement_time is not None:
                 self._vehicle_state.timestamp = localization.measurement_time
-            elif localization.header.timestamp_sec is not None:
+            elif localization.header is not None and localization.header.timestamp_sec is not None:
                 self._vehicle_state.timestamp = localization.header.timestamp_sec
             elif chassis.header is not None and chassis.header.timestamp_sec is not None:
                 logger.error("Unable to use location timestamp for vehicle state. Use chassis time instead.")

@@ -294,12 +294,12 @@ class ReferenceLineInfo:
         dest = self._path_decision.Find(config_module.FLAGS_destination_obstacle_id)
         if not dest:
             return res
-        lon_dec: ObjectDecisionType = dest.LongitudinalDecision
+        lon_dec: ObjectDecisionType = dest.LongitudinalDecision()
         if not isinstance(lon_dec.object_tag, ObjectStop):
             return res
         if not self._reference_line.IsOnLane(dest.PerceptionBoundingBox().center):
             return res
-        stop_s = dest.PerceptionSLBoundary.start_s + dest.LongitudinalDecision.stop().distance_s
+        stop_s = dest.PerceptionSLBoundary().start_s + (lon_dec.stop.distance_s or 0.0)
         return stop_s - self._adc_sl_boundary.end_s
 
     def ReachedDestination(self) -> bool:
@@ -506,7 +506,7 @@ class ReferenceLineInfo:
         if not tag:
             return False, "", float("inf")
         
-        lane_width = neighbor_lane.GetWidth(neighbor_s)
+        _, _, lane_width = neighbor_lane.GetWidth(neighbor_s)
         return True, lane_id, lane_width
 
     def IsStartFrom(self, previous_reference_line_info: 'ReferenceLineInfo') -> bool:

@@ -29,6 +29,7 @@ from protoclass.adc_trajectory import ADCTrajectory, GearPosition
 from protoclass.decision_result import DecisionResult
 from protoclass.header import ErrorCode
 from protoclass.localization_estimate import LocalizationEstimate
+from protoclass.routing import RoutingResponse
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
 
@@ -43,6 +44,7 @@ class OnLanePlanning:
         self._last_frame: Optional[Frame] = None
         self._seq_num = 0
         self._planning_context = PlanningContext()
+        self._last_routing: Optional[RoutingResponse] = None
         """Persists across planning cycles like Apollo's injector_->planning_context(),
         so state such as rerouting.need_rerouting, destination.has_passed_destination,
         and path_decider.decided_side_pass_direction survives from one RunOnce to the
@@ -71,9 +73,16 @@ class OnLanePlanning:
         if start_timestamp - vehicle_state.timestamp < config_module.FLAGS_message_latency_threshold:
             vehicle_state = self._align_time_stamp(vehicle_state, start_timestamp)
 
-        self._reference_line_provider.UpdateVehicleState(vehicle_state)
         if local_view.routing is not None:
-            self._reference_line_provider.UpdateRoutingResponse(local_view.routing)
+            self._update_routing(local_view.routing, ctx)
+
+        if not self._reference_line_provider.UpdatedReferenceLine():
+            msg = "Failed to update reference line after rerouting."
+            GenerateStopTrajectory(adc_trajectory, vehicle_state)
+            FillPlanningPb(start_timestamp, adc_trajectory, local_view)
+            return Status(ErrorCode.PLANNING_ERROR, msg)
+
+        self._reference_line_provider.UpdateVehicleState(vehicle_state)
 
         planning_cycle_time = 1.0 / max(config_module.FLAGS_planning_loop_rate, 1e-3)
         replan_reason_holder: List[str] = []
@@ -133,6 +142,30 @@ class OnLanePlanning:
         frame.set_current_frame_planned_trajectory(adc_trajectory)
         return output_status
 
+    @staticmethod
+    def _is_different_routing(
+        first: Optional[RoutingResponse], second: RoutingResponse
+    ) -> bool:
+        if first is None:
+            return True
+        first_header = first.header
+        second_header = second.header
+        if first_header is not None and second_header is not None:
+            return first_header.sequence_num != second_header.sequence_num
+        return True
+
+    def _update_routing(
+        self, routing: RoutingResponse, planning_context: PlanningContext
+    ) -> bool:
+        if not self._is_different_routing(self._last_routing, routing):
+            return False
+        self._last_routing = deepcopy(routing)
+        self._last_frame = None
+        planning_context.Clear()
+        self._reference_line_provider.UpdateRoutingResponse(routing)
+        self._lattice_planner = LatticePlanner()
+        return True
+
     def _try_path_bounds_lane_follow(
         self,
         frame: Frame,
@@ -155,6 +188,7 @@ class OnLanePlanning:
         from common.discretized_trajectory import DiscretizedTrajectory
         from common.path_assessment_decider import PathAssessmentDecider
         from common.path_bounds_decider import PathBoundsDecider
+        from common.path_lane_borrow_decider import PathLaneBorrowDecider
         from common.planning_util import (
             BuildCruiseSpeedData,
             BuildOvertakePathDataFromPathBoundary,
@@ -163,8 +197,10 @@ class OnLanePlanning:
 
         made_plan = False
         for reference_line_info in frame.mutable_reference_line_info:
-            if reference_line_info.GetBlockingObstacle() is not None:
-                planning_context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+            if not PathLaneBorrowDecider().Process(
+                frame, reference_line_info, planning_context
+            ).ok():
+                continue
 
             if not PathBoundsDecider().Process(frame, reference_line_info, planning_context).ok():
                 continue
@@ -320,7 +356,7 @@ class OnLanePlanning:
         vehicle_state_provider = self._vehicle_state_provider
         if vehicle_state_provider.vehicle_state is None:
             vehicle_state_provider.Update(vehicle_state)
-        ego_info = EgoInfo(ego_box=None)
+        ego_info = EgoInfo.FromVehicleState(vehicle_state)
         status = frame.Init(
             vehicle_state_provider,
             reference_lines,

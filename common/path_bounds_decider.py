@@ -34,6 +34,8 @@ class PathBoundsDecider:
     def __init__(self):
         self.adc_frenet_s = 0.0
         self.adc_frenet_l = 0.0
+        self.adc_frenet_ld = 0.0
+        self.adc_l_to_lane_center = 0.0
         self.adc_lane_width = config_module.FLAGS_default_lane_width
 
     def Process(
@@ -92,10 +94,17 @@ class PathBoundsDecider:
             )
             self.adc_frenet_s = s_condition[0]
             self.adc_frenet_l = l_condition[0]
+            self.adc_frenet_ld = l_condition[1] * s_condition[1]
         else:
             adc_sl = reference_line_info.AdcSlBoundary()
             self.adc_frenet_s = adc_sl.start_s
             self.adc_frenet_l = 0.5 * (adc_sl.start_l + adc_sl.end_l)
+            self.adc_frenet_ld = 0.0
+
+        _, offset_to_map = reference_line_info.reference_line.GetOffsetToMap(
+            self.adc_frenet_s
+        )
+        self.adc_l_to_lane_center = self.adc_frenet_l + offset_to_map
 
         ok, left, right = reference_line_info.reference_line.GetLaneWidth(self.adc_frenet_s)
         self.adc_lane_width = (left + right) if ok else config_module.FLAGS_default_lane_width
@@ -106,24 +115,18 @@ class PathBoundsDecider:
         planning_context: Optional[PlanningContext],
     ) -> List[LaneBorrowInfo]:
         infos = [LaneBorrowInfo.NO_BORROW]
-        lane_borrow = reference_line_info.is_path_lane_borrow()
-        decided_directions = []
-        if planning_context is not None:
-            status = planning_context.planning_status.path_decider
-            decided_directions = list(status.decided_side_pass_direction or [])
-            lane_borrow = lane_borrow or bool(status.is_in_path_lane_borrow_scenario)
-        if reference_line_info.GetBlockingObstacle() is not None:
-            lane_borrow = True
-        if not lane_borrow:
+        if not reference_line_info.is_path_lane_borrow() or planning_context is None:
             return infos
 
+        decided_directions = list(
+            planning_context.planning_status.path_decider.decided_side_pass_direction
+            or []
+        )
         for direction in decided_directions:
             if direction == 1 and LaneBorrowInfo.LEFT_BORROW not in infos:
                 infos.append(LaneBorrowInfo.LEFT_BORROW)
             elif direction == 2 and LaneBorrowInfo.RIGHT_BORROW not in infos:
                 infos.append(LaneBorrowInfo.RIGHT_BORROW)
-        if len(infos) == 1:
-            infos.extend([LaneBorrowInfo.LEFT_BORROW, LaneBorrowInfo.RIGHT_BORROW])
         return infos
 
     @staticmethod
@@ -157,10 +160,10 @@ class PathBoundsDecider:
         path_bound = self._init_path_boundary(reference_line_info)
         if not path_bound:
             return []
-        borrow_lane_type = "forward"
-        if not self._get_boundary_from_lanes_and_adc(
+        ok, _ = self._get_boundary_from_lanes_and_adc(
             reference_line_info, LaneBorrowInfo.NO_BORROW, 0.5, path_bound, True
-        ):
+        )
+        if not ok:
             return []
         return path_bound
 
@@ -172,9 +175,10 @@ class PathBoundsDecider:
         path_bound = self._init_path_boundary(reference_line_info)
         if not path_bound:
             return [], "", ""
-        if not self._get_boundary_from_lanes_and_adc(
+        ok, borrow_lane_type = self._get_boundary_from_lanes_and_adc(
             reference_line_info, borrow_info, 0.1, path_bound, False
-        ):
+        )
+        if not ok:
             return [], "", ""
         blocking_id_holder = [""]
         temp_bound = list(path_bound)
@@ -187,11 +191,6 @@ class PathBoundsDecider:
         while blocking_id and len(path_bound) < len(temp_bound) and counter < K_NUM_EXTRA_TAIL_BOUND_POINT:
             path_bound.append(temp_bound[len(path_bound)])
             counter += 1
-        borrow_lane_type = "forward"
-        if borrow_info == LaneBorrowInfo.LEFT_BORROW:
-            borrow_lane_type = "forward"
-        elif borrow_info == LaneBorrowInfo.RIGHT_BORROW:
-            borrow_lane_type = "forward"
         return path_bound, blocking_id, borrow_lane_type
 
     def _get_boundary_from_lanes_and_adc(
@@ -201,31 +200,127 @@ class PathBoundsDecider:
         adc_buffer: float,
         path_bound: PathBound,
         is_fallback: bool,
-    ) -> bool:
-        del is_fallback
+    ) -> Tuple[bool, str]:
         reference_line = reference_line_info.reference_line
-        half_width = config_module.FLAGS_half_vehicle_width + adc_buffer
+        past_lane_left = self.adc_lane_width / 2.0
+        past_lane_right = self.adc_lane_width / 2.0
+        borrowing_reverse_lane = False
 
         for i, (s, l_min, l_max) in enumerate(path_bound):
             ok, lane_left, lane_right = reference_line.GetLaneWidth(s)
             if not ok:
-                lane_left = self.adc_lane_width / 2.0
-                lane_right = self.adc_lane_width / 2.0
+                lane_left = past_lane_left
+                lane_right = past_lane_right
+            else:
+                _, lane_center_offset = reference_line.GetOffsetToMap(s)
+                lane_left += lane_center_offset
+                lane_right -= lane_center_offset
+                past_lane_left = lane_left
+                past_lane_right = lane_right
 
-            curr_left = lane_left
-            curr_right = -lane_right
-            if borrow_info == LaneBorrowInfo.LEFT_BORROW:
-                curr_left += config_module.FLAGS_default_lane_width
-            elif borrow_info == LaneBorrowInfo.RIGHT_BORROW:
-                curr_right -= config_module.FLAGS_default_lane_width
+            neighbor_width = 0.0
+            if self._check_lane_boundary_type(
+                reference_line_info, s, borrow_info
+            ):
+                if borrow_info == LaneBorrowInfo.LEFT_BORROW:
+                    found, _, neighbor_width = reference_line_info.GetNeighborLaneInfo(
+                        ReferenceLineInfo.LaneType.LeftForward, s
+                    )
+                    if not found:
+                        found, _, neighbor_width = reference_line_info.GetNeighborLaneInfo(
+                            ReferenceLineInfo.LaneType.LeftReverse, s
+                        )
+                        borrowing_reverse_lane = borrowing_reverse_lane or found
+                    if not found:
+                        neighbor_width = 0.0
+                elif borrow_info == LaneBorrowInfo.RIGHT_BORROW:
+                    found, _, neighbor_width = reference_line_info.GetNeighborLaneInfo(
+                        ReferenceLineInfo.LaneType.RightForward, s
+                    )
+                    if not found:
+                        found, _, neighbor_width = reference_line_info.GetNeighborLaneInfo(
+                            ReferenceLineInfo.LaneType.RightReverse, s
+                        )
+                        borrowing_reverse_lane = borrowing_reverse_lane or found
+                    if not found:
+                        neighbor_width = 0.0
 
-            curr_left = max(curr_left, self.adc_frenet_l + half_width)
-            curr_right = min(curr_right, self.adc_frenet_l - half_width)
-            if curr_left <= curr_right:
+            curr_left_lane = lane_left + (
+                neighbor_width if borrow_info == LaneBorrowInfo.LEFT_BORROW else 0.0
+            )
+            curr_right_lane = -lane_right - (
+                neighbor_width if borrow_info == LaneBorrowInfo.RIGHT_BORROW else 0.0
+            )
+            _, offset_to_map = reference_line.GetOffsetToMap(s)
+
+            if (
+                config_module.FLAGS_path_bounds_decider_extend_lane_bounds_to_include_adc
+                or is_fallback
+            ):
+                speed_buffer = (
+                    (1.0 if self.adc_frenet_ld > 0.0 else -1.0)
+                    * self.adc_frenet_ld
+                    * self.adc_frenet_ld
+                    / 3.0
+                )
+                adc_left = (
+                    max(
+                        self.adc_l_to_lane_center,
+                        self.adc_l_to_lane_center + speed_buffer,
+                    )
+                    + config_module.FLAGS_half_vehicle_width
+                    + adc_buffer
+                )
+                adc_right = (
+                    min(
+                        self.adc_l_to_lane_center,
+                        self.adc_l_to_lane_center + speed_buffer,
+                    )
+                    - config_module.FLAGS_half_vehicle_width
+                    - adc_buffer
+                )
+                curr_left = max(curr_left_lane, adc_left) - offset_to_map
+                curr_right = min(curr_right_lane, adc_right) - offset_to_map
+            else:
+                curr_left = curr_left_lane - offset_to_map
+                curr_right = curr_right_lane - offset_to_map
+
+            coeff = config_module.FLAGS_path_bounds_decider_adc_buffer_coeff
+            new_l_min = max(
+                l_min, curr_right + coeff * config_module.FLAGS_half_vehicle_width
+            )
+            new_l_max = min(
+                l_max, curr_left - coeff * config_module.FLAGS_half_vehicle_width
+            )
+            if new_l_min > new_l_max:
                 del path_bound[i:]
                 break
-            path_bound[i] = (s, curr_right, curr_left)
-        return True
+            path_bound[i] = (s, new_l_min, new_l_max)
+        borrow_lane_type = "reverse" if borrowing_reverse_lane else "forward"
+        return True, borrow_lane_type
+
+    @staticmethod
+    def _check_lane_boundary_type(
+        reference_line_info: ReferenceLineInfo,
+        check_s: float,
+        borrow_info: LaneBorrowInfo,
+    ) -> bool:
+        if borrow_info == LaneBorrowInfo.NO_BORROW:
+            return False
+        left_type, right_type = reference_line_info.reference_line.GetLaneBoundaryType(
+            check_s
+        )
+        boundary_type = (
+            left_type
+            if borrow_info == LaneBorrowInfo.LEFT_BORROW
+            else right_type
+        )
+        from protoclass.lane import LaneBoundaryType
+
+        return boundary_type not in {
+            LaneBoundaryType.LaneBoundaryTypeEnum.SOLID_YELLOW,
+            LaneBoundaryType.LaneBoundaryTypeEnum.SOLID_WHITE,
+        }
 
     def _get_boundary_from_static_obstacles(
         self,
@@ -233,34 +328,74 @@ class PathBoundsDecider:
         path_bound: PathBound,
         blocking_id_holder: List[str],
     ) -> bool:
-        buffer = config_module.FLAGS_path_decider_static_obstacle_buffer
-        half_width = config_module.FLAGS_half_vehicle_width
-        best_block_s = float("inf")
+        edges = []
+        for obstacle in reference_line_info.path_decision.obstacles.values():
+            if not IsWithinPathDeciderScopeObstacle(obstacle):
+                continue
+            sl = obstacle.PerceptionSLBoundary()
+            if sl.end_s < self.adc_frenet_s:
+                continue
+            l_min = sl.start_l - config_module.FLAGS_obstacle_lat_buffer
+            l_max = sl.end_l + config_module.FLAGS_obstacle_lat_buffer
+            edges.append(
+                (
+                    1,
+                    sl.start_s - config_module.FLAGS_obstacle_lon_start_buffer,
+                    l_min,
+                    l_max,
+                    obstacle.Id(),
+                )
+            )
+            edges.append(
+                (
+                    0,
+                    sl.end_s + config_module.FLAGS_obstacle_lon_end_buffer,
+                    l_min,
+                    l_max,
+                    obstacle.Id(),
+                )
+            )
+        edges.sort(key=lambda edge: (edge[1], -edge[0]))
 
-        for i, (s, l_min, l_max) in enumerate(path_bound):
-            for obstacle in reference_line_info.path_decision.obstacles.values():
-                if not IsWithinPathDeciderScopeObstacle(obstacle):
-                    continue
-                sl = obstacle.PerceptionSLBoundary()
-                if sl.end_s < s or sl.start_s > s + K_PATH_BOUNDS_DECIDER_RESOLUTION:
-                    continue
-                obs_l_min = sl.start_l - buffer
-                obs_l_max = sl.end_l + buffer
-                path_center = 0.5 * (l_min + l_max)
-                if obs_l_max < path_center:
-                    l_min = max(l_min, obs_l_max + half_width)
-                elif obs_l_min > path_center:
-                    l_max = min(l_max, obs_l_min - half_width)
+        center_line = self.adc_frenet_l
+        edge_index = 0
+        active = {}
+        for i in range(1, len(path_bound)):
+            s, l_min, l_max = path_bound[i]
+            entering_id = ""
+            while edge_index < len(edges) and edges[edge_index][1] < s:
+                is_start, _, obs_l_min, obs_l_max, obstacle_id = edges[edge_index]
+                if is_start:
+                    entering_id = obstacle_id
+                    pass_left = obs_l_min + obs_l_max < center_line * 2.0
+                    active[obstacle_id] = (pass_left, obs_l_min, obs_l_max)
                 else:
-                    if sl.start_s < best_block_s:
-                        best_block_s = sl.start_s
-                        blocking_id_holder[0] = obstacle.Id()
-                    l_max = min(l_max, obs_l_min - half_width)
-                    l_min = max(l_min, obs_l_max + half_width)
-                if l_min >= l_max:
-                    path_bound[:] = path_bound[:i]
-                    return True
-                path_bound[i] = (s, l_min, l_max)
+                    active.pop(obstacle_id, None)
+                edge_index += 1
+
+            right_bound = max(
+                (details[2] for details in active.values() if details[0]),
+                default=float("-inf"),
+            )
+            left_bound = min(
+                (details[1] for details in active.values() if not details[0]),
+                default=float("inf"),
+            )
+            new_l_min = max(
+                l_min, right_bound + config_module.FLAGS_half_vehicle_width
+            )
+            new_l_max = min(
+                l_max, left_bound - config_module.FLAGS_half_vehicle_width
+            )
+            if new_l_min > new_l_max:
+                if entering_id:
+                    blocking_id_holder[0] = entering_id
+                elif active:
+                    blocking_id_holder[0] = next(iter(active))
+                del path_bound[i:]
+                break
+            path_bound[i] = (s, new_l_min, new_l_max)
+            center_line = 0.5 * (new_l_min + new_l_max)
         return True
 
     @staticmethod

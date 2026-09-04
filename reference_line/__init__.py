@@ -22,6 +22,7 @@ from common.path import Path as MapPath
 from common.lane_info import LaneInfo
 from common.lane_types import InterpolatedIndex, RoadType, SpeedLimit, LaneSegment
 from common.hd_map import HDMapUtil
+from protoclass.lane import LaneBoundaryType
 
 # Backward-compatible re-exports for older import paths.
 __all__ = [
@@ -876,10 +877,32 @@ class ReferenceLine:
         :rtype: Tuple[LaneBoundaryType, LaneBoundaryType]
         """
 
-        # Apollo queries HDMap lane boundary metadata here.  The lightweight
-        # Python port often runs without HDMap, so expose an UNKNOWN pair while
-        # preserving the call site contract.
-        return RoadType.UNKNOWN, RoadType.UNKNOWN
+        unknown = LaneBoundaryType.LaneBoundaryTypeEnum.UNKNOWN
+        ref_point = self.GetNearestReferencePoint(float(s))
+        if ref_point is None or not ref_point.lane_waypoints:
+            return unknown, unknown
+
+        waypoint = ref_point.lane_waypoints[0]
+        lane_info = waypoint.lane
+        lane = getattr(lane_info, "lane", lane_info)
+        if lane is None:
+            return unknown, unknown
+
+        def boundary_type_at(boundary):
+            if boundary is None or not boundary.boundary_type:
+                return unknown
+            selected = boundary.boundary_type[0]
+            for boundary_type in boundary.boundary_type:
+                if boundary_type.s is None or boundary_type.s <= waypoint.s:
+                    selected = boundary_type
+                else:
+                    break
+            return selected.types[0] if selected.types else unknown
+
+        return (
+            boundary_type_at(lane.left_boundary),
+            boundary_type_at(lane.right_boundary),
+        )
 
     def GetLaneFromS(self, s: float) -> List[LaneInfo]:
         """
