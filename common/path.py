@@ -1340,7 +1340,7 @@ class Path:
         """
 
         if self._use_path_approximation:
-            return self._approximation.OverlapWith(box, width)
+            return self._approximation.OverlapWith(self, box, width)
         center: Vec2d = box.center
         radius_sqr: float = (box.diagonal / 2.0 + width) ** 2 + kMathEpsilon
         for segment in self._segments:

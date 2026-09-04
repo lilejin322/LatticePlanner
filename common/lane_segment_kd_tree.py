@@ -245,14 +245,19 @@ class AABoxKDTree2dNode:
 
         if self.LowerDistanceSquareToPoint(point) >= min_distance_sqr - kMathEpsilon:
             return min_distance_sqr, None
+        nearest_object: Any = None
         pvalue: float = point.x if self._partition == Partition.PARTITION_X else point.y
         search_left_first: bool = pvalue < self._partition_position
         if search_left_first:
             if self._left_subnode is not None:
-                min_distance_sqr, nearest_object = self._left_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                new_min_distance_sqr, new_nearest_object = self._left_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                if new_nearest_object is not None:
+                    min_distance_sqr, nearest_object = new_min_distance_sqr, new_nearest_object
         else:
             if self._right_subnode is not None:
-                min_distance_sqr, nearest_object = self._right_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                new_min_distance_sqr, new_nearest_object = self._right_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                if new_nearest_object is not None:
+                    min_distance_sqr, nearest_object = new_min_distance_sqr, new_nearest_object
         if min_distance_sqr <= kMathEpsilon:
             return min_distance_sqr, nearest_object
         
@@ -280,10 +285,14 @@ class AABoxKDTree2dNode:
             return min_distance_sqr, nearest_object
         if search_left_first:
             if self._right_subnode is not None:
-                min_distance_sqr, nearest_object = self._right_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                new_min_distance_sqr, new_nearest_object = self._right_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                if new_nearest_object is not None:
+                    min_distance_sqr, nearest_object = new_min_distance_sqr, new_nearest_object
         else:
             if self._left_subnode is not None:
-                min_distance_sqr, nearest_object = self._left_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                new_min_distance_sqr, new_nearest_object = self._left_subnode.GetNearestObjectInternal(point, min_distance_sqr)
+                if new_nearest_object is not None:
+                    min_distance_sqr, nearest_object = new_min_distance_sqr, new_nearest_object
 
         return min_distance_sqr, nearest_object
 

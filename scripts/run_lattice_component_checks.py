@@ -31,6 +31,8 @@ from common.vec2d import Vec2d
 from common.box2d import Box2d
 from common.aabox2d import AABox2d
 from common.line_segment2d import LineSegment2d
+from common.polygon2d import Polygon2d
+from common.lane_segment_kd_tree import AABoxKDTree2d, AABoxKDTreeParams
 from common.constraint_checker import ConstraintChecker
 from common.constraint_checker1d import ConstraintChecker1d
 from common.lane_types import LaneSegment
@@ -1770,6 +1772,89 @@ def check_st_point_from_vec2d():
     assert point.y == 7.0
 
 
+def check_polygon2d_get_overlap_no_overlap_does_not_crash():
+    """
+    Regression test: Polygon2d.GetOverlap only assigned its `first`/`last`
+    locals inside conditional branches (mirroring C++'s output-pointer
+    params, which are simply left untouched when unused). Since Python has
+    no such "leave untouched" semantics for plain locals, a line segment
+    whose bounding box overlaps the polygon but that neither starts/ends
+    inside it nor crosses any edge -- a routine "no overlap" case -- hit
+    UnboundLocalError on the final return.
+    """
+    triangle = Polygon2d([Vec2d(0.0, 0.0), Vec2d(4.0, 0.0), Vec2d(0.0, 4.0)])
+    no_overlap_segment = LineSegment2d(Vec2d(3.5, 3.5), Vec2d(3.8, 3.2))
+    has_overlap, first, last = triangle.GetOverlap(no_overlap_segment)
+    assert has_overlap is False
+    assert first is None and last is None
+
+    crossing_segment = LineSegment2d(Vec2d(-1.0, 1.0), Vec2d(1.0, 1.0))
+    has_overlap, first, last = triangle.GetOverlap(crossing_segment)
+    assert has_overlap is True
+    assert first is not None and last is not None
+
+
+def check_path_overlap_with_approximation_enabled():
+    """
+    Regression test: Path.OverlapWith called
+    self._approximation.OverlapWith(box, width), omitting the leading `path`
+    argument PathApproximation.OverlapWith requires (mirroring
+    approximation_.OverlapWith(*this, box, width) in path.cc), raising
+    TypeError for any Path built with max_approximation_error > 0.
+    """
+    points = [MapPathPoint(Vec2d(0.0, 0.0)), MapPathPoint(Vec2d(10.0, 0.0)),
+              MapPathPoint(Vec2d(20.0, 0.0))]
+    approximated_path = MapPath(points, [], 0.5)
+    overlapping_box = Box2d(Vec2d(10.0, 0.5), 0.0, 2.0, 1.0)
+    assert approximated_path.OverlapWith(overlapping_box, 0.1) is True
+    far_box = Box2d(Vec2d(100.0, 100.0), 0.0, 2.0, 1.0)
+    assert approximated_path.OverlapWith(far_box, 0.1) is False
+
+
+def check_kd_tree_nearest_object_matches_brute_force():
+    """
+    Regression test: AABoxKDTree2dNode.GetNearestObjectInternal threaded
+    min_distance_sqr/nearest_object as plain return values instead of the
+    C++ in-out pointer pair, so (a) a leaf node whose own objects didn't
+    beat an already-found sibling's distance hit UnboundLocalError on
+    `nearest_object`, and (b) even where it didn't crash, a subtree search
+    that found nothing better than the incoming bound would unconditionally
+    overwrite (and silently discard) a nearest_object already found by an
+    earlier sibling search. Build a tree with enough objects to force
+    multi-level node splitting (max_leaf_size=4) and verify the result
+    matches a brute-force nearest-neighbor scan.
+    """
+    import math
+    import random
+
+    class _KdTestObject:
+        def __init__(self, x: float, y: float):
+            self._box = AABox2d(Vec2d(x, y), 0.1, 0.1)
+            self.x = x
+            self.y = y
+
+        def aabox(self) -> AABox2d:
+            return self._box
+
+        def DistanceTo(self, point: Vec2d) -> float:
+            return math.hypot(point.x - self.x, point.y - self.y)
+
+        def DistanceSquareTo(self, point: Vec2d) -> float:
+            distance = self.DistanceTo(point)
+            return distance * distance
+
+    rng = random.Random(42)
+    objects = [_KdTestObject(rng.uniform(0.0, 50.0), rng.uniform(0.0, 50.0)) for _ in range(40)]
+    tree = AABoxKDTree2d(objects, AABoxKDTreeParams(max_leaf_size=4))
+
+    for _ in range(10):
+        query = Vec2d(rng.uniform(0.0, 50.0), rng.uniform(0.0, 50.0))
+        nearest = tree.GetNearestObject(query)
+        brute_force_nearest = min(objects, key=lambda obj: obj.DistanceTo(query))
+        assert nearest is not None
+        assert abs(nearest.DistanceTo(query) - brute_force_nearest.DistanceTo(query)) < 1e-9
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -1841,6 +1926,9 @@ def main():
     check_aabox2d_distance_to()
     check_box2d_has_overlap_line_segment()
     check_st_point_from_vec2d()
+    check_polygon2d_get_overlap_no_overlap_does_not_crash()
+    check_path_overlap_with_approximation_enabled()
+    check_kd_tree_nearest_object_matches_brute_force()
     print("lattice component checks succeeded")
 
 

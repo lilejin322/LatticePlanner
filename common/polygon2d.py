@@ -443,6 +443,8 @@ class Polygon2d:
             last: Vec2d = line_segment.start
             return True, first, last
         
+        first: Vec2d = None
+        last: Vec2d = None
         min_proj: float = line_segment.length()
         max_proj: float = 0.0
         if self.IsPointIn(line_segment.start):
@@ -695,43 +697,6 @@ class Polygon2d:
         assert tag, f"Computed polygon should be convex, but got {tag}"
         return new_polygon
 
-    def PolygonExpandByDistance(self, distance: float)  -> 'Polygon2d':
-        """
-
-        :param float distance: The specified distance. To expand the polygon by it.
-        :returns: The polygon after expansion.
-        :rtype: Polygon2d
-        """
-
-        points: List[Vec2d] = []
-        for i in range(self._num_points):
-            v1x: float = self._points[self.Prev(i)].x - points[i].x
-            v1y: float = self._points[self.Prev(i)].y - points[i].y
-            n1: float = math.sqrt(v1x ** 2 + v1y ** 2)
-            v1x /= n1
-            v1y /= n1
-
-            v2x: float = self._points[self.Next(i)].x - points[i].x
-            v2y: float = self._points[self.Next(i)].y - points[i].y
-            n2: float = math.sqrt(v2x ** 2 + v2y ** 2)
-            v2x /= n2
-            v2y /= n2
-
-            l: float = distance / math.sqrt((1 - (v1x * v2x + v1y * v2y)) / 2)
-
-            vx: float = v1x + v2x
-            vy: float = v1y + v2y
-            n: float = l / math.sqrt(vx ** 2 + vy ** 2)
-            
-            vx *= n
-            vy *= n
-
-            point = Vec2d(vx + self._points[i].x, vy + self._points[i].y)
-            points.append(point)
-        tag, new_polygon = self.ComputeConvexHull(points)
-        assert tag, f"Computed polygon should be convex, but got {tag}"
-        return new_polygon    
-    
     def CalculateVertices(self, shift_vec: Vec2d) -> None:
         """
         Calculate vertices based on a shift vector.
