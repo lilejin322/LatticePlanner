@@ -258,7 +258,7 @@ class AABox2d:
 
     def DistanceTo(self, *args) -> float:
 
-        if isinstance([0], Vec2d):
+        if isinstance(args[0], Vec2d):
             """
             Determines the distance between a point and the box.
 
@@ -276,7 +276,7 @@ class AABox2d:
                 return dx
             return math.hypot(dx, dy)
 
-        elif isinstance([0], AABox2d):
+        elif isinstance(args[0], AABox2d):
             """
             Determines the distance between two boxes.
 

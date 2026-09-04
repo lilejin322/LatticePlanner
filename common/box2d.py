@@ -516,7 +516,7 @@ class Box2d:
             x_axis: Vec2d = Vec2d(self._sin_heading, -self._cos_heading)
             y_axis: Vec2d = Vec2d(self._cos_heading, self._sin_heading)
             # corners_[2] is the left bottom point of the box.
-            start_v: Vec2d = Vec2d(line_segment.start - self._corners[2])
+            start_v: Vec2d = line_segment.start - self._corners[2]
             # "start_point" is the start point of "line_segment" mapped in the new
             # coordinate system.
             start_point: Vec2d = Vec2d(start_v.InnerProd(x_axis), start_v.InnerProd(y_axis))
@@ -524,7 +524,7 @@ class Box2d:
             if self.is_inside_rectangle(start_point):
                 return True
             # Check if "end_point" is inside the box.
-            end_v: Vec2d = Vec2d(line_segment.end - self._corners[2])
+            end_v: Vec2d = line_segment.end - self._corners[2]
             end_point: Vec2d = Vec2d(end_v.InnerProd(x_axis), end_v.InnerProd(y_axis))
             if self.is_inside_rectangle(end_point):
                 return True
@@ -769,4 +769,4 @@ class Box2d:
         :rtype: bool
         """
 
-        return (0.0 <= point.x <= self._width) and (0.0 <= point.y() <= self._length)
+        return (0.0 <= point.x <= self._width) and (0.0 <= point.y <= self._length)

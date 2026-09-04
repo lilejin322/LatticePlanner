@@ -513,7 +513,7 @@ class ReferenceLine:
         tag, s, l, distance = self._map_path.GetProjectionWithHueristicParams(box.center, start_s, end_s)
         if not tag:
             logger.error("Cannot get projection point from path.")
-            return False
+            return False, None
 
         projected_point = self._map_path.GetSmoothPoint(s)
         rotated_box = box

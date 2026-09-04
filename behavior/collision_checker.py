@@ -37,8 +37,8 @@ class CollisionChecker:
         self.reference_line_info = reference_line_info
         self.path_time_graph = path_time_graph
         self.predicted_bounding_rectangles = []
-        self.BuildPredictedEnvironment(obstacles, ego_vehicle_s, ego_vehicle_d, discretized_reference_line)
         self.logger = Logger("CollisionChecker")
+        self.BuildPredictedEnvironment(obstacles, ego_vehicle_s, ego_vehicle_d, discretized_reference_line)
 
     @staticmethod
     def StaticInCollision(obstacles: List[Obstacle], ego_trajectory: DiscretizedTrajectory, ego_length: float,

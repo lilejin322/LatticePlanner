@@ -25,7 +25,12 @@ from reference_line.reference_line_provider import ReferenceLineProvider
 from reference_line.reference_point import ReferencePoint
 from common.route_segments import RouteSegments
 from common.st_boundary import STBoundary
+from common.st_graph_data import StGraphData
+from common.st_point import STPoint
 from common.vec2d import Vec2d
+from common.box2d import Box2d
+from common.aabox2d import AABox2d
+from common.line_segment2d import LineSegment2d
 from common.constraint_checker import ConstraintChecker
 from common.constraint_checker1d import ConstraintChecker1d
 from common.lane_types import LaneSegment
@@ -1279,6 +1284,180 @@ def _build_dynamic_obstacle():
     return Obstacle("obs_1", perception, is_static=False, trajectory=trajectory)
 
 
+def check_collision_checker_obstacle_behind_ego_no_crash():
+    """
+    Regression test: CollisionChecker.__init__ used to call
+    BuildPredictedEnvironment (which logs a warning via self.logger) before
+    assigning self.logger, so any obstacle behind the ADC in-lane crashed
+    the constructor with AttributeError. Verify construction now succeeds
+    and that obstacle is correctly filtered out of the predicted environment.
+    """
+    reference_line, discretized_ref_points, reference_line_info = _build_reference_line()
+    perception = PerceptionObstacle(
+        id=901, position=Point3D(x=-5.0, y=0.0, z=0.0), theta=0.0,
+        velocity=Point3D(x=0.0, y=0.0, z=0.0), length=4.0, width=2.0, height=1.5,
+    )
+    trajectory = Trajectory(trajectory_point=[
+        TrajectoryPoint(
+            path_point=PathPoint(x=-5.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
+            v=0.0, a=0.0, relative_time=0.0,
+        ),
+    ])
+    behind_obstacle = Obstacle("behind_obs", perception, is_static=True, trajectory=trajectory)
+
+    checker = CollisionChecker([behind_obstacle], 10.0, 0.0, discretized_ref_points, reference_line_info, None)
+    assert checker.logger is not None
+    assert checker.predicted_bounding_rectangles
+    assert all(len(env) == 0 for env in checker.predicted_bounding_rectangles), (
+        "obstacle behind the ADC in-lane should be excluded from the predicted environment"
+    )
+
+
+def check_st_boundary_expand_by_t():
+    """
+    Regression test: STBoundary.ExpandByT used to call list.append(a, b)
+    with two positional arguments instead of a tuple, raising TypeError
+    on every call. Verify it now expands the boundary's time range.
+    """
+    pp = [
+        (STPoint(0.0, 0.0), STPoint(5.0, 0.0)),
+        (STPoint(3.0, 2.0), STPoint(8.0, 2.0)),
+    ]
+    boundary = STBoundary(pp)
+    expanded = boundary.ExpandByT(1.0)
+    assert expanded.min_t < boundary.min_t
+    assert expanded.max_t > boundary.max_t
+
+
+def check_st_graph_data_set_st_drivable_boundary():
+    """
+    Regression test: StGraphData._st_drivable_boundary was never
+    initialized (stayed None) and the append() call sat outside the loop
+    body, so SetSTDrivableBoundary either crashed with AttributeError or
+    silently dropped all but the last point. Verify every point is kept.
+    """
+    sg = StGraphData()
+    s_boundary = [(0.0, 1.0, 2.0), (1.0, 2.0, 3.0), (2.0, 3.0, 4.0)]
+    v_obs_info = [(0.0, -1.0, 1.0), (1.0, -1.0, 1.0), (2.0, -1.0, 1.0)]
+    assert sg.SetSTDrivableBoundary(s_boundary, v_obs_info)
+    assert len(sg.st_drivable_boundary.st_boundary) == len(s_boundary)
+
+
+def check_obstacle_build_trajectory_st_boundary():
+    """
+    Regression test: Obstacle.BuildTrajectoryStBoundary called
+    ReferenceLine.GetApproximateSLBoundary with 4 positional arguments
+    (mimicking the C++ output-parameter style) against a 3-argument,
+    tuple-returning Python signature, raising TypeError for any moving
+    obstacle with a predicted trajectory -- a normal lattice code path.
+    """
+    reference_line, _, _ = _build_reference_line()
+    obstacle = _build_dynamic_obstacle()
+    ok, boundary = obstacle.BuildTrajectoryStBoundary(reference_line, 0.0)
+    assert ok is True
+    assert isinstance(boundary, STBoundary)
+    assert boundary.min_s <= boundary.max_s
+    assert boundary.min_t <= boundary.max_t
+
+
+def check_path_approximation_matches_exact_projection():
+    """
+    Regression test: PathApproximation.__init__ called self.Init(path)
+    before initializing its own attributes, crashing any Path constructed
+    with max_approximation_error > 0. Also covers two bugs that were
+    masked behind it: PathApproximation.is_within_max_error() was called
+    with one fewer positional argument than it requires, and
+    PathApproximation.GetProjection() used Python's len() on a
+    LineSegment2d (which has no __len__) instead of calling .length().
+    Verify the approximated projection matches the exact one.
+    """
+    points = [MapPathPoint(Vec2d(0.0, 0.0)), MapPathPoint(Vec2d(10.0, 0.0)),
+              MapPathPoint(Vec2d(20.0, 0.0)), MapPathPoint(Vec2d(30.0, 0.0)),
+              MapPathPoint(Vec2d(40.0, 0.0))]
+    approximated_path = MapPath(points, [], 0.5)
+    exact_path = MapPath(points, [])
+
+    query_point = Vec2d(20.5, 0.05)
+    approx_result = approximated_path.GetProjection(query_point)
+    exact_result = exact_path.GetProjection(query_point)
+    assert approx_result[0] is True
+    for approx_value, exact_value in zip(approx_result, exact_result):
+        assert abs(approx_value - exact_value) < 1e-6
+
+
+def check_path_get_projection_with_warm_start_s():
+    """
+    Regression test: Path.GetProjectionWithWarmStartS called
+    segment.start() on a LineSegment2d, where "start" is a Python
+    @property (not a method), raising TypeError as soon as the binary
+    search entered its loop (any path with >= 3 points).
+    """
+    points = [MapPathPoint(Vec2d(0.0, 0.0)), MapPathPoint(Vec2d(10.0, 0.0)),
+              MapPathPoint(Vec2d(20.0, 0.0)), MapPathPoint(Vec2d(30.0, 0.0))]
+    path = MapPath(points, [])
+    ok, accumulate_s, lateral = path.GetProjectionWithWarmStartS(Vec2d(15.0, 1.0), 15.0)
+    assert ok is True
+    assert abs(accumulate_s - 15.0) < 1e-6
+    assert abs(lateral - 1.0) < 1e-6
+
+
+def check_vec2d_rmul():
+    """
+    Regression test: Vec2d only implemented __mul__ (Vec2d * scalar), not
+    __rmul__ (scalar * Vec2d), raising TypeError anywhere C++'s free
+    `operator*(double, const Vec2d&)` is used, e.g. Polygon2d.BoundingBoxWithHeading.
+    """
+    result = 0.5 * Vec2d(2.0, 4.0)
+    assert abs(result.x - 1.0) < 1e-9
+    assert abs(result.y - 2.0) < 1e-9
+
+
+def check_aabox2d_distance_to():
+    """
+    Regression test: AABox2d.DistanceTo checked isinstance([0], Vec2d) /
+    isinstance([0], AABox2d) -- the literal list [0], not args[0] -- so it
+    always raised ValueError regardless of input.
+    """
+    box = AABox2d(Vec2d(0.0, 0.0), 2.0, 2.0)
+    assert abs(box.DistanceTo(Vec2d(5.0, 0.0)) - 4.0) < 1e-9
+    other = AABox2d(Vec2d(10.0, 0.0), 2.0, 2.0)
+    assert abs(box.DistanceTo(other) - 8.0) < 1e-9
+
+
+def check_box2d_has_overlap_line_segment():
+    """
+    Regression test: Box2d.HasOverlap(LineSegment2d) built its rotated
+    start/end points via Vec2d(vec - vec) (double-wrapping an already
+    constructed Vec2d, corrupting it) and its is_inside_rectangle() helper
+    called point.y() on a Python @property, both raising exceptions for
+    any non-trivially-rejected segment.
+    """
+    box = Box2d(Vec2d(0.0, 0.0), 0.0, 4.0, 2.0)
+    crossing_segment = LineSegment2d(Vec2d(-1.0, 0.0), Vec2d(1.0, 0.0))
+    assert box.HasOverlap(crossing_segment) is True
+    far_segment = LineSegment2d(Vec2d(100.0, 100.0), Vec2d(101.0, 101.0))
+    assert box.HasOverlap(far_segment) is False
+
+
+def check_st_point_from_vec2d():
+    """
+    Regression test: STPoint(Vec2d) read args[0].__dict (missing the
+    trailing "__"), raising AttributeError on every call. Also covers the
+    STPoint.x/.y properties, which used to always raise -- correct for a
+    caller holding a *statically-typed* C++ Vec2d& (where the deleted
+    STPoint::x()/y() never enters the call), but wrong in Python, where
+    attribute access is always dynamically dispatched; library code like
+    LineSegment2d's constructor needs .x/.y to keep working when handed
+    STPoint instances (used as Vec2d(t, s)) directly, e.g. inside
+    STBoundary.RemoveRedundantPoints.
+    """
+    point = STPoint(Vec2d(3.0, 7.0))
+    assert point.t == 3.0
+    assert point.s == 7.0
+    assert point.x == 3.0
+    assert point.y == 7.0
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -1324,6 +1503,16 @@ def main():
     check_on_lane_planning_output()
     check_relative_map_reference_lines()
     check_lattice_main_path_without_backup()
+    check_collision_checker_obstacle_behind_ego_no_crash()
+    check_st_boundary_expand_by_t()
+    check_st_graph_data_set_st_drivable_boundary()
+    check_obstacle_build_trajectory_st_boundary()
+    check_path_approximation_matches_exact_projection()
+    check_path_get_projection_with_warm_start_s()
+    check_vec2d_rmul()
+    check_aabox2d_distance_to()
+    check_box2d_has_overlap_line_segment()
+    check_st_point_from_vec2d()
     print("lattice component checks succeeded")
 
 

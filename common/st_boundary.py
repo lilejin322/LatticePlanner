@@ -437,10 +437,10 @@ class STBoundary(Polygon2d):
         lower_left_delta_s: float = self._lower_points[1].s - self._lower_points[0].s
         upper_left_delta_s: float = self._upper_points[1].s - self._upper_points[0].s
 
-        point_pairs.append(STPoint(self._lower_points[0].s - t * lower_left_delta_s / left_delta_t,
-                                   self._lower_points[0].t - t),
-                           STPoint(self._upper_points[0].s - t * upper_left_delta_s / left_delta_t,
-                                   self._upper_points[0].t - t))
+        point_pairs.append((STPoint(self._lower_points[0].s - t * lower_left_delta_s / left_delta_t,
+                                    self._lower_points[0].t - t),
+                            STPoint(self._upper_points[0].s - t * upper_left_delta_s / left_delta_t,
+                                    self._upper_points[0].t - t)))
         
         kMinSEpsilon: float = 1e-3
         point_pairs[0][0].s = min(point_pairs[0][1].s - kMinSEpsilon,
@@ -456,10 +456,10 @@ class STBoundary(Polygon2d):
         lower_right_delta_s: float = self._lower_points[length - 1].s - self._lower_points[length - 2].s
         upper_right_delta_s: float = self._upper_points[length - 1].s - self._upper_points[length - 2].s
 
-        point_pairs.append(STPoint(self._lower_points[-1].s + t * lower_right_delta_s / right_delta_t,
-                                   self._lower_points[-1].t + t),
-                           STPoint(self._upper_points[-1].s + t * upper_right_delta_s / right_delta_t,
-                                   self._upper_points[-1].t + t))
+        point_pairs.append((STPoint(self._lower_points[-1].s + t * lower_right_delta_s / right_delta_t,
+                                    self._lower_points[-1].t + t),
+                            STPoint(self._upper_points[-1].s + t * upper_right_delta_s / right_delta_t,
+                                    self._upper_points[-1].t + t)))
 
         point_pairs[-1][1].s = max(point_pairs[-1][1].s, point_pairs[-1][0].s + kMinSEpsilon)
         

@@ -52,7 +52,6 @@ class PathApproximation:
 
         self._max_error = max_error
         self._max_sqr_error = max_error ** 2
-        self.Init(path)
         self._original_ids: List[int] = []
         self._num_points: int = 0
         self._segments: List[LineSegment2d] = []
@@ -74,6 +73,7 @@ class PathApproximation:
         self._max_original_projections_to_left: List[float] = []
         self._min_original_projections_to_right: List[float] = []
         self._sampled_max_original_projections_to_left: List[int] = []
+        self.Init(path)
 
     @property
     def max_error(self) -> float:
@@ -111,12 +111,12 @@ class PathApproximation:
             next_idx: int = last_idx + 1
             delta: int = 2
             while last_idx + delta < num_original_points:
-                if not self.is_within_max_error(path, last_idx + delta):
+                if not self.is_within_max_error(path, last_idx, last_idx + delta):
                     break
                 next_idx = last_idx + delta
                 delta *= 2
             while delta > 0:
-                if next_idx + delta < num_original_points and self.is_within_max_error(path, next_idx + delta):
+                if next_idx + delta < num_original_points and self.is_within_max_error(path, last_idx, next_idx + delta):
                     next_idx += delta
                 delta //= 2
             last_idx = next_idx    
@@ -331,7 +331,7 @@ class PathApproximation:
             if nearest_segment_idx > 0:
                 proj = max(0.0, proj)
             if nearest_segment_idx + 1 < num_original_segments:
-                proj = min(len(segment), proj)
+                proj = min(segment.length(), proj)
             accumulate_s: float = original_accumulated_s[nearest_segment_idx] + proj
             if (nearest_segment_idx == 0 and proj < 0.0) or \
                (nearest_segment_idx + 1 == num_original_segments and proj > segment.length()):
@@ -951,7 +951,7 @@ class Path:
         while right_index > left_index + 1:
             mid_index = self.FindIndex(left_index, right_index, warm_start_s)
             segment = self._segments[mid_index]
-            start_point = segment.start()
+            start_point = segment.start
             delta_x: float = point.x - start_point.x
             delta_y: float = point.y - start_point.y
             unit_direction = segment.unit_direction

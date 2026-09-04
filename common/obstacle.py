@@ -1013,8 +1013,6 @@ class Obstacle:
         adc_length = config_module.EGO_VEHICLE_LENGTH
         adc_half_length = config_module.EGO_VEHICLE_LENGTH / 2
         adc_width = config_module.EGO_VEHICLE_WIDTH
-        min_box: Box2d = Box2d([0, 0], 1.0, 1.0, 1.0)
-        max_box: Box2d = Box2d([0, 0], 1.0, 1.0, 1.0)
         polygon_points: List[Tuple[STPoint, STPoint]] = []
         last_sl_boundary = SLBoundary()
         last_index: int = 0
@@ -1042,7 +1040,8 @@ class Obstacle:
             mid_s: float = (last_sl_boundary.start_s + last_sl_boundary.end_s) / 2.0 if last_index != 0 else adc_start_s
             start_s: float = max(0.0, mid_s - 2.0 * distance_xy)
             end_s: float = ref_length if i == 1 else min(ref_length, mid_s + 2.0 * distance_xy)
-            if not reference_line.GetApproximateSLBoundary(object_moving_box, start_s, end_s, object_boundary):
+            ok, object_boundary = reference_line.GetApproximateSLBoundary(object_moving_box, start_s, end_s)
+            if not ok:
                 logger.error(f"failed to calculate boundary")
                 return False, None
             

@@ -214,6 +214,17 @@ class Vec2d:
 
         return Vec2d(self._x * ratio, self._y * ratio)
 
+    def __rmul__(self, ratio: float) -> 'Vec2d':
+        """
+        Multiplies a scalar by Vec2d, Overrides the reflected '*' operator.
+
+        :param float ratio: scalar
+        :returns: scaled vector
+        :rtype: Vec2d
+        """
+
+        return Vec2d(self._x * ratio, self._y * ratio)
+
     def __truediv__(self, ratio: float) -> 'Vec2d':
         """
         Divides Vec2d by a scalar, Overrides the '/' operator.

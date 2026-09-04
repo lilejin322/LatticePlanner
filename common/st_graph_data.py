@@ -22,7 +22,7 @@ class StGraphData:
         self._path_data_length: float = 0.0
         self._path_length_by_conf: float = 0.0
         self._total_time_by_conf: float = 0.0
-        self._st_drivable_boundary: STDrivableBoundary = None
+        self._st_drivable_boundary: STDrivableBoundary = STDrivableBoundary()
 
     def LoadData(self, st_boundaries: List[STBoundary],
                  min_s_on_st_boundaries: float, init_point: TrajectoryPoint,
@@ -148,7 +148,7 @@ class StGraphData:
                                                            v_obs_lower,
                                                            v_obs_upper)
 
-        self._st_drivable_boundary.st_boundary.append(st_bound_instance)
+            self._st_drivable_boundary.st_boundary.append(st_bound_instance)
         return True
 
     @property

@@ -17,7 +17,7 @@ class STPoint(Vec2d):
             :param Vec2d args[0]: Vec2d object
             """
 
-            self.__dict__ = deepcopy(args[0].__dict)
+            self.__dict__ = deepcopy(args[0].__dict__)
 
         elif len(args) == 2:
             """
@@ -29,18 +29,6 @@ class STPoint(Vec2d):
             super().__init__(t, s)
         else:
             raise ValueError("Invalid arguments")
-
-    @property
-    @staticmethod
-    def x():
-
-        raise AttributeError("x attribute in class STPoint is deleted")
-
-    @property
-    @staticmethod
-    def y():
-
-        raise AttributeError("y attribute in class STPoint is deleted")
 
     @property
     def s(self) -> float:
