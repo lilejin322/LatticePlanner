@@ -1,6 +1,7 @@
 """
 Constraint checker submodule
 """
+import math
 from enum import Enum
 from common.discretized_trajectory import DiscretizedTrajectory
 from typing import Any
@@ -95,10 +96,17 @@ class ConstraintChecker:
             t = p0.relative_time
 
             dt = p1.relative_time - p0.relative_time
-            if dt <= 0.0:
-                continue
             d_lon_a = p1.a - p0.a
-            lon_jerk = d_lon_a / dt
+            # C++ floating-point division produces a non-finite value for a zero
+            # interval, which then fails WithinRange instead of raising.
+            if dt == 0.0:
+                if d_lon_a == 0.0:
+                    lon_jerk = float("nan")
+                else:
+                    sign = math.copysign(1.0, d_lon_a) * math.copysign(1.0, dt)
+                    lon_jerk = math.copysign(float("inf"), sign)
+            else:
+                lon_jerk = d_lon_a / dt
             if not WithinRange(lon_jerk, config_module.FLAGS_longitudinal_jerk_lower_bound, config_module.FLAGS_longitudinal_jerk_upper_bound):
                 logger.debug(f"Longitudinal jerk at relative time {t} exceeds bound, value: {lon_jerk}, bound [{config_module.FLAGS_longitudinal_jerk_lower_bound}, {config_module.FLAGS_longitudinal_jerk_upper_bound}].")
                 return ConstraintChecker.Result.LON_JERK_OUT_OF_BOUND

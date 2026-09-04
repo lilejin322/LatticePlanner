@@ -12,6 +12,13 @@ from logging import Logger
 
 logger = Logger("DiscretizedTrajectory")
 
+
+def _value_or_zero(value):
+    """Return the protobuf default for an unset numeric scalar."""
+
+    return 0.0 if value is None else value
+
+
 class DiscretizedTrajectory(UserList):
     """
     A class to represent a series of discretized trajectory points
@@ -166,9 +173,8 @@ class DiscretizedTrajectory(UserList):
         """
 
         if tp0.path_point is None or tp1.path_point is None:
-            # This part has not been implemented
             p: TrajectoryPoint = TrajectoryPoint()
-            p.mutable_path_point = PathPoint()
+            p.path_point = PathPoint()
             return p
         pp0: PathPoint = tp0.path_point
         pp1: PathPoint = tp1.path_point
@@ -176,19 +182,19 @@ class DiscretizedTrajectory(UserList):
         t1: float = tp1.relative_time
 
         tp: TrajectoryPoint = TrajectoryPoint()
-        tp.v = self.lerp(tp0.v, t0, tp1.v, t1, t)
-        tp.a = self.lerp(tp0.a, t0, tp1.a, t1, t)
+        tp.v = self.lerp(_value_or_zero(tp0.v), t0, _value_or_zero(tp1.v), t1, t)
+        tp.a = self.lerp(_value_or_zero(tp0.a), t0, _value_or_zero(tp1.a), t1, t)
         tp.relative_time = t
-        tp.steer = self.slerp(tp0.steer, t0, tp1.steer, t1, t)
+        tp.steer = self.slerp(_value_or_zero(tp0.steer), t0, _value_or_zero(tp1.steer), t1, t)
 
         path_point: PathPoint = tp.path_point
-        path_point.x = self.lerp(pp0.x, t0, pp1.x, t1, t)
-        path_point.y = self.lerp(pp0.y, t0, pp1.y, t1, t)
-        path_point.theta = self.slerp(pp0.theta, t0, pp1.theta, t1, t)
-        path_point.kappa = self.lerp(pp0.kappa, t0, pp1.kappa, t1, t)
-        path_point.dkappa = self.lerp(pp0.dkappa, t0, pp1.dkappa, t1, t)
-        path_point.ddkappa = self.lerp(pp0.ddkappa, t0, pp1.ddkappa, t1, t)
-        path_point.s = self.lerp(pp0.s, t0, pp1.s, t1, t)
+        path_point.x = self.lerp(_value_or_zero(pp0.x), t0, _value_or_zero(pp1.x), t1, t)
+        path_point.y = self.lerp(_value_or_zero(pp0.y), t0, _value_or_zero(pp1.y), t1, t)
+        path_point.theta = self.slerp(_value_or_zero(pp0.theta), t0, _value_or_zero(pp1.theta), t1, t)
+        path_point.kappa = self.lerp(_value_or_zero(pp0.kappa), t0, _value_or_zero(pp1.kappa), t1, t)
+        path_point.dkappa = self.lerp(_value_or_zero(pp0.dkappa), t0, _value_or_zero(pp1.dkappa), t1, t)
+        path_point.ddkappa = self.lerp(_value_or_zero(pp0.ddkappa), t0, _value_or_zero(pp1.ddkappa), t1, t)
+        path_point.s = self.lerp(_value_or_zero(pp0.s), t0, _value_or_zero(pp1.s), t1, t)
 
         return tp
 

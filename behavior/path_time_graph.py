@@ -112,7 +112,10 @@ class PathTimeGraph:
 
         left_width: float = config_module.FLAGS_default_reference_line_width * 0.5
         right_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-        _, left_width, right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
+        ok, queried_left_width, queried_right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
+        if ok:
+            left_width = queried_left_width
+            right_width = queried_right_width
         if (sl_boundary.start_s > self._path_range[1] or
                 sl_boundary.end_s < self._path_range[0] or
                 sl_boundary.start_l > left_width or
@@ -149,7 +152,10 @@ class PathTimeGraph:
 
             left_width: float = config_module.FLAGS_default_reference_line_width * 0.5
             right_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-            _, left_width, right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
+            ok, queried_left_width, queried_right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
+            if ok:
+                left_width = queried_left_width
+                right_width = queried_right_width
 
             # The obstacle is not shown on the region to be considered.
             if (sl_boundary.start_s > self._path_range[1] or
@@ -365,7 +371,10 @@ class PathTimeGraph:
         for _ in range(num_bound):
             left_width: float = config_module.FLAGS_default_reference_line_width / 2.0
             right_width: float = config_module.FLAGS_default_reference_line_width / 2.0
-            _, left_width, right_width = self.reference_line_info.reference_line.GetLaneWidth(s_curr)
+            ok, queried_left_width, queried_right_width = self.reference_line_info.reference_line.GetLaneWidth(s_curr)
+            if ok:
+                left_width = queried_left_width
+                right_width = queried_right_width
             ego_d_lower: float = self._init_d[0] - ego_width / 2.0
             ego_d_upper: float = self._init_d[0] + ego_width / 2.0
             bounds.append((min(-right_width, ego_d_lower - config_module.FLAGS_bound_buffer),

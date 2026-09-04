@@ -74,31 +74,25 @@ class BackupTrajectoryGenerator:
     def GenerateBestPair(
         self, discretized_ref_points: List[PathPoint]
     ) -> Tuple[Curve1d, Curve1d, DiscretizedTrajectory]:
-        if not self.trajectory_pair_pqueue:
-            empty = DiscretizedTrajectory()
-            return None, None, empty
-
-        remaining = list(self.trajectory_pair_pqueue)
-        heapq.heapify(remaining)
-        fallback_pair = None
-        fallback_trajectory = DiscretizedTrajectory()
-
-        while remaining:
-            _, _, top_pair = heapq.heappop(remaining)
-            fallback_pair = top_pair
+        while len(self.trajectory_pair_pqueue) > 1:
+            _, _, top_pair = heapq.heappop(self.trajectory_pair_pqueue)
             trajectory = TrajectoryCombiner.Combine(
                 discretized_ref_points,
                 top_pair[0],
                 top_pair[1],
                 self.init_relative_time,
             )
-            fallback_trajectory = trajectory
             if not self.collision_checker.InCollision(trajectory):
                 return top_pair[0], top_pair[1], trajectory
 
-        if fallback_pair is not None:
-            return fallback_pair[0], fallback_pair[1], fallback_trajectory
-        return None, None, DiscretizedTrajectory()
+        _, _, top_pair = self.trajectory_pair_pqueue[0]
+        trajectory = TrajectoryCombiner.Combine(
+            discretized_ref_points,
+            top_pair[0],
+            top_pair[1],
+            self.init_relative_time,
+        )
+        return top_pair[0], top_pair[1], trajectory
 
     def GenerateTrajectory(self, discretized_ref_points: List[PathPoint]) -> DiscretizedTrajectory:
         """

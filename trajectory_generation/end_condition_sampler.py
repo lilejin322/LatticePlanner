@@ -91,7 +91,15 @@ class EndConditionSampler:
 
             v_range: float = v_upper - v_lower
             # number of sample velocities
-            num_of_mid_points: int = min(config_module.FLAGS_num_velocity_sample - 2, int(v_range / config_module.FLAGS_min_velocity_sample_gap))
+            max_mid_points = config_module.FLAGS_num_velocity_sample - 2
+            raw_mid_points = int(v_range / config_module.FLAGS_min_velocity_sample_gap)
+            # C++ casts raw_mid_points to size_t before taking min(). A negative
+            # integral value therefore selects the capped sample count.
+            num_of_mid_points: int = (
+                max_mid_points
+                if raw_mid_points < 0
+                else min(max_mid_points, raw_mid_points)
+            )
 
             if num_of_mid_points > 0:
                 velocity_seg: float = v_range / float(num_of_mid_points + 1)

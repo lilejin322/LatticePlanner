@@ -48,6 +48,7 @@ from protoclass.header import Header
 from protoclass.path_point import PathPoint
 from protoclass.perception_obstacle import PerceptionObstacle
 from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles, Trajectory as PredictionTrajectory
+from protoclass.sl_boundary import SLBoundary
 from protoclass.trajectory import Trajectory
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
@@ -147,8 +148,114 @@ def check_backup_generator():
     backup_generator = BackupTrajectoryGenerator(
         init_s, init_d, 0.0, collision_checker, trajectory1d_generator
     )
+    initial_pair_count = len(backup_generator.trajectory_pair_pqueue)
     trajectory = backup_generator.GenerateTrajectory(discretized_ref_points)
     assert len(trajectory) > 0
+    assert len(backup_generator.trajectory_pair_pqueue) < initial_pair_count
+
+
+def check_discretized_trajectory_uses_proto_scalar_defaults():
+    trajectory = DiscretizedTrajectory([
+        TrajectoryPoint(path_point=PathPoint(), relative_time=0.0),
+        TrajectoryPoint(path_point=PathPoint(), relative_time=1.0),
+    ])
+
+    point = trajectory.Evaluate(0.5)
+    assert point.v == 0.0
+    assert point.a == 0.0
+    assert point.steer == 0.0
+    assert point.path_point.x == 0.0
+    assert point.path_point.y == 0.0
+    assert point.path_point.theta == 0.0
+    assert point.path_point.kappa == 0.0
+    assert point.path_point.s == 0.0
+
+
+def check_adjust_trajectory_resamples_cut_trajectory():
+    def make_point(x, relative_time):
+        return TrajectoryPoint(
+            path_point=PathPoint(
+                x=x,
+                y=0.0,
+                theta=0.0,
+                kappa=0.0,
+                s=x,
+                dkappa=0.0,
+                ddkappa=0.0,
+            ),
+            v=1.0,
+            a=0.0,
+            relative_time=relative_time,
+        )
+
+    planning_start_point = make_point(0.0, 0.1)
+    ok, adjusted = ReferenceLineInfo.AdjustTrajectoryWhichStartsFromCurrentPos(
+        planning_start_point,
+        [make_point(1.0, 0.2), make_point(2.0, 0.4)],
+    )
+
+    assert ok
+    assert adjusted is not None
+    assert len(adjusted) > 2
+    assert adjusted[0].relative_time == planning_start_point.relative_time
+    assert all(
+        adjusted[i - 1].relative_time < adjusted[i].relative_time
+        for i in range(1, len(adjusted))
+    )
+
+
+def check_path_time_graph_lane_width_fallback():
+    import config as config_module
+
+    class ReferenceLineStub:
+        def GetLaneWidth(self, s):
+            return False, 0.0, 0.0
+
+    reference_line_info = SimpleNamespace(reference_line=ReferenceLineStub())
+    graph = PathTimeGraph(
+        [],
+        [],
+        reference_line_info,
+        0.0,
+        50.0,
+        0.0,
+        FLAGS_trajectory_time_length,
+        [0.0, 0.0, 0.0],
+    )
+    bounds = graph.GetLateralBounds(0.0, 2.0, 1.0)
+    expected_lower = (
+        -config_module.FLAGS_default_reference_line_width / 2.0
+        + config_module.FLAGS_half_vehicle_width
+    )
+    expected_upper = (
+        config_module.FLAGS_default_reference_line_width / 2.0
+        - config_module.FLAGS_half_vehicle_width
+    )
+    assert all(abs(lower - expected_lower) < 1e-9 for lower, _ in bounds)
+    assert all(abs(upper - expected_upper) < 1e-9 for _, upper in bounds)
+
+    _, discretized_ref_points, _ = _build_reference_line()
+    perception = PerceptionObstacle(
+        id=16,
+        position=Point3D(x=20.0, y=1.4, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=0.2,
+        height=1.5,
+        theta=0.0,
+    )
+    obstacle = Obstacle("fallback_width_obstacle", perception, is_static=True)
+    graph = PathTimeGraph(
+        [obstacle],
+        discretized_ref_points,
+        reference_line_info,
+        0.0,
+        50.0,
+        0.0,
+        FLAGS_trajectory_time_length,
+        [0.0, 0.0, 0.0],
+    )
+    assert graph.IsObstacleInGraph("fallback_width_obstacle")
 
 
 def check_collision_checker_lane_width_fallback():
@@ -193,6 +300,33 @@ def check_constraint_checker_dynamic_speed_bound():
         config_module.FLAGS_speed_upper_bound = old_upper
 
 
+def check_constraint_checker_matches_cpp_non_increasing_time():
+    def make_point(relative_time):
+        return TrajectoryPoint(
+            path_point=PathPoint(
+                x=0.0,
+                y=0.0,
+                theta=0.0,
+                kappa=0.0,
+                s=0.0,
+                dkappa=0.0,
+                ddkappa=0.0,
+            ),
+            v=1.0,
+            a=0.0,
+            relative_time=relative_time,
+        )
+
+    duplicate_time = DiscretizedTrajectory([make_point(0.0), make_point(0.0)])
+    assert (
+        ConstraintChecker.ValidTrajectory(duplicate_time)
+        == ConstraintChecker.Result.LON_JERK_OUT_OF_BOUND
+    )
+
+    decreasing_time = DiscretizedTrajectory([make_point(0.0), make_point(-0.1)])
+    assert ConstraintChecker.ValidTrajectory(decreasing_time) == ConstraintChecker.Result.VALID
+
+
 def check_constraint_checker1d_dynamic_speed_bound():
     import config as config_module
 
@@ -223,6 +357,45 @@ def check_dynamic_obstacle_sampling():
     )
     assert len(path_time_graph.GetPathTimeObstacles()) == 1
     assert len(sampler.SampleLonEndConditionsForPathTimePoints()) > 0
+
+
+def check_cruise_sampler_matches_cpp_negative_range_cast():
+    sampler = EndConditionSampler(
+        [0.0, 10.0, 0.0],
+        [0.0, 0.0, 0.0],
+        object(),
+        object(),
+    )
+    conditions = sampler.SampleLonEndConditionsForCruising(1.0)
+    one_second_conditions = [condition for condition in conditions if condition[1] == 1.0]
+    assert len(one_second_conditions) == 6
+    assert len(conditions) == 33
+
+
+def check_reference_line_sl_boundary_lane_width_failure_matches_cpp():
+    class MapPathStub:
+        length = 10.0
+
+        def GetLaneWidth(self, s):
+            return False, 0.0, 0.0
+
+    reference_line = ReferenceLine.__new__(ReferenceLine)
+    reference_line._map_path = MapPathStub()
+
+    crossing_center = SLBoundary(
+        start_s=1.0,
+        end_s=2.0,
+        start_l=-0.1,
+        end_l=0.1,
+    )
+    entirely_left = SLBoundary(
+        start_s=1.0,
+        end_s=2.0,
+        start_l=0.1,
+        end_l=0.2,
+    )
+    assert reference_line.IsOnLane(crossing_center)
+    assert not reference_line.IsOnLane(entirely_left)
 
 
 def check_lateral_osqp_optimizer():
@@ -2139,10 +2312,16 @@ def check_path_bounds_sweep_line_updates_center_line_per_edge():
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
+    check_discretized_trajectory_uses_proto_scalar_defaults()
+    check_adjust_trajectory_resamples_cut_trajectory()
     check_collision_checker_lane_width_fallback()
+    check_path_time_graph_lane_width_fallback()
     check_constraint_checker_dynamic_speed_bound()
+    check_constraint_checker_matches_cpp_non_increasing_time()
     check_constraint_checker1d_dynamic_speed_bound()
     check_dynamic_obstacle_sampling()
+    check_cruise_sampler_matches_cpp_negative_range_cast()
+    check_reference_line_sl_boundary_lane_width_failure_matches_cpp()
     check_lateral_osqp_optimizer()
     check_lateral_osqp_keeps_usable_non_solved_result()
     check_lateral_bundle_ignores_optimizer_return_value()

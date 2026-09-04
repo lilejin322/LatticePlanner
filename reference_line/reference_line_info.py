@@ -720,7 +720,7 @@ class ReferenceLineInfo:
         cur_rel_time = cut_trajectory[0].relative_time
         while cur_rel_time <= cut_trajectory[-1].relative_time:
 
-            adjusted_trajectory.AppendTrajectoryPoint(adjusted_trajectory.Evaluate(cur_rel_time))
+            adjusted_trajectory.AppendTrajectoryPoint(cut_trajectory.Evaluate(cur_rel_time))
             cur_rel_time += (kDenseTimeResoltuion if cur_rel_time < kDenseTimeSec else kSparseTimeResolution)
 
         return True, adjusted_trajectory

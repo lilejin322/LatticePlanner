@@ -989,9 +989,10 @@ class ReferenceLine:
             middle_s: float = (sl_boundary.start_s + sl_boundary.end_s) / 2.0
             lane_left_width: float = 0.0
             lane_right_width: float = 0.0
-            tag, lane_left_width, lane_right_width = self._map_path.GetLaneWidth(middle_s)
-            if not tag:
-                return False
+            ok, queried_left_width, queried_right_width = self._map_path.GetLaneWidth(middle_s)
+            if ok:
+                lane_left_width = queried_left_width
+                lane_right_width = queried_right_width
             return sl_boundary.start_l <= lane_left_width and sl_boundary.end_l >= -lane_right_width
 
         elif hasattr(args[0], 'x') and hasattr(args[0], 'y'):
