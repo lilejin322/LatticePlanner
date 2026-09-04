@@ -227,11 +227,6 @@ class LatticePlanner:
                 trajectory1d_generator,
             )
             trajectory = backup_generator.GenerateTrajectory(reference_line)
-            if not trajectory:
-                self.logger.error("Backup trajectory generator returned an empty trajectory")
-                reference_line_info.SetCost(float("inf"))
-                reference_line_info.SetDrivable(False)
-                return False
             reference_line_info.AddCost(config.FLAGS_backup_trajectory_cost)
             reference_line_info.SetTrajectory(trajectory)
             reference_line_info.SetDrivable(True)

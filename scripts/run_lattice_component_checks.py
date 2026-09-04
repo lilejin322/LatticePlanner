@@ -4,6 +4,7 @@
 from pathlib import Path
 import importlib
 import sys
+from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -263,6 +264,41 @@ def check_lateral_osqp_keeps_usable_non_solved_result():
         optimizer_module.OSQP = original_osqp
 
 
+def check_lateral_bundle_ignores_optimizer_return_value():
+    import config as config_module
+    import trajectory_generation.trajectory1d_generator as generator_module
+
+    expected_trajectory = object()
+
+    class FakeOptimizer:
+        def Optimize(self, _d_state, _delta_s, _d_bounds):
+            return False
+
+        def GetOptimalTrajectory(self):
+            return expected_trajectory
+
+    class FakePathTimeGraph:
+        def GetLateralBounds(self, _s_min, _s_max, _delta_s):
+            return [(-1.0, 1.0)]
+
+    generator = Trajectory1dGenerator.__new__(Trajectory1dGenerator)
+    generator.init_lon_state = [0.0, 0.0, 0.0]
+    generator.init_lat_state = [0.0, 0.0, 0.0]
+    generator.path_time_graph = FakePathTimeGraph()
+
+    original_flag = config_module.FLAGS_lateral_optimization
+    original_factory = generator_module.CreateLateralOptimizer
+    config_module.FLAGS_lateral_optimization = True
+    generator_module.CreateLateralOptimizer = FakeOptimizer
+    try:
+        trajectories = []
+        generator.GenerateLateralTrajectoryBundle(trajectories)
+        assert trajectories == [expected_trajectory]
+    finally:
+        generator_module.CreateLateralOptimizer = original_factory
+        config_module.FLAGS_lateral_optimization = original_flag
+
+
 def check_prediction_time_alignment():
     prediction = PredictionObstacles(
         header=Header(timestamp_sec=10.0),
@@ -382,6 +418,42 @@ def check_hdmap_get_nearest_lane_uses_clamped_distance():
     assert nearest_lane is far_info, "must pick the truly-nearest lane, not the one with the smallest unclamped projection"
     assert abs(s - 50.0) < 1e-6
     assert abs(l - (-9.7)) < 1e-6
+
+
+def check_hdmap_get_roads_uses_nearby_lane_membership():
+    near_lane = _build_straight_lane("near_lane", length=20.0)
+    far_lane = _build_straight_lane("far_lane", length=20.0)
+    for point in far_lane.central_curve.segment[0].curve_type.point:
+        point.y = 100.0
+
+    road_near = SimpleNamespace(
+        id=Lane.Id("road_near"),
+        type=1,
+        section=[
+            SimpleNamespace(
+                id=Lane.Id("section_near"), lane_id=[near_lane.id]
+            )
+        ],
+    )
+    road_far = SimpleNamespace(
+        id=Lane.Id("road_far"),
+        type=1,
+        section=[
+            SimpleNamespace(
+                id=Lane.Id("section_far"), lane_id=[far_lane.id]
+            )
+        ],
+    )
+    map_proto = SimpleNamespace(
+        lane=[near_lane, far_lane], overlap=[], road=[road_near, road_far]
+    )
+
+    hdmap = HDMap()
+    assert hdmap.LoadMapFromProto(map_proto) == 0
+    assert hdmap.GetLaneById("near_lane").road_id == "road_near"
+    assert hdmap.GetLaneById("near_lane").section_id == "section_near"
+    roads = hdmap.GetRoads(PointENU(x=5.0, y=0.0), 2.0)
+    assert [road.id.id for road in roads] == ["road_near"]
 
 
 def check_map_path_route_segment_regressions():
@@ -2073,9 +2145,11 @@ def main():
     check_dynamic_obstacle_sampling()
     check_lateral_osqp_optimizer()
     check_lateral_osqp_keeps_usable_non_solved_result()
+    check_lateral_bundle_ignores_optimizer_return_value()
     check_prediction_time_alignment()
     check_hdmap_basic_queries()
     check_hdmap_get_nearest_lane_uses_clamped_distance()
+    check_hdmap_get_roads_uses_nearby_lane_membership()
     check_map_path_route_segment_regressions()
     check_pnc_map_multi_reference_lines()
     check_reference_line_provider_with_routing()

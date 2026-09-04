@@ -96,6 +96,19 @@ class HDMap:
             self.AddOverlap(overlap)
         for road in getattr(map_proto, "road", []) or []:
             self.AddRoad(road)
+        for road_info in self._roads.values():
+            road_id = _id_to_str(road_info.id)
+            for section in getattr(road_info.road, "section", []) or []:
+                section_id = _id_to_str(getattr(section, "id", None))
+                for lane_id in getattr(section, "lane_id", []) or []:
+                    lane_id_str = _id_to_str(lane_id)
+                    lane_info = self._lanes.get(lane_id_str)
+                    if lane_info is None:
+                        raise ValueError(
+                            f"Road {road_id} references unknown lane {lane_id_str}"
+                        )
+                    lane_info.set_road_id(road_id)
+                    lane_info.set_section_id(section_id)
         for attr, table in (
             ("signal", self._signals),
             ("junction", self._junctions),
@@ -258,9 +271,17 @@ class HDMap:
         return True, best_lane, best_s, best_l
 
     def GetRoads(self, point: PointENU, distance: float) -> List[RoadInfo]:
-        # Road polygons are not modelled in the Python dataclasses yet; return all
-        # registered roads so callers can still inspect road type metadata.
-        return list(self._roads.values())
+        roads = []
+        road_ids = set()
+        for lane in self.GetLanes(point, distance):
+            road_id = lane.road_id
+            if not road_id or road_id in road_ids:
+                continue
+            road = self.GetRoadById(road_id)
+            assert road is not None, f"Unknown road id referenced by lane: {road_id}"
+            road_ids.add(road_id)
+            roads.append(road)
+        return roads
 
 
 class HDMapUtil:

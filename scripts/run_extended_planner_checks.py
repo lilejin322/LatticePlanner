@@ -721,7 +721,7 @@ def check_lattice_fails_when_blocked_without_backup():
         config_module.FLAGS_enable_backup_trajectory = old_backup
 
 
-def check_lattice_rejects_empty_backup_trajectory():
+def check_lattice_accepts_empty_backup_trajectory_like_cpp():
     import config as config_module
     from common.discretized_trajectory import DiscretizedTrajectory
     from unittest.mock import patch
@@ -738,8 +738,9 @@ def check_lattice_rejects_empty_backup_trajectory():
             return_value=DiscretizedTrajectory(),
         ):
             ok = LatticePlanner().Plan(start_point, frame, ADCTrajectory())
-        assert not ok
-        assert not reference_line_info.IsDrivable()
+        assert ok
+        assert reference_line_info.IsDrivable()
+        assert len(reference_line_info.trajectory) == 0
     finally:
         config_module.FLAGS_enable_backup_trajectory = old_backup
 
@@ -828,7 +829,7 @@ CHECKS = [
     ("path_decider_after_lateral_pipeline", check_path_decider_after_lateral_pipeline),
     ("path_bounds_uses_planning_start_frenet", check_path_bounds_uses_planning_start_frenet),
     ("lattice_fails_when_blocked_without_backup", check_lattice_fails_when_blocked_without_backup),
-    ("lattice_rejects_empty_backup_trajectory", check_lattice_rejects_empty_backup_trajectory),
+    ("lattice_accepts_empty_backup_trajectory_like_cpp", check_lattice_accepts_empty_backup_trajectory_like_cpp),
     ("on_lane_aggregate_path_speed", check_on_lane_aggregate_path_speed),
     ("module_import_surface", check_module_import_surface),
 ]

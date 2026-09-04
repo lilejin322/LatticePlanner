@@ -138,10 +138,7 @@ class Trajectory1dGenerator:
             # LateralTrajectoryOptimizer lateral_optimizer
             lateral_optimizer = CreateLateralOptimizer()
 
-            if not lateral_optimizer.Optimize(self.init_lat_state, delta_s, lateral_bounds):
-                self.logger.error("Failed to optimize lateral trajectory.")
-                return
-
+            lateral_optimizer.Optimize(self.init_lat_state, delta_s, lateral_bounds)
             lateral_trajectory = lateral_optimizer.GetOptimalTrajectory()
 
             lat_trajectory_bundle.append(lateral_trajectory)
