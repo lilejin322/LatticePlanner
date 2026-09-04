@@ -30,7 +30,7 @@ K_SELF_PATH_LENGTH_COMPARISON_TOLERANCE = 15.0
 K_NEIGHBOR_PATH_LENGTH_COMPARISON_TOLERANCE = 25.0
 K_BACK_TO_SELF_LANE_COMPARISON_TOLERANCE = 20.0
 K_PATH_BOUNDS_DECIDER_RESOLUTION = 0.5
-K_NUM_EXTRA_TAIL_BOUND_POINT = 2
+K_NUM_EXTRA_TAIL_BOUND_POINT = 20
 
 
 def _path_l_at_s(path_data: PathData, s: float) -> Optional[float]:
@@ -272,21 +272,23 @@ def IsStopOnReverseNeighborLane(
     if not ok:
         return False
 
+    path_point_s = None
     path_point_l = None
     for point in path_data.frenet_frame_path:
         if abs(point.s - check_s) < 0.3:
+            path_point_s = point.s
             path_point_l = point.l
     if path_point_l is None:
         return False
 
     if "left" in path_data.path_label and path_point_l > lane_left_width:
         ok_neighbor, _, _ = reference_line_info.GetNeighborLaneInfo(
-            ReferenceLineInfo.LaneType.LeftReverse, check_s
+            ReferenceLineInfo.LaneType.LeftReverse, path_point_s
         )
         return ok_neighbor
     if "right" in path_data.path_label and path_point_l < -lane_right_width:
         ok_neighbor, _, _ = reference_line_info.GetNeighborLaneInfo(
-            ReferenceLineInfo.LaneType.RightReverse, check_s
+            ReferenceLineInfo.LaneType.RightReverse, path_point_s
         )
         return ok_neighbor
     return False
@@ -486,11 +488,13 @@ def _update_path_decider_status(
     status = planning_context.planning_status.path_decider
     blocking = reference_line_info.GetBlockingObstacle()
     if blocking is not None:
-        counter = max(status.front_static_obstacle_cycle_counter or 0, 0)
+        counter = status.front_static_obstacle_cycle_counter or 0
+        status.front_static_obstacle_cycle_counter = max(counter, 0)
         status.front_static_obstacle_cycle_counter = min(counter + 1, 10)
         status.front_static_obstacle_id = blocking.Id()
     else:
-        counter = min(status.front_static_obstacle_cycle_counter or 0, 0)
+        counter = status.front_static_obstacle_cycle_counter or 0
+        status.front_static_obstacle_cycle_counter = min(counter, 0)
         status.front_static_obstacle_cycle_counter = max(counter - 1, -10)
 
     if "self" in reference_line_info.path_data.path_label:

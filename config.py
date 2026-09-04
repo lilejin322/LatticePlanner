@@ -50,7 +50,6 @@ FLAGS_destination_check_distance = 5.0
 FLAGS_virtual_stop_wall_length = 0.1
 FLAGS_virtual_stop_wall_height = 2.0
 FLAGS_signal_expire_time_sec = 5.0
-FLAGS_obstacle_lon_ignore_buffer = 3.0
 
 # Lattice planner core.
 FLAGS_numerical_epsilon = 1e-6
@@ -112,7 +111,6 @@ FLAGS_enable_smooth_trajectory = True
 FLAGS_use_navigation_mode = False
 FLAGS_use_multi_thread_to_add_obstacles = False
 FLAGS_turn_signal_distance = 100.0
-FLAGS_passed_destination_threshold = 0.01
 FLAGS_reverse_heading_vehicle_state = False
 FLAGS_enable_map_reference_unify = False
 FLAGS_state_transform_to_com_reverse = False
@@ -170,9 +168,10 @@ FLAGS_obstacle_lat_buffer = 0.4
 FLAGS_obstacle_lon_start_buffer = 3.0
 FLAGS_obstacle_lon_end_buffer = 2.0
 FLAGS_lane_borrow_max_speed = 5.0
+FLAGS_enable_scenario_side_pass_multiple_parked_obstacles = True
 FLAGS_long_term_blocking_obstacle_cycle_threshold = 3
 FLAGS_allow_lane_borrowing = True
-FLAGS_path_bounds_decider_adc_buffer_coeff = 1.0
+FLAGS_path_bounds_decider_adc_buffer_coeff = 0.0
 FLAGS_path_bounds_decider_extend_lane_bounds_to_include_adc = False
 FLAGS_max_abs_speed_when_stopped = 0.2
 

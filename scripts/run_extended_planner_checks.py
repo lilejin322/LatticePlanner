@@ -299,6 +299,41 @@ def check_static_obstacle_sweep_keeps_pass_direction():
     assert all(point.l_lower.l > 0.4 for point in affected)
 
 
+def check_path_assessment_cpp_tail_and_counter_semantics():
+    from common.path_assessment_decider import (
+        K_NUM_EXTRA_TAIL_BOUND_POINT,
+        _update_path_decider_status,
+    )
+    from common.planning_util import BuildLatticeCandidatePath
+
+    assert K_NUM_EXTRA_TAIL_BOUND_POINT == 20
+
+    _, _, reference_line_info = build_reference_line()
+    reference_line_info.Init([], 10.0)
+    reference_line_info.SetPathData(
+        BuildLatticeCandidatePath(
+            reference_line_info,
+            0.0,
+            [0.0, 0.0, 0.0],
+            30.0,
+            path_label="regular/self",
+        )
+    )
+    context = PlanningContext()
+    status = context.planning_status.path_decider
+
+    status.front_static_obstacle_cycle_counter = 5
+    _update_path_decider_status(reference_line_info, context)
+    assert status.front_static_obstacle_cycle_counter == 4
+
+    obstacle = build_static_obstacle("counter_block", 20.0)
+    reference_line_info.AddObstacle(obstacle)
+    reference_line_info.SetBlockingObstacle(obstacle.Id())
+    status.front_static_obstacle_cycle_counter = -5
+    _update_path_decider_status(reference_line_info, context)
+    assert status.front_static_obstacle_cycle_counter == -4
+
+
 def check_lattice_plan_blocking_with_backup():
     import config as config_module
 
@@ -463,6 +498,39 @@ def check_vehicle_state_nan_is_invalid():
 
     assert util.IsVehicleStateValid(VehicleState())
     assert not util.IsVehicleStateValid(VehicleState(heading=float("nan")))
+
+
+def check_resolve_vehicle_state_rejects_nan_chassis_speed():
+    """
+    Regression test: OnLanePlanning._resolve_vehicle_state used to mask a
+    NaN/None chassis.speed_mps to 0.0 before calling
+    VehicleStateProvider.Update, silently treating corrupted sensor data as
+    "vehicle stationary" and letting planning proceed. C++'s RunOnce has no
+    such sanitization: a NaN speed flows straight into vehicle_state_ and is
+    caught by !util::IsVehicleStateValid(vehicle_state) right after Update(),
+    which aborts to a stop trajectory instead of planning on unreliable data.
+    The Python port must reject it the same way, before any routing-change
+    side effects (which clear PlanningContext / rebuild the planner) can fire.
+    """
+    from common.frame import LocalView
+    from on_lane_planning import OnLanePlanning
+    from protoclass.chassis import Chassis
+    from protoclass.header import Header
+    from protoclass.localization_estimate import LocalizationEstimate
+    from protoclass.point_enu import PointENU
+    from protoclass.pose import Pose
+
+    planner = OnLanePlanning()
+    local_view = LocalView(
+        localization_estimate=LocalizationEstimate(
+            pose=Pose(position=PointENU(x=0.0, y=0.0, z=0.0), heading=0.0),
+            measurement_time=0.0,
+        ),
+        chassis=Chassis(speed_mps=float("nan"), header=Header(timestamp_sec=0.0)),
+    )
+    vehicle_state, status = planner._resolve_vehicle_state(local_view)
+    assert vehicle_state is None
+    assert not status.ok()
 
 
 def check_routing_sequence_change_semantics():
@@ -740,6 +808,7 @@ CHECKS = [
     ("path_bounds_uses_real_neighbor_lane_width", check_path_bounds_uses_real_neighbor_lane_width),
     ("path_lane_borrow_state_machine", check_path_lane_borrow_state_machine),
     ("static_obstacle_sweep_keeps_pass_direction", check_static_obstacle_sweep_keeps_pass_direction),
+    ("path_assessment_cpp_tail_and_counter_semantics", check_path_assessment_cpp_tail_and_counter_semantics),
     ("lattice_plan_blocking_with_backup", check_lattice_plan_blocking_with_backup),
     ("lattice_default_plan", check_lattice_default_plan),
     ("path_decider_with_path_assessment_pipeline", check_path_decider_with_path_assessment_pipeline),
@@ -750,6 +819,7 @@ CHECKS = [
     ("vehicle_state_timestamp_falls_back_to_chassis", check_vehicle_state_timestamp_falls_back_to_chassis),
     ("traffic_light_without_header_is_safe", check_traffic_light_without_header_is_safe),
     ("vehicle_state_nan_is_invalid", check_vehicle_state_nan_is_invalid),
+    ("resolve_vehicle_state_rejects_nan_chassis_speed", check_resolve_vehicle_state_rejects_nan_chassis_speed),
     ("routing_sequence_change_semantics", check_routing_sequence_change_semantics),
     ("routing_change_clears_planning_context", check_routing_change_clears_planning_context),
     ("failed_reference_line_update_stops_planning", check_failed_reference_line_update_stops_planning),

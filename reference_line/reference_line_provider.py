@@ -203,9 +203,36 @@ class ReferenceLineProvider:
         return bool(reference_lines), reference_lines, route_segments
 
     def UpdateReferenceLine(self, reference_lines: List[ReferenceLine], route_segments: List[RouteSegments]) -> None:
+        if len(reference_lines) != len(route_segments):
+            return
+
+        def same_point_xy(lhs, rhs) -> bool:
+            return abs(lhs.x - rhs.x) < 1.0e-8 and abs(lhs.y - rhs.y) < 1.0e-8
+
         with self._reference_lines_mutex:
-            self._reference_lines = [deepcopy(rl) for rl in reference_lines]
-            self._route_segments = [deepcopy(seg) for seg in route_segments]
+            if len(self._reference_lines) != len(reference_lines):
+                self._reference_lines = [deepcopy(rl) for rl in reference_lines]
+                self._route_segments = [deepcopy(seg) for seg in route_segments]
+            else:
+                for index, (reference_line, route_segment) in enumerate(
+                    zip(reference_lines, route_segments)
+                ):
+                    points = reference_line.reference_points
+                    internal_points = self._reference_lines[index].reference_points
+                    if (
+                        points
+                        and internal_points
+                        and same_point_xy(points[0], internal_points[0])
+                        and same_point_xy(points[-1], internal_points[-1])
+                        and abs(
+                            reference_line.Length()
+                            - self._reference_lines[index].Length()
+                        )
+                        < 1.0e-10
+                    ):
+                        continue
+                    self._reference_lines[index] = deepcopy(reference_line)
+                    self._route_segments[index] = deepcopy(route_segment)
             self._is_reference_line_updated = True
             if self._reference_lines and self._route_segments:
                 self._reference_line_history.append([deepcopy(rl) for rl in self._reference_lines])
@@ -235,35 +262,16 @@ class ReferenceLineProvider:
                 break
 
     def CreateRouteSegments(self, vehicle_state: VehicleState) -> Tuple[bool, List[RouteSegments]]:
-        if vehicle_state is None:
+        if vehicle_state is None or self._pnc_map is None:
             return False, []
 
-        if self._pnc_map is not None and self._has_routing:
-            with self._pnc_map_mutex:
-                segments = self._pnc_map.GetRouteSegments(vehicle_state)
-            if segments:
-                if config_module.FLAGS_prioritize_change_lane:
-                    self.PrioritizeChangeLane(segments)
-                return True, segments
-
-        hdmap = HDMapUtil.BaseMap()
-        ok, lane, lane_s, _ = hdmap.GetNearestLaneWithHeading(
-            PointENU(x=vehicle_state.x, y=vehicle_state.y),
-            5.0,
-            vehicle_state.heading if vehicle_state.heading is not None else 0.0,
-            1.0,
-        )
-        if not ok:
-            ok, lane, lane_s, _ = hdmap.GetNearestLane(PointENU(x=vehicle_state.x, y=vehicle_state.y))
-        if ok and lane is not None:
-            route_segment = RouteSegments()
-            route_segment.SetIsOnSegment(True)
-            route_segment.SetId(getattr(lane.id, "id", str(lane.id)))
-            route_segment.append(
-                LaneSegment(lane, max(0.0, lane_s - 50.0), min(lane.total_length, lane_s + 180.0))
-            )
-            return True, [route_segment]
-        return False, []
+        with self._pnc_map_mutex:
+            segments = self._pnc_map.GetRouteSegments(vehicle_state)
+        if not segments:
+            return False, []
+        if config_module.FLAGS_prioritize_change_lane:
+            self.PrioritizeChangeLane(segments)
+        return True, segments
 
     def IsReferenceLineSmoothValid(self, raw: ReferenceLine, smoothed: ReferenceLine) -> bool:
         if raw is None or smoothed is None or not raw.reference_points or not smoothed.reference_points:
@@ -466,8 +474,8 @@ class ReferenceLineProvider:
             return True
         cur_heading = ref_points[index].heading
         last_index = index
-        while last_index < len(ref_points) and abs(
-            AngleDiff(cur_heading, ref_points[last_index].heading)
+        while last_index < len(ref_points) and AngleDiff(
+            cur_heading, ref_points[last_index].heading
         ) < k_max_heading_diff:
             last_index += 1
         last_index -= 1

@@ -764,11 +764,11 @@ class Frame:
             logger.error("Invalid HD Map.")
             return False
         rerouting: ReroutingStatus = planning_context.planning_status.rerouting
-        rerouting.need_rerouting = True
         lane_follow_command: LaneFollowCommand = rerouting.lane_follow_command
         if len(self._future_route_waypoints) < 1:
             logger.error("Failed to find future waypoints")
             return False
+        rerouting.need_rerouting = True
         for i in range(len(self._future_route_waypoints) - 1):
             waypoint: Pose = Pose(position=PointENU(x=self._future_route_waypoints[i].pose.x,
                                                     y=self._future_route_waypoints[i].pose.y),
@@ -803,7 +803,7 @@ class Frame:
         """
 
         if not prediction_obstacles or not prediction_obstacles.header or \
-            not prediction_obstacles.header.timestamp_sec:
+            prediction_obstacles.header.timestamp_sec is None:
             return
 
         prediction_header_time: float = prediction_obstacles.header.timestamp_sec

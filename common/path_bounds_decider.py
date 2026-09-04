@@ -18,7 +18,10 @@ from protoclass.header import ErrorCode
 
 K_PATH_BOUNDS_DECIDER_HORIZON = 100.0
 K_PATH_BOUNDS_DECIDER_RESOLUTION = 0.5
-K_NUM_EXTRA_TAIL_BOUND_POINT = 2
+K_NUM_EXTRA_TAIL_BOUND_POINT = 20
+K_DEFAULT_LANE_WIDTH = 5.0
+K_LANE_BOUNDARY_BUFFER = 0.05
+K_DEFAULT_ADC_BUFFER_COEFF = 1.0
 
 
 class LaneBorrowInfo(Enum):
@@ -36,7 +39,7 @@ class PathBoundsDecider:
         self.adc_frenet_l = 0.0
         self.adc_frenet_ld = 0.0
         self.adc_l_to_lane_center = 0.0
-        self.adc_lane_width = config_module.FLAGS_default_lane_width
+        self.adc_lane_width = K_DEFAULT_LANE_WIDTH
 
     def Process(
         self,
@@ -107,7 +110,7 @@ class PathBoundsDecider:
         self.adc_l_to_lane_center = self.adc_frenet_l + offset_to_map
 
         ok, left, right = reference_line_info.reference_line.GetLaneWidth(self.adc_frenet_s)
-        self.adc_lane_width = (left + right) if ok else config_module.FLAGS_default_lane_width
+        self.adc_lane_width = (left + right) if ok else K_DEFAULT_LANE_WIDTH
 
     def _lane_borrow_infos(
         self,
@@ -205,6 +208,8 @@ class PathBoundsDecider:
         past_lane_left = self.adc_lane_width / 2.0
         past_lane_right = self.adc_lane_width / 2.0
         borrowing_reverse_lane = False
+        is_left_lane_boundary = True
+        is_right_lane_boundary = True
 
         for i, (s, l_min, l_max) in enumerate(path_bound):
             ok, lane_left, lane_right = reference_line.GetLaneWidth(s)
@@ -212,6 +217,10 @@ class PathBoundsDecider:
                 lane_left = past_lane_left
                 lane_right = past_lane_right
             else:
+                road_ok, road_left, road_right = reference_line.GetRoadWidth(s)
+                if road_ok:
+                    is_left_lane_boundary = abs(road_left - lane_left) > K_LANE_BOUNDARY_BUFFER
+                    is_right_lane_boundary = abs(road_right - lane_right) > K_LANE_BOUNDARY_BUFFER
                 _, lane_center_offset = reference_line.GetOffsetToMap(s)
                 lane_left += lane_center_offset
                 lane_right -= lane_center_offset
@@ -285,12 +294,19 @@ class PathBoundsDecider:
                 curr_left = curr_left_lane - offset_to_map
                 curr_right = curr_right_lane - offset_to_map
 
-            coeff = config_module.FLAGS_path_bounds_decider_adc_buffer_coeff
+            right_coeff = (
+                config_module.FLAGS_path_bounds_decider_adc_buffer_coeff
+                if is_right_lane_boundary else K_DEFAULT_ADC_BUFFER_COEFF
+            )
+            left_coeff = (
+                config_module.FLAGS_path_bounds_decider_adc_buffer_coeff
+                if is_left_lane_boundary else K_DEFAULT_ADC_BUFFER_COEFF
+            )
             new_l_min = max(
-                l_min, curr_right + coeff * config_module.FLAGS_half_vehicle_width
+                l_min, curr_right + right_coeff * config_module.FLAGS_half_vehicle_width
             )
             new_l_max = min(
-                l_max, curr_left - coeff * config_module.FLAGS_half_vehicle_width
+                l_max, curr_left - left_coeff * config_module.FLAGS_half_vehicle_width
             )
             if new_l_min > new_l_max:
                 del path_bound[i:]
@@ -306,6 +322,9 @@ class PathBoundsDecider:
         borrow_info: LaneBorrowInfo,
     ) -> bool:
         if borrow_info == LaneBorrowInfo.NO_BORROW:
+            return False
+        ref_point = reference_line_info.reference_line.GetNearestReferencePoint(check_s)
+        if ref_point is None or not ref_point.lane_waypoints:
             return False
         left_type, right_type = reference_line_info.reference_line.GetLaneBoundaryType(
             check_s
@@ -357,22 +376,14 @@ class PathBoundsDecider:
             )
         edges.sort(key=lambda edge: (edge[1], -edge[0]))
 
+        half_vehicle_width = config_module.FLAGS_half_vehicle_width
         center_line = self.adc_frenet_l
         edge_index = 0
         active = {}
-        for i in range(1, len(path_bound)):
-            s, l_min, l_max = path_bound[i]
-            entering_id = ""
-            while edge_index < len(edges) and edges[edge_index][1] < s:
-                is_start, _, obs_l_min, obs_l_max, obstacle_id = edges[edge_index]
-                if is_start:
-                    entering_id = obstacle_id
-                    pass_left = obs_l_min + obs_l_max < center_line * 2.0
-                    active[obstacle_id] = (pass_left, obs_l_min, obs_l_max)
-                else:
-                    active.pop(obstacle_id, None)
-                edge_index += 1
 
+        def apply_active_bounds(index: int) -> bool:
+            nonlocal center_line
+            s, l_min, l_max = path_bound[index]
             right_bound = max(
                 (details[2] for details in active.values() if details[0]),
                 default=float("-inf"),
@@ -381,21 +392,47 @@ class PathBoundsDecider:
                 (details[1] for details in active.values() if not details[0]),
                 default=float("inf"),
             )
-            new_l_min = max(
-                l_min, right_bound + config_module.FLAGS_half_vehicle_width
-            )
-            new_l_max = min(
-                l_max, left_bound - config_module.FLAGS_half_vehicle_width
-            )
+            new_l_min = max(l_min, right_bound + half_vehicle_width)
+            new_l_max = min(l_max, left_bound - half_vehicle_width)
             if new_l_min > new_l_max:
-                if entering_id:
-                    blocking_id_holder[0] = entering_id
-                elif active:
-                    blocking_id_holder[0] = next(iter(active))
-                del path_bound[i:]
-                break
-            path_bound[i] = (s, new_l_min, new_l_max)
+                return False
+            path_bound[index] = (s, new_l_min, new_l_max)
             center_line = 0.5 * (new_l_min + new_l_max)
+            return True
+
+        for i in range(1, len(path_bound)):
+            s = path_bound[i][0]
+            blocked = False
+            if edge_index < len(edges) and edges[edge_index][1] < s:
+                # Re-apply the bounds after every single edge event (not just
+                # once per path point), so a later edge in the same 0.5m step
+                # sees the centerline as narrowed by the earlier one -- matching
+                # UpdatePathBoundaryAndCenterLineWithBuffer being called once
+                # per edge in path_bounds_decider.cc, instead of once per point.
+                while edge_index < len(edges) and edges[edge_index][1] < s:
+                    is_start, _, obs_l_min, obs_l_max, obstacle_id = edges[edge_index]
+                    if is_start:
+                        pass_left = obs_l_min + obs_l_max < center_line * 2.0
+                        active[obstacle_id] = (pass_left, obs_l_min, obs_l_max)
+                    else:
+                        active.pop(obstacle_id, None)
+                    edge_index += 1
+                    if not apply_active_bounds(i):
+                        if is_start:
+                            blocking_id_holder[0] = obstacle_id
+                        elif active:
+                            blocking_id_holder[0] = next(iter(active))
+                        del path_bound[i:]
+                        blocked = True
+                        break
+            else:
+                if not apply_active_bounds(i):
+                    if active:
+                        blocking_id_holder[0] = next(iter(active))
+                    del path_bound[i:]
+                    blocked = True
+            if blocked:
+                break
         return True
 
     @staticmethod

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import time
-import math
 from copy import deepcopy
 from logging import Logger
 from typing import List, Optional, Tuple
@@ -11,6 +10,7 @@ from typing import List, Optional, Tuple
 from lattice_planner import LatticePlanner
 from common.discretized_path import DiscretizedPath
 from common.frame import EgoInfo, Frame, LocalView
+from common.frame import util as vehicle_state_util
 from common.planning_context import PlanningContext
 from common.pnc_map import PncMap
 from common.publishable_trajectory import PublishableTrajectory
@@ -276,15 +276,14 @@ class OnLanePlanning:
 
         localization = local_view.localization_estimate or LocalizationEstimate()
         chassis = local_view.chassis or Chassis()
-        if chassis.speed_mps is None or (
-            isinstance(chassis.speed_mps, float) and math.isnan(chassis.speed_mps)
-        ):
-            chassis.speed_mps = 0.0
         localization = self._normalize_localization(localization)
         status = self._vehicle_state_provider.Update(localization, chassis)
         if not status.ok():
             return None, status
-        return self._vehicle_state_provider.vehicle_state, Status.OK()
+        vehicle_state = self._vehicle_state_provider.vehicle_state
+        if not vehicle_state_util.IsVehicleStateValid(vehicle_state):
+            return None, Status(ErrorCode.PLANNING_ERROR, "Adc init point is not set")
+        return vehicle_state, Status.OK()
 
     def _align_time_stamp(self, vehicle_state: VehicleState, curr_timestamp: float) -> VehicleState:
         """Mirrors on_lane_planning.cc's AlignTimeStamp: dead-reckon x/y forward

@@ -223,7 +223,7 @@ class ReferenceLineInfo:
             return None
 
         perception_sl = SLBoundary()
-        tag = self._reference_line.GetSLBoundary(obstacle.PerceptionPolygon(), perception_sl)
+        tag = self._reference_line.GetSLBoundary(obstacle.PerceptionBoundingBox(), perception_sl)
         if not tag:
             logger.error(f"Failed to get SL boundary for obstacle {obstacle.Id()}")
             return mutable_obstacle
@@ -310,8 +310,9 @@ class ReferenceLineInfo:
         rtype: bool
         """
 
+        K_DESTINATION_DELTA_S = 0.05
         distance_destination: float = self.SDistanceToDestination()
-        return distance_destination <= config_module.FLAGS_passed_destination_threshold
+        return distance_destination <= K_DESTINATION_DELTA_S
 
     def SetTrajectory(self, trajectory: DiscretizedTrajectory) -> None:
         """
@@ -1400,7 +1401,7 @@ class ReferenceLineInfo:
         if obstacle_boundary.end_s > self._reference_line.Length():
             return True
         if self._is_on_reference_line and (not self.IsChangeLanePath()) \
-                                      and (self._adc_sl_boundary.end_s - obstacle_boundary.end_s > config_module.FLAGS_obstacle_lon_ignore_buffer) \
+                                      and (obstacle_boundary.end_s < self._adc_sl_boundary.end_s) \
                                       and (self._reference_line.IsOnLane(obstacle_boundary) or obstacle_boundary.end_s < 0.0):
             # if obstacle is far backward
             return True

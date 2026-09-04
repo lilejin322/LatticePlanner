@@ -14,6 +14,7 @@ from scripts.planner_test_fixtures import (
     apply_borrow_path_trajectory,
     build_curved_lattice_plan_frame,
     build_curved_static_obstacle,
+    build_center_lane_reference_line,
     build_lattice_plan_frame,
     build_overtake_lattice_frame,
     build_path_bounds_overtake_frame,
@@ -179,13 +180,16 @@ def s_decider_lane_borrow_bounds() -> BuilderResult:
     from common.planning_context import PlanningContext
 
     obs = build_static_obstacle("borrow_block", 35.0)
-    frame, rli, start = build_lattice_plan_frame(
-        [obs], blocking_obstacle_id="borrow_block"
-    )
+    _, rli = build_center_lane_reference_line()
+    rli.Init([obs], 10.0)
+    rli.SetBlockingObstacle("borrow_block")
+    rli.set_is_path_lane_borrow(True)
     ctx = PlanningContext()
     ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    ctx.planning_status.path_decider.decided_side_pass_direction = [1, 2]
     ok = PathBoundsDecider().Process(None, rli, ctx).ok()
     labels = [b.label for b in rli.GetCandidatePathBoundaries()]
+    ok = ok and "regular/left/forward" in labels and "regular/right/forward" in labels
     extra = f"bounds_ok={ok} labels={labels}"
     return None, rli, None, ok, None, extra
 

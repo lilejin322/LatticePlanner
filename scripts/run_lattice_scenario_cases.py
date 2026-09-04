@@ -153,7 +153,7 @@ def execute(scenario: Scenario) -> RunOutcome:
                 detail="decider 跳过（未产出 path）",
             )
 
-        if scenario.skip_lattice and rli.trajectory and len(rli.trajectory) > 0:
+        if scenario.skip_lattice:
             got_ok = bool(built[3])
         else:
             got_ok = run_lattice_plan(

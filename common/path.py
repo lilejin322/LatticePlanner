@@ -190,6 +190,7 @@ class PathApproximation:
             while last_index + 1 < num_original_points and self._max_original_projections_to_left[last_index + 1] < proj:
                 last_index += 1
             self._sampled_max_original_projections_to_left.append(last_index)
+            proj += kSampleDistance
         assert len(self._sampled_max_original_projections_to_left) == self._num_projection_samples
     
     def compute_max_error(self, path: 'Path', s: int, t: int) -> float:

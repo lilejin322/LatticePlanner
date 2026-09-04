@@ -333,8 +333,55 @@ def check_hdmap_basic_queries():
     provider = ReferenceLineProvider()
     vehicle_state = VehicleState(x=5.0, y=0.0, heading=0.0)
     ok, route_segments = provider.CreateRouteSegments(vehicle_state)
+    assert not ok
+    assert route_segments == []
+
+
+def check_hdmap_get_nearest_lane_uses_clamped_distance():
+    """
+    Regression test: HDMap.GetNearestLane/GetNearestLaneWithHeading used to
+    rank candidate lanes by abs(lane_l) from GetProjection, which is
+    deliberately UNCLAMPED beyond a lane's first/last segment (it returns
+    perpendicular distance to the infinite extension of that segment, not
+    distance to the actual finite lane). C++'s HDMapImpl::GetNearestLane
+    ranks by the real clamped distance (LaneInfo::DistanceTo, backed by a
+    KD-tree over actual segments). Build a short lane and a longer lane
+    further away: query a point far past the short lane's end but roughly
+    aligned with its heading, so the unclamped metric would have picked the
+    short lane (small perpendicular distance to its infinite extension)
+    while the true nearest lane is the other one.
+    """
+    hdmap = HDMap()
+    short_lane = Lane(
+        id=Lane.Id("short"),
+        central_curve=Curve(segment=[CurveSegment(curve_type=LineSegment(
+            point=[PointENU(x=0.0, y=0.0), PointENU(x=5.0, y=0.0)]))]),
+        length=5.0,
+        speed_limit=10.0,
+        left_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        right_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        type=Lane.LaneType.CITY_DRIVING,
+    )
+    far_lane = Lane(
+        id=Lane.Id("far"),
+        central_curve=Curve(segment=[CurveSegment(curve_type=LineSegment(
+            point=[PointENU(x=0.0, y=10.0), PointENU(x=100.0, y=10.0)]))]),
+        length=100.0,
+        speed_limit=10.0,
+        left_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        right_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        type=Lane.LaneType.CITY_DRIVING,
+    )
+    hdmap.AddLane(short_lane)
+    far_info = hdmap.AddLane(far_lane)
+    HDMapUtil.SetBaseMap(hdmap)
+
+    query = PointENU(x=50.0, y=0.3)
+    ok, nearest_lane, s, l = hdmap.GetNearestLane(query)
     assert ok
-    assert route_segments[0][0].lane is lane_info
+    assert nearest_lane is far_info, "must pick the truly-nearest lane, not the one with the smallest unclamped projection"
+    assert abs(s - 50.0) < 1e-6
+    assert abs(l - (-9.7)) < 1e-6
 
 
 def check_map_path_route_segment_regressions():
@@ -487,6 +534,33 @@ def check_reference_line_provider_with_routing():
     assert ok
     assert len(reference_lines) >= 2
     assert len(reference_lines) == len(route_segments)
+
+
+def check_reference_line_provider_reuses_unchanged_reference_line():
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(_build_straight_lane("stable_lane", length=30.0))
+    HDMapUtil.SetBaseMap(hdmap)
+    segments = RouteSegments()
+    segments.SetIsOnSegment(True)
+    segments.SetId("stable")
+    segments.append(LaneSegment(lane_info, 0.0, 29.0))
+    reference_line = ReferenceLine(MapPath(segments))
+
+    provider = ReferenceLineProvider()
+    provider.UpdateReferenceLine([reference_line], [segments])
+    cached_reference_line = provider._reference_lines[0]
+    cached_route_segment = provider._route_segments[0]
+    history_size = len(provider._reference_line_history)
+
+    provider.UpdateReferenceLine([ReferenceLine(MapPath(segments))], [segments])
+    assert provider._reference_lines[0] is cached_reference_line
+    assert provider._route_segments[0] is cached_route_segment
+    assert len(provider._reference_line_history) == history_size + 1
+
+    provider.UpdateReferenceLine([reference_line], [])
+    assert provider._reference_lines[0] is cached_reference_line
+    assert provider._route_segments[0] is cached_route_segment
+    assert len(provider._reference_line_history) == history_size + 1
 
 
 def check_traffic_decider_stop_point():
@@ -716,6 +790,32 @@ def check_qp_spline_reference_line_smoothing():
         hdmap.AddLane(_build_straight_lane())
         HDMapUtil.SetBaseMap(hdmap)
         provider = ReferenceLineProvider()
+        provider.UpdateRoutingResponse(
+            RoutingResponse(
+                routing_request=RoutingRequest(
+                    waypoint=[
+                        RoutingLaneWaypoint(id="lane_1", s=0.0),
+                        RoutingLaneWaypoint(id="lane_1", s=90.0),
+                    ]
+                ),
+                road=[
+                    RoadSegment(
+                        id="road_1",
+                        passage=[
+                            Passage(
+                                segment=[
+                                    RoutingLaneSegment(
+                                        id="lane_1", start_s=0.0, end_s=99.0
+                                    )
+                                ],
+                                can_exit=True,
+                                change_lane_type=ChangeLaneType.FORWARD,
+                            )
+                        ],
+                    )
+                ],
+            )
+        )
         provider.UpdateVehicleState(VehicleState(x=10.0, y=0.0, heading=0.0))
         ok, reference_lines, _ = provider.CreateReferenceLine()
         assert ok
@@ -1357,6 +1457,32 @@ def check_reference_line_smoothing():
         hdmap.AddLane(_build_straight_lane())
         HDMapUtil.SetBaseMap(hdmap)
         provider = ReferenceLineProvider()
+        provider.UpdateRoutingResponse(
+            RoutingResponse(
+                routing_request=RoutingRequest(
+                    waypoint=[
+                        RoutingLaneWaypoint(id="lane_1", s=0.0),
+                        RoutingLaneWaypoint(id="lane_1", s=90.0),
+                    ]
+                ),
+                road=[
+                    RoadSegment(
+                        id="road_1",
+                        passage=[
+                            Passage(
+                                segment=[
+                                    RoutingLaneSegment(
+                                        id="lane_1", start_s=0.0, end_s=99.0
+                                    )
+                                ],
+                                can_exit=True,
+                                change_lane_type=ChangeLaneType.FORWARD,
+                            )
+                        ],
+                    )
+                ],
+            )
+        )
         provider.UpdateVehicleState(VehicleState(x=10.0, y=0.0, heading=0.0))
         ok, reference_lines, _ = provider.CreateReferenceLine()
         assert ok
@@ -1699,6 +1825,14 @@ def check_path_approximation_matches_exact_projection():
         assert abs(approx_value - exact_value) < 1e-6
 
 
+def check_path_approximation_projection_samples_advance():
+    points = [MapPathPoint(Vec2d(float(i), 0.0)) for i in range(41)]
+    path = MapPath(points, [], 0.5)
+    samples = path._approximation._sampled_max_original_projections_to_left
+    assert len(samples) > 1
+    assert samples[-1] > samples[0]
+
+
 def check_path_get_projection_with_warm_start_s():
     """
     Regression test: Path.GetProjectionWithWarmStartS called
@@ -1855,6 +1989,81 @@ def check_kd_tree_nearest_object_matches_brute_force():
         assert abs(nearest.DistanceTo(query) - brute_force_nearest.DistanceTo(query)) < 1e-9
 
 
+def check_path_bounds_sweep_line_updates_center_line_per_edge():
+    """
+    Regression test: PathBoundsDecider._get_boundary_from_static_obstacles
+    used to batch ALL obstacle-edge events that land within the same 0.5m
+    path-bound step and only recompute center_line once, after the whole
+    batch -- so a second edge in the same step used a stale center_line left
+    over from the PREVIOUS point, instead of the fresh one produced by the
+    first edge in its own batch (path_bounds_decider.cc calls
+    UpdatePathBoundaryAndCenterLineWithBuffer once per edge, not once per
+    point). Construct two obstacles whose buffered edges land in the same
+    0.5m step: obstacle A (clearly to the right) shifts the centerline
+    left when processed first; obstacle B straddles the boundary between
+    the stale centerline (0.0) and A's fresh centerline, so which side B
+    is assigned to differs between the two centerlines. With the stale
+    centerline, B is wrongly classified into a "pass on the right" group
+    that conflicts with A's "pass on the left" group and the corridor
+    becomes infeasible (l_min > l_max) purely from ordering, not geometry;
+    with the fix, both obstacles are classified consistently and produce a
+    valid, non-empty corridor.
+    """
+    import common.path_bounds_decider as path_bounds_decider_module
+    from common.path_bounds_decider import PathBoundsDecider
+
+    class _FakeSlBoundary:
+        def __init__(self, start_s, end_s, start_l, end_l):
+            self.start_s = start_s
+            self.end_s = end_s
+            self.start_l = start_l
+            self.end_l = end_l
+
+    class _FakeObstacle:
+        def __init__(self, obstacle_id, sl_boundary):
+            self._id = obstacle_id
+            self._sl_boundary = sl_boundary
+
+        def Id(self):
+            return self._id
+
+        def PerceptionSLBoundary(self):
+            return self._sl_boundary
+
+    class _FakePathDecision:
+        def __init__(self, obstacles):
+            self.obstacles = obstacles
+
+    class _FakeReferenceLineInfo:
+        def __init__(self, obstacles):
+            self.path_decision = _FakePathDecision(obstacles)
+
+    obstacle_a = _FakeObstacle("A", _FakeSlBoundary(8.2, 50.0, -3.0, -1.0))
+    obstacle_b = _FakeObstacle("B", _FakeSlBoundary(8.3, 50.0, 0.5, 1.5))
+    reference_line_info = _FakeReferenceLineInfo({"A": obstacle_a, "B": obstacle_b})
+
+    decider = PathBoundsDecider()
+    decider.adc_frenet_s = 0.0
+    decider.adc_frenet_l = 0.0
+    path_bound = [(i * 0.5, -3.5, 3.5) for i in range(21)]
+
+    original_scope_filter = path_bounds_decider_module.IsWithinPathDeciderScopeObstacle
+    path_bounds_decider_module.IsWithinPathDeciderScopeObstacle = lambda obstacle: True
+    try:
+        blocking_id_holder = [""]
+        ok = decider._get_boundary_from_static_obstacles(
+            reference_line_info, path_bound, blocking_id_holder
+        )
+    finally:
+        path_bounds_decider_module.IsWithinPathDeciderScopeObstacle = original_scope_filter
+
+    assert ok is True
+    assert blocking_id_holder[0] == "", "path must not be reported as blocked"
+    assert len(path_bound) == 21, "path bound must not be truncated"
+    bound_at_5_5 = next(entry for entry in path_bound if abs(entry[0] - 5.5) < 1e-9)
+    assert bound_at_5_5[1] <= bound_at_5_5[2], "corridor at s=5.5 must remain feasible (l_min <= l_max)"
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -1866,9 +2075,11 @@ def main():
     check_lateral_osqp_keeps_usable_non_solved_result()
     check_prediction_time_alignment()
     check_hdmap_basic_queries()
+    check_hdmap_get_nearest_lane_uses_clamped_distance()
     check_map_path_route_segment_regressions()
     check_pnc_map_multi_reference_lines()
     check_reference_line_provider_with_routing()
+    check_reference_line_provider_reuses_unchanged_reference_line()
     check_traffic_decider_stop_point()
     check_yield_sign_rule_stop_point()
     check_keep_clear_rule_obstacle()
@@ -1921,6 +2132,7 @@ def main():
     check_obstacle_uses_full_adc_width_for_blocking()
     check_obstacle_first_st_search_window_matches_cpp()
     check_path_approximation_matches_exact_projection()
+    check_path_approximation_projection_samples_advance()
     check_path_get_projection_with_warm_start_s()
     check_vec2d_rmul()
     check_aabox2d_distance_to()
@@ -1929,6 +2141,7 @@ def main():
     check_polygon2d_get_overlap_no_overlap_does_not_crash()
     check_path_overlap_with_approximation_enabled()
     check_kd_tree_nearest_object_matches_brute_force()
+    check_path_bounds_sweep_line_updates_center_line_per_edge()
     print("lattice component checks succeeded")
 
 

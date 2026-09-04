@@ -6,15 +6,50 @@ from typing import Optional, Tuple
 
 import config as config_module
 from common.frame import Frame
+from common.hd_map import HDMapUtil
 from common.planning_context import PlanningContext
 from common.status import Status
-from protoclass.lane import LaneBoundaryType
+from protoclass.lane import Lane, LaneBoundaryType
+from protoclass.point_enu import PointENU
 from reference_line.reference_line_info import ReferenceLineInfo
 
 
 K_INTERSECTION_CLEARANCE_DIST = 20.0
 K_ADC_DISTANCE_THRESHOLD = 35.0
 K_OBSTACLES_DISTANCE_THRESHOLD = 15.0
+
+
+def IsParkedVehicle(reference_line, obstacle) -> bool:
+    """
+    Matches obstacle_blocking_analyzer.cc's IsParkedVehicle: an obstacle is
+    considered parked (hence automatically non-movable/side-passable) if it
+    sits on a dedicated parking lane, or hugs the road's right edge.
+
+    :param ReferenceLine reference_line: Reference line
+    :param Obstacle obstacle: Obstacle to classify
+    :returns: True if the obstacle looks parked
+    :rtype: bool
+    """
+
+    if not config_module.FLAGS_enable_scenario_side_pass_multiple_parked_obstacles:
+        return False
+
+    obstacle_sl = obstacle.PerceptionSLBoundary()
+    _, _, road_right_width = reference_line.GetRoadWidth(obstacle_sl.start_s)
+    max_road_right_width = road_right_width
+    _, _, road_right_width = reference_line.GetRoadWidth(obstacle_sl.end_s)
+    max_road_right_width = max(max_road_right_width, road_right_width)
+    is_at_road_edge = abs(obstacle_sl.start_l) > max_road_right_width - 0.1
+
+    obstacle_box = obstacle.PerceptionBoundingBox()
+    lanes = HDMapUtil.BaseMapPtr().GetLanes(
+        PointENU(x=obstacle_box.center.x, y=obstacle_box.center.y),
+        min(obstacle_box.width, obstacle_box.length),
+    )
+    is_on_parking_lane = len(lanes) == 1 and lanes[0].lane.type == Lane.LaneType.PARKING
+
+    is_parked = is_on_parking_lane or is_at_road_edge
+    return is_parked and obstacle.IsStatic()
 
 
 class PathLaneBorrowDecider:
@@ -130,6 +165,9 @@ class PathLaneBorrowDecider:
         adc_end_s = reference_line_info.AdcSlBoundary().end_s
         if obstacle_sl.start_s > adc_end_s + K_ADC_DISTANCE_THRESHOLD:
             return False
+
+        if IsParkedVehicle(reference_line_info.reference_line, obstacle):
+            return True
 
         for other in reference_line_info.path_decision.obstacles.values():
             if other.Id() == obstacle.Id() or other.IsVirtual():

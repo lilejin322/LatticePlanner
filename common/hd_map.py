@@ -203,14 +203,14 @@ class HDMap:
         best_l = 0.0
         best_distance = float("inf")
         for lane in self._lanes.values():
-            ok, lane_s, lane_l = lane.GetProjection(xy)
-            if not ok:
+            distance, _, s_offset, s_offset_index = lane.DistanceTo(xy)
+            if s_offset_index < 0:
                 continue
-            distance = abs(lane_l)
             if distance < best_distance:
+                segment = lane.segments[min(s_offset_index, len(lane.segments) - 1)]
                 best_lane = lane
-                best_s = lane_s
-                best_l = lane_l
+                best_s = s_offset
+                best_l = segment.unit_direction.CrossProd(xy - segment.start)
                 best_distance = distance
         return best_lane is not None, best_lane, best_s, best_l
 
@@ -224,8 +224,11 @@ class HDMap:
         xy = Vec2d(point.x, point.y)
         lanes = []
         for lane in self.GetLanes(point, distance):
-            ok, lane_s, _ = lane.GetProjection(xy)
-            if ok and abs(AngleDiff(lane.Heading(lane_s), central_heading)) <= max_heading_difference:
+            lane_distance, _, _, s_offset_index = lane.DistanceTo(xy)
+            if s_offset_index < 0 or lane_distance > distance:
+                continue
+            heading = lane.headings[min(s_offset_index, len(lane.headings) - 1)]
+            if abs(AngleDiff(heading, central_heading)) <= max_heading_difference:
                 lanes.append(lane)
         return lanes
 
@@ -237,12 +240,22 @@ class HDMap:
         max_heading_difference: float,
     ) -> Tuple[bool, Optional[LaneInfo], float, float]:
         xy = Vec2d(point.x, point.y)
-        best = (False, None, 0.0, 0.0, float("inf"))
+        best_lane = None
+        best_s = 0.0
+        best_s_offset_index = 0
+        best_distance = distance
         for lane in self.GetLanesWithHeading(point, distance, central_heading, max_heading_difference):
-            ok, lane_s, lane_l = lane.GetProjection(xy)
-            if ok and abs(lane_l) < best[-1]:
-                best = (True, lane, lane_s, lane_l, abs(lane_l))
-        return best[0], best[1], best[2], best[3]
+            lane_distance, _, s_offset, s_offset_index = lane.DistanceTo(xy)
+            if lane_distance < best_distance:
+                best_distance = lane_distance
+                best_lane = lane
+                best_s = s_offset
+                best_s_offset_index = s_offset_index
+        if best_lane is None:
+            return False, None, 0.0, 0.0
+        segment = best_lane.segments[min(best_s_offset_index, len(best_lane.segments) - 1)]
+        best_l = segment.unit_direction.CrossProd(xy - segment.start)
+        return True, best_lane, best_s, best_l
 
     def GetRoads(self, point: PointENU, distance: float) -> List[RoadInfo]:
         # Road polygons are not modelled in the Python dataclasses yet; return all

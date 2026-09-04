@@ -384,6 +384,65 @@ def build_left_lane_reference_line(length: float = 100.0, init_v: float = 1.0):
     return reference_line, rli
 
 
+def build_center_lane_reference_line(length: float = 100.0, init_v: float = 1.0):
+    """Build a center-lane reference line with real forward neighbors on both sides."""
+
+    def offset_lane(lane_id: str, y: float) -> Lane:
+        lane = build_straight_lane(lane_id, length=length)
+        lane.central_curve = Curve(
+            segment=[
+                CurveSegment(
+                    curve_type=LineSegment(
+                        point=[PointENU(x=0.0, y=y), PointENU(x=length, y=y)]
+                    )
+                )
+            ]
+        )
+        return lane
+
+    center = offset_lane("lane_center", 0.0)
+    left = offset_lane("lane_left_neighbor", 3.5)
+    right = offset_lane("lane_right_neighbor", -3.5)
+    center.left_neighbor_forward_lane_id = [Lane.Id("lane_left_neighbor")]
+    center.right_neighbor_forward_lane_id = [Lane.Id("lane_right_neighbor")]
+    left.right_neighbor_forward_lane_id = [Lane.Id("lane_center")]
+    right.left_neighbor_forward_lane_id = [Lane.Id("lane_center")]
+    center.left_road_sample = [LaneSampleAssociation(s=0.0, width=5.5)]
+    center.right_road_sample = [LaneSampleAssociation(s=0.0, width=5.5)]
+
+    hdmap = HDMap()
+    center_info = hdmap.AddLane(center)
+    hdmap.AddLane(left)
+    hdmap.AddLane(right)
+    HDMapUtil.SetBaseMap(hdmap)
+
+    route_segments = RouteSegments()
+    route_segments.SetIsOnSegment(True)
+    route_segments.SetId("lane_center")
+    route_segments.append(LaneSegment(center_info, 0.0, length - 1.0))
+    reference_line = ReferenceLine(MapPath(route_segments))
+    start_point = TrajectoryPoint(
+        path_point=PathPoint(
+            x=0.0,
+            y=0.0,
+            z=0.0,
+            theta=0.0,
+            kappa=0.0,
+            s=0.0,
+            dkappa=0.0,
+            ddkappa=0.0,
+        ),
+        v=init_v,
+        a=0.0,
+        relative_time=0.0,
+    )
+    vehicle_state = VehicleState(x=0.0, y=0.0, heading=0.0)
+    reference_line_info = ReferenceLineInfo(
+        vehicle_state, start_point, reference_line, route_segments
+    )
+    return reference_line, reference_line_info
+
+
 def build_slow_leader_obstacle(
     obs_id: str,
     x: float,
@@ -659,6 +718,10 @@ def apply_path_bounds_overtake_trajectory(
 
     ctx = PlanningContext()
     ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    ctx.planning_status.path_decider.decided_side_pass_direction = [
+        1 if "/left/" in path_label else 2
+    ]
+    reference_line_info.set_is_path_lane_borrow(True)
 
     if not PathBoundsDecider().Process(None, reference_line_info, ctx).ok():
         return False, "PathBounds failed"
@@ -720,12 +783,15 @@ def build_path_bounds_overtake_frame(
 ):
     """超车场景（推荐）：PathBounds 左借道 + S 形剖面 + Combine。"""
     leader = build_slow_leader_obstacle("slow_leader", leader_x)
-    frame, rli, start = build_lattice_plan_frame(
-        [leader],
-        length=length,
-        init_v=init_v,
-        blocking_obstacle_id="slow_leader",
-    )
+    from common.frame import Frame
+
+    _, rli = build_center_lane_reference_line(length=length, init_v=init_v)
+    frame = Frame(0)
+    frame._obstacles = {leader.Id(): leader}
+    rli.Init([leader], 10.0)
+    rli.SetBlockingObstacle("slow_leader")
+    frame._reference_line_info = [rli]
+    start = rli._adc_planning_point
     ok, detail = apply_path_bounds_overtake_trajectory(
         rli, start, path_label, cruise_v=max(cruise_v, init_v), obstacle_x=leader_x
     )
@@ -751,6 +817,10 @@ def apply_borrow_path_trajectory(
     ctx = PlanningContext()
     if lane_borrow:
         ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+        ctx.planning_status.path_decider.decided_side_pass_direction = [
+            1 if "/left/" in path_label else 2
+        ]
+        reference_line_info.set_is_path_lane_borrow(True)
 
     if not PathBoundsDecider().Process(None, reference_line_info, ctx).ok():
         return False, "PathBounds failed"

@@ -432,11 +432,7 @@ class PncMap:
         heading = state.heading if state.heading is not None else 0.0
         lanes = self._hdmap.GetLanesWithHeading(point, k_max_distance, heading, math.pi / 2.0 + k_heading_buffer)
         if not lanes:
-            ok, lane, lane_s, _ = self._hdmap.GetNearestLane(point)
-            if ok and lane is not None:
-                lanes = [lane]
-            else:
-                return False
+            return False
 
         valid_lanes = [lane for lane in lanes if _lane_id_str(lane.id) in self._range_lane_ids]
         if not valid_lanes:
@@ -447,21 +443,24 @@ class PncMap:
         min_distance = float("inf")
         best_lane = None
         best_s = 0.0
+        xy = Vec2d(point.x, point.y)
 
         for lane in valid_lanes:
             if _lane_id_str(lane.id) not in self._range_lane_ids and self._range_lane_ids:
                 continue
-            ok, lane_s, lane_l = lane.GetProjection(Vec2d(point.x, point.y))
+            ok, lane_s, _ = lane.GetProjection(xy)
             if not ok:
-                continue
+                return False
             k_epsilon = 0.5
             if lane_s > lane.total_length + k_epsilon or lane_s + k_epsilon < 0.0:
                 continue
-            distance = abs(lane_l)
+            distance, _, s_offset, s_offset_index = lane.DistanceTo(xy)
+            if s_offset_index < 0:
+                continue
             if distance < min_distance:
                 min_distance = distance
                 best_lane = lane
-                best_s = lane_s
+                best_s = s_offset
 
         if best_lane is None:
             return False
