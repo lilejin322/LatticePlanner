@@ -241,3 +241,7 @@ modules/
 # Ignore the AI generated folder
 .codex/
 .claude/
+
+# Ignore the Microsoft Z3 workspace
+z3/*
+!z3/.gitkeep
