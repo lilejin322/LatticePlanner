@@ -278,9 +278,14 @@ def s_on_lane_overtake_path_bounds() -> BuilderResult:
     from protoclass.pose import Pose
     from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles
     from protoclass.point_enu import PointENU
-    from scripts.planner_test_fixtures import build_reference_line
+    from scripts.planner_test_fixtures import build_left_lane_reference_line
 
-    reference_line, _, reference_line_info = build_reference_line(length=100.0)
+    # Needs a reference line with a real neighbor lane (unlike the generic
+    # single-lane build_reference_line fixture): PathBoundsDecider now looks
+    # up the actual neighbor lane width via ReferenceLineInfo.GetNeighborLaneInfo
+    # instead of assuming a flat default lane width, so a borrow boundary can
+    # only be non-trivial where a real adjacent lane exists.
+    reference_line, reference_line_info = build_left_lane_reference_line(length=100.0, init_v=5.0)
     provider = ReferenceLineProvider()
     provider._reference_lines = [reference_line]
     provider._route_segments = [reference_line_info.Lanes()]
@@ -311,6 +316,11 @@ def s_on_lane_overtake_path_bounds() -> BuilderResult:
     )
     ctx = PlanningContext()
     ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    # Only lane_right (this fixture's right neighbor) actually exists as a
+    # real neighbor lane, so only RIGHT_BORROW can produce a non-trivial
+    # boundary; a left-borrow attempt would legitimately fall back to
+    # neighbor_width=0.0 with no real left neighbor to borrow.
+    ctx.planning_status.path_decider.decided_side_pass_direction = [2]
 
     old_values = (
         config_module.FLAGS_enable_reference_line_provider_thread,
@@ -444,6 +454,8 @@ def s_overtake_borrow_offset_not_s_curve() -> BuilderResult:
     frame, rli, start = build_overtake_lattice_frame(30.0, init_v=5.0)
     ctx = PlanningContext()
     ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    ctx.planning_status.path_decider.decided_side_pass_direction = [1]
+    rli.set_is_path_lane_borrow(True)
     PathBoundsDecider().Process(None, rli, ctx)
     cands = BuildCandidatePathsFromBoundaries(rli)
     left = next(c for c in cands if c.path_label == "regular/left/forward")
