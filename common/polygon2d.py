@@ -398,9 +398,8 @@ class Polygon2d:
                (line_segment.start.y > self._max_y and line_segment.end.y > self._max_y):
                 return False
 
-            if any(poly_seg.HasIntersect(line_segment) for poly_seg in self._line_segments):
-                return True
-            return False
+            has_overlap, _, _ = self.GetOverlap(line_segment)
+            return has_overlap
 
         if isinstance(args[0], Polygon2d):
             """
@@ -573,8 +572,8 @@ class Polygon2d:
         py1, py2 = self.ExtremePoints(heading - math.pi / 2.0)
         x1: float = px1.InnerProd(direction_vec)
         x2: float = px2.InnerProd(direction_vec)
-        y1: float = py1.InnerProd(direction_vec)
-        y2: float = py2.InnerProd(direction_vec)
+        y1: float = py1.CrossProd(direction_vec)
+        y2: float = py2.CrossProd(direction_vec)
         return Box2d(
                (x1 + x2) / 2.0 * direction_vec + (y1 + y2) / 2.0 * Vec2d(direction_vec.y, -direction_vec.x),
                heading, x2 - x1, y2 - y1)

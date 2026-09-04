@@ -106,13 +106,23 @@ class PathBoundsDecider:
         planning_context: Optional[PlanningContext],
     ) -> List[LaneBorrowInfo]:
         infos = [LaneBorrowInfo.NO_BORROW]
-        lane_borrow = False
+        lane_borrow = reference_line_info.is_path_lane_borrow()
+        decided_directions = []
         if planning_context is not None:
             status = planning_context.planning_status.path_decider
-            lane_borrow = bool(status.is_in_path_lane_borrow_scenario)
+            decided_directions = list(status.decided_side_pass_direction or [])
+            lane_borrow = lane_borrow or bool(status.is_in_path_lane_borrow_scenario)
         if reference_line_info.GetBlockingObstacle() is not None:
             lane_borrow = True
-        if lane_borrow or reference_line_info.is_path_lane_borrow():
+        if not lane_borrow:
+            return infos
+
+        for direction in decided_directions:
+            if direction == 1 and LaneBorrowInfo.LEFT_BORROW not in infos:
+                infos.append(LaneBorrowInfo.LEFT_BORROW)
+            elif direction == 2 and LaneBorrowInfo.RIGHT_BORROW not in infos:
+                infos.append(LaneBorrowInfo.RIGHT_BORROW)
+        if len(infos) == 1:
             infos.extend([LaneBorrowInfo.LEFT_BORROW, LaneBorrowInfo.RIGHT_BORROW])
         return infos
 

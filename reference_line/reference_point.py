@@ -78,8 +78,11 @@ class ReferencePoint(MapPathPoint):
         for i in range(len(points)):
             last_point = points[count - 1]
             this_point = points[i]
-            # Use manhattan distance for save computation time.
-            if count == 0 or abs(last_point.x - this_point.x) > kDuplicatedPointsEpsilon or abs(last_point.y - this_point.y) > kDuplicatedPointsEpsilon:
+            if count == 0 or (
+                (last_point.x - this_point.x) ** 2
+                + (last_point.y - this_point.y) ** 2
+                > kDuplicatedPointsEpsilon ** 2
+            ):
                 points[count] = this_point
                 count += 1
             else:

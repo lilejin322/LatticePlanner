@@ -775,6 +775,56 @@ def check_obstacle_copies_trajectory():
     assert [tp.path_point.s for tp in obs.Trajectory().trajectory_point] == [0.0, 1.0, 2.0]
 
 
+def check_obstacle_empty_trajectory_is_static_for_st_graph():
+    """
+    Apollo Obstacle::HasTrajectory checks trajectory_point().empty(), not
+    whether the trajectory protobuf object itself exists. An obstacle with an
+    empty trajectory must still enter PathTimeGraph as a static obstacle.
+    """
+    perception = PerceptionObstacle(
+        id=14,
+        position=Point3D(x=20.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("empty_traj", perception, trajectory=Trajectory())
+    assert not obs.HasTrajectory()
+
+    graph = _build_path_time_graph([obs])
+    assert len(graph.static_obs_sl_boundaries) == 1
+    assert len(graph.path_time_obstacles) == 1
+    assert graph.path_time_obstacles[0].id() == "empty_traj"
+
+
+def check_path_time_graph_keeps_ignored_static_obstacle():
+    """
+    C++ PathTimeGraph skips virtual obstacles only. Ignore decisions attached
+    by earlier tasks should not erase a real obstacle from ST graph setup.
+    """
+    from protoclass.decision_result import ObjectDecisionType, ObjectIgnore
+
+    perception = PerceptionObstacle(
+        id=15,
+        position=Point3D(x=22.0, y=0.0, z=0.0),
+        velocity=Point3D(x=0.0, y=0.0, z=0.0),
+        length=4.0,
+        width=2.0,
+        height=1.5,
+        theta=0.0,
+    )
+    obs = Obstacle("ignored_static", perception, is_static=True)
+    ignore = ObjectDecisionType()
+    ignore.object_tag = ObjectIgnore()
+    obs.AddLongitudinalDecision("pre_path_decider", ignore)
+    obs.AddLateralDecision("pre_path_decider", ignore)
+
+    graph = _build_path_time_graph([obs])
+    assert len(graph.static_obs_sl_boundaries) == 1
+
+
 def check_reference_line_provider_history_fallback():
     provider = ReferenceLineProvider()
     hdmap = HDMap()
@@ -992,6 +1042,34 @@ def check_polygon_box_distance():
     assert polygon.DistanceTo(overlap_ego) == 0.0
 
 
+def check_polygon_overlap_contains_line_segment():
+    from common.polygon2d import Polygon2d
+
+    polygon = Polygon2d([
+        Vec2d(0.0, 0.0),
+        Vec2d(4.0, 0.0),
+        Vec2d(4.0, 4.0),
+        Vec2d(0.0, 4.0),
+    ])
+    inside_segment = LineSegment2d(Vec2d(1.0, 1.0), Vec2d(3.0, 3.0))
+    assert polygon.HasOverlap(inside_segment)
+
+
+def check_polygon_bounding_box_with_heading_uses_cross_projection():
+    import math
+    from common.polygon2d import Polygon2d
+
+    polygon = Polygon2d([
+        Vec2d(0.0, 0.0),
+        Vec2d(4.0, 0.0),
+        Vec2d(4.0, 2.0),
+        Vec2d(0.0, 2.0),
+    ])
+    box = polygon.BoundingBoxWithHeading(math.pi / 2.0)
+    assert abs(box.length - 2.0) < 1e-6
+    assert abs(box.width - 4.0) < 1e-6
+
+
 def check_path_bounds_decider_multi_candidates():
     from common.obstacle import Obstacle
     from common.path_bounds_decider import PathBoundsDecider, BuildCandidatePathsFromBoundaries
@@ -1027,6 +1105,25 @@ def check_path_bounds_decider_multi_candidates():
     candidate_labels = {c.path_label for c in candidates}
     assert "fallback" not in candidate_labels
     assert any("left" in label or "right" in label or "self" in label for label in candidate_labels)
+
+
+def check_path_bounds_decider_respects_committed_borrow_direction():
+    from common.path_bounds_decider import PathBoundsDecider
+    from common.planning_context import PlanningContext
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    reference_line_info.set_is_path_lane_borrow(True)
+
+    ctx = PlanningContext()
+    ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+    ctx.planning_status.path_decider.decided_side_pass_direction = [1]
+
+    status = PathBoundsDecider().Process(None, reference_line_info, ctx)
+    assert status.ok()
+    labels = {b.label for b in reference_line_info.GetCandidatePathBoundaries()}
+    assert any("left" in label for label in labels)
+    assert not any("right" in label for label in labels)
 
 
 def check_record_debug_info():
@@ -1200,6 +1297,33 @@ def check_reference_line_anchor_curb_shift():
     assert anchor.path_point.s == 10.0
     assert anchor.path_point.y > 0.0
     assert anchor.lateral_bound <= 0.5
+
+
+def check_reference_point_remove_duplicates_uses_euclidean_distance():
+    points = [
+        ReferencePoint(MapPathPoint(PointENU(x=0.0, y=0.0, z=0.0), 0.0), 0.0, 0.0),
+        ReferencePoint(MapPathPoint(PointENU(x=0.8e-7, y=0.8e-7, z=0.0), 0.0), 0.0, 0.0),
+    ]
+    ReferencePoint.RemoveDuplicates(points)
+    assert len(points) == 2
+
+
+def check_reference_line_get_sl_boundary_failure_is_false():
+    from protoclass.sl_boundary import SLBoundary
+
+    reference_line, _, _ = _build_reference_line()
+    original_xy_to_sl = reference_line.XYToSL
+    reference_line.XYToSL = lambda point: (False, None)
+    try:
+        sl_boundary = SLBoundary()
+        result = reference_line.GetSLBoundary(
+            [Vec2d(0.0, 0.0), Vec2d(1.0, 0.0), Vec2d(1.0, 1.0)],
+            0.0,
+            sl_boundary,
+        )
+        assert result is False
+    finally:
+        reference_line.XYToSL = original_xy_to_sl
 
 
 def check_reference_line_info_copies_reference_line():
@@ -1481,11 +1605,15 @@ def main():
     check_hdmap_load_from_file_if_available()
     check_reference_line_smoothing()
     check_reference_line_anchor_curb_shift()
+    check_reference_point_remove_duplicates_uses_euclidean_distance()
+    check_reference_line_get_sl_boundary_failure_is_false()
     check_reference_line_info_copies_reference_line()
     check_qp_spline_reference_line_smoothing()
     check_qp_spline_solver_basic()
     check_obstacle_decision_property_api()
     check_obstacle_copies_trajectory()
+    check_obstacle_empty_trajectory_is_static_for_st_graph()
+    check_path_time_graph_keeps_ignored_static_obstacle()
     check_reference_line_provider_history_fallback()
     check_trajectory_stitcher_reinit()
     check_trajectory_stitcher_preserves_previous_trajectory()
@@ -1494,9 +1622,12 @@ def main():
     check_combine_path_and_speed_profile()
     check_path_assessment_set_obstacle_distance()
     check_polygon_box_distance()
+    check_polygon_overlap_contains_line_segment()
+    check_polygon_bounding_box_with_heading_uses_cross_projection()
     check_box_polygon_overlap()
     check_box_distance_to_segment_canonical_state()
     check_path_bounds_decider_multi_candidates()
+    check_path_bounds_decider_respects_committed_borrow_direction()
     check_record_debug_info()
     check_lattice_migration_pipeline()
     check_infer_lattice_path_label()

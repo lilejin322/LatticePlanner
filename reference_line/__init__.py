@@ -604,7 +604,7 @@ class ReferenceLine:
                 tag, sl_point = self.XYToSL(point)
                 if not tag:
                     logger.error(f"Failed to get projection for point: {point} on reference line.")
-                    return False, None
+                    return False
                 sl_corners.append(sl_point)
             
             for i in range(len(corners)):
@@ -617,7 +617,7 @@ class ReferenceLine:
                 tag, sl_point_mid = self.XYToSL(p_mid)
                 if not tag:
                     logger.error(f"Failed to get projection for point: {p_mid} on reference line.")
-                    return False, None
+                    return False
                 
                 v0 = Vec2d(sl_corners[index1].s - sl_corners[index0].s,
                            sl_corners[index1].l - sl_corners[index0].l)

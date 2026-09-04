@@ -410,7 +410,10 @@ class Obstacle:
         :rtype: bool
         """
 
-        return bool(self._trajectory)
+        return bool(
+            self._trajectory is not None
+            and self._trajectory.trajectory_point
+        )
 
     def Perception(self) -> PerceptionObstacle:
         """

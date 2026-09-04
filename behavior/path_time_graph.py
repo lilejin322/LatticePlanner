@@ -53,15 +53,6 @@ class PathTimeGraph:
         self.SetUpObstacles(obstacles, discretized_ref_points)
 
     @staticmethod
-    def _is_ignored_by_path_decider(obstacle: Obstacle) -> bool:
-        return (
-            obstacle.HasLongitudinalDecision()
-            and obstacle.LongitudinalDecision().ignore is not None
-            and obstacle.HasLateralDecision()
-            and obstacle.LateralDecision().ignore is not None
-        )
-
-    @staticmethod
     def ComputeObstacleBoundary(vertices: List[Vec2d], discretized_ref_points: List[PathPoint]) -> SLBoundary:
         """
         Compute the boundary of the obstacle in the s-l coordinate.
@@ -95,8 +86,6 @@ class PathTimeGraph:
         """
         for obstacle in obstacles:
             if obstacle.IsVirtual():
-                continue
-            if self._is_ignored_by_path_decider(obstacle):
                 continue
             if not obstacle.HasTrajectory():
                 self.SetStaticObstacle(obstacle, discretized_ref_points)
