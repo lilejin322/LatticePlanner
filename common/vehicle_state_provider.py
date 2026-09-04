@@ -90,7 +90,7 @@ class VehicleStateProvider:
             if chassis.steering_percentage is not None:
                 self._vehicle_state.steering_percentage = chassis.steering_percentage
             
-            kEpsilon = 0.1
+            kEpsilon = 1e-6
             if abs(self._vehicle_state.linear_velocity) < kEpsilon:
                 self._vehicle_state.kappa = 0.0
             else:

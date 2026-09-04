@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 import math
+from copy import deepcopy
 from logging import Logger
 from typing import List, Optional, Tuple
 
@@ -41,6 +42,11 @@ class OnLanePlanning:
         self._last_publishable_trajectory: Optional[PublishableTrajectory] = None
         self._last_frame: Optional[Frame] = None
         self._seq_num = 0
+        self._planning_context = PlanningContext()
+        """Persists across planning cycles like Apollo's injector_->planning_context(),
+        so state such as rerouting.need_rerouting, destination.has_passed_destination,
+        and path_decider.decided_side_pass_direction survives from one RunOnce to the
+        next instead of resetting every cycle."""
 
     @property
     def reference_line_provider(self) -> ReferenceLineProvider:
@@ -61,6 +67,8 @@ class OnLanePlanning:
             return Status(ErrorCode.PLANNING_ERROR, msg)
         if vehicle_state.timestamp is None:
             vehicle_state.timestamp = start_timestamp
+        if start_timestamp - vehicle_state.timestamp < config_module.FLAGS_message_latency_threshold:
+            vehicle_state = self._align_time_stamp(vehicle_state, start_timestamp)
 
         self._reference_line_provider.UpdateVehicleState(vehicle_state)
         if local_view.routing is not None:
@@ -90,7 +98,7 @@ class OnLanePlanning:
             FillPlanningPb(start_timestamp, adc_trajectory, local_view)
             return init_status
 
-        ctx = planning_context or getattr(frame, "planning_context", None) or PlanningContext()
+        ctx = planning_context or self._planning_context
         if config_module.FLAGS_enable_traffic_rules:
             frame.ApplyTrafficRules(planning_context=ctx)
         plan_ok = self._try_path_bounds_lane_follow(
@@ -239,12 +247,22 @@ class OnLanePlanning:
         localization = self._normalize_localization(localization)
         status = self._vehicle_state_provider.Update(localization, chassis)
         if not status.ok():
-            fallback = self._extract_vehicle_state_fallback(local_view)
-            if fallback is not None:
-                self._vehicle_state_provider.Update(fallback)
-                return fallback, Status.OK()
             return None, status
         return self._vehicle_state_provider.vehicle_state, Status.OK()
+
+    def _align_time_stamp(self, vehicle_state: VehicleState, curr_timestamp: float) -> VehicleState:
+        """Mirrors on_lane_planning.cc's AlignTimeStamp: dead-reckon x/y forward
+        by (curr_timestamp - vehicle_state.timestamp) using the vehicle state
+        provider's constant-velocity/constant-angular-velocity estimate, to
+        correct for the delay between localization and "now"."""
+        future_xy = self._vehicle_state_provider.EstimateFuturePosition(
+            curr_timestamp - vehicle_state.timestamp
+        )
+        aligned_vehicle_state = deepcopy(vehicle_state)
+        aligned_vehicle_state.x = future_xy.x
+        aligned_vehicle_state.y = future_xy.y
+        aligned_vehicle_state.timestamp = curr_timestamp
+        return aligned_vehicle_state
 
     @staticmethod
     def _normalize_localization(localization: LocalizationEstimate) -> LocalizationEstimate:
@@ -270,50 +288,6 @@ class OnLanePlanning:
             localization.measurement_time = localization.header.timestamp_sec
         return localization
 
-    @staticmethod
-    def _extract_vehicle_state_fallback(local_view: LocalView) -> Optional[VehicleState]:
-        if local_view.localization_estimate is not None:
-            pose = local_view.localization_estimate.pose
-            if pose is not None:
-                return VehicleState(
-                    x=pose.position.x,
-                    y=pose.position.y,
-                    z=getattr(pose.position, "z", 0.0),
-                    heading=pose.heading or 0.0,
-                    linear_velocity=(
-                        math.hypot(
-                            getattr(pose.linear_velocity, "x", 0.0) or 0.0,
-                            getattr(pose.linear_velocity, "y", 0.0) or 0.0,
-                        )
-                        if pose.linear_velocity is not None
-                        else 0.0
-                    ),
-                    linear_acceleration=(
-                        math.hypot(
-                            getattr(pose.linear_acceleration, "x", 0.0) or 0.0,
-                            getattr(pose.linear_acceleration, "y", 0.0) or 0.0,
-                        )
-                        if pose.linear_acceleration is not None
-                        else 0.0
-                    ),
-                )
-        if local_view.chassis is not None:
-            speed = local_view.chassis.speed_mps or 0.0
-            if isinstance(speed, float) and math.isnan(speed):
-                speed = 0.0
-            return VehicleState(
-                x=0.0,
-                y=0.0,
-                heading=0.0,
-                linear_velocity=speed,
-                driving_mode=local_view.chassis.driving_mode,
-            )
-        return None
-
-    @staticmethod
-    def _extract_vehicle_state(local_view: LocalView) -> Optional[VehicleState]:
-        return OnLanePlanning._extract_vehicle_state_fallback(local_view)
-
     def _init_frame(
         self,
         sequence_num: int,
@@ -328,6 +302,7 @@ class OnLanePlanning:
             vehicle_state,
             self._reference_line_provider,
         )
+        frame._planning_context = self._planning_context
         reference_lines, segments = self._reference_line_provider.GetReferenceLines()
         if not reference_lines or len(reference_lines) != len(segments):
             return Status(ErrorCode.PLANNING_ERROR, "Failed to create reference line"), frame

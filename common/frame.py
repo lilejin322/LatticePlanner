@@ -295,7 +295,7 @@ class Frame:
             target_speed = self._local_view.planning_command.target_speed
         has_valid_reference_line: bool = False
         ref_line_index: int = 0
-        for ref_info in self._reference_line_info[:]:
+        for ref_info in self._reference_line_info:
             if ref_info.Init(self.obstacles, target_speed):
                 has_valid_reference_line = True
                 ref_info.set_index(ref_line_index)
@@ -304,10 +304,8 @@ class Frame:
                 )
                 ref_line_index += 1
             else:
-                self._reference_line_info.remove(ref_info)
-        if not has_valid_reference_line:
-            logger.info("No valid reference line")
-        return True
+                logger.error("Failed to init reference line")
+        return has_valid_reference_line
 
     def InitFrameData(self, vehicle_state_provider: VehicleStateProvider, ego_info: EgoInfo) -> Status:
         """

@@ -128,7 +128,7 @@ class ReferenceLineEndRule(TrafficRule):
         stop_line_s = obstacle_start_s - FLAGS_reference_line_end_stop_distance
         stop_point = reference_line.GetReferencePoint(stop_line_s)
         stop_obj = ObjectStop(
-            reason_code=StopReasonCode.STOP_REASON_REFERENCE_END,
+            reason_code=StopReasonCode.STOP_REASON_DESTINATION,
             distance_s=-FLAGS_reference_line_end_stop_distance,
             stop_heading=stop_point.heading,
             stop_point=PointENU(x=stop_point.x, y=stop_point.y, z=0.0),

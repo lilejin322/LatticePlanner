@@ -118,6 +118,7 @@ FLAGS_enable_map_reference_unify = False
 FLAGS_state_transform_to_com_reverse = False
 FLAGS_state_transform_to_com_drive = False
 FLAGS_align_prediction_time = False
+FLAGS_message_latency_threshold = 0.02
 
 # Reference line / PncMap (planning_gflags + pnc_map.cc).
 FLAGS_look_backward_distance = 50.0

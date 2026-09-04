@@ -9,6 +9,7 @@ from typing import List, Optional, Tuple
 from common.discretized_trajectory import DiscretizedTrajectory
 from common.publishable_trajectory import PublishableTrajectory
 from common.vec2d import Vec2d
+from common.vehicle_model import VehicleModel
 import config as config_module
 from protoclass.chassis import Chassis
 from protoclass.path_point import PathPoint
@@ -45,24 +46,12 @@ class TrajectoryStitcher:
         if abs(vehicle_state.linear_velocity or 0.0) < k_epsilon_v and abs(
             vehicle_state.linear_acceleration or 0.0
         ) < k_epsilon_a:
-            return [
-                TrajectoryStitcher.compute_trajectory_point_from_vehicle_state(
-                    planning_cycle_time, vehicle_state
-                )
-            ]
-        predicted = VehicleState(
-            x=vehicle_state.x,
-            y=vehicle_state.y,
-            z=getattr(vehicle_state, "z", 0.0),
-            heading=vehicle_state.heading,
-            kappa=getattr(vehicle_state, "kappa", 0.0),
-            linear_velocity=(vehicle_state.linear_velocity or 0.0)
-            + (vehicle_state.linear_acceleration or 0.0) * planning_cycle_time,
-            linear_acceleration=vehicle_state.linear_acceleration or 0.0,
-        )
+            reinit_state = vehicle_state
+        else:
+            reinit_state = VehicleModel.Predict(planning_cycle_time, vehicle_state)
         return [
             TrajectoryStitcher.compute_trajectory_point_from_vehicle_state(
-                planning_cycle_time, predicted
+                planning_cycle_time, reinit_state
             )
         ]
 
