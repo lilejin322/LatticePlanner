@@ -2,6 +2,8 @@
 
 This is a **Python translation for learning** Baidu Apollo's lattice planner (not for a production simulator). After refactoring, all modules should import cleanly for reading and white-box study.
 
+## QuickStart
+
 ### Setup
 
 Create and activate your own virtual environment (venv, conda, etc. — none is bundled with this repo), then:
