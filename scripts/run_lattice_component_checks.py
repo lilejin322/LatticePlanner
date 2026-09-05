@@ -1096,6 +1096,62 @@ def check_qp_spline_solver_basic():
     assert abs(solver.spline.y(1.0)) < 0.5
 
 
+def check_osqp_spline_2d_solver_matches_cpp_no_status_check():
+    """
+    Regression test: OsqpSpline2dSolver.solve() used to check
+    result.info.status_val and return False on non-convergence. C++
+    (osqp_spline_2d_solver.cc:151-169) does no such check -- it unconditionally
+    builds solved_params from work->solution->x[i] regardless of solve status.
+    Per explicit user decision, this check was removed to fully align with C++,
+    even though it was the trigger for the "fall back to discrete-points
+    smoother" path in qp_spline_reference_line_smoother.py (a path an earlier
+    audit round separately judged an intentional, more-conservative addition
+    that should stay in the code, just no longer fed by this particular
+    status check).
+    """
+    import osqp
+    from planning_math.smoothing_spline.osqp_spline_2d_solver import OsqpSpline2dSolver
+    from common.vec2d import Vec2d
+
+    t_knots = [0.0, 1.0, 2.0]
+    solver = OsqpSpline2dSolver(t_knots, 5)
+    evaluated_t = [0.0, 0.5, 1.0, 1.5, 2.0]
+    headings = [0.0] * 5
+    xy_points = [Vec2d(t, 0.0) for t in evaluated_t]
+    bounds_lon = [1.0] * 5
+    bounds_lat = [0.5] * 5
+    constraint = solver.mutable_constraint
+    assert constraint.add_2d_boundary(evaluated_t, headings, xy_points, bounds_lon, bounds_lat)
+    assert constraint.add_second_derivative_smooth_constraint()
+    kernel = solver.mutable_kernel
+    kernel.add_second_order_derivative_matrix(200.0)
+    kernel.add_third_order_derivative_matrix(1000.0)
+    kernel.add_regularization(1e-5)
+
+    original_solve = osqp.OSQP.solve
+
+    class _FakeInfo:
+        status_val = -2
+
+    class _FakeResult:
+        def __init__(self, real_result):
+            self.x = real_result.x
+            self.info = _FakeInfo()
+
+    def _forced_bad_status_solve(self, *args, **kwargs):
+        return _FakeResult(original_solve(self, *args, **kwargs))
+
+    osqp.OSQP.solve = _forced_bad_status_solve
+    try:
+        solved = solver.solve()
+    finally:
+        osqp.OSQP.solve = original_solve
+
+    assert solved is True, (
+        "solve() must not fail merely due to OSQP status; C++ never checks it"
+    )
+
+
 def check_obstacle_decision_property_api():
     from common.obstacle import Obstacle
     from protoclass.decision_result import ObjectDecisionType, ObjectIgnore
@@ -2661,6 +2717,55 @@ def check_fem_pos_deviation_smoother_never_sets_polish():
     assert "polish" not in captured_kwargs, "polish must not be set; C++ never configures it"
 
 
+def check_fem_pos_deviation_smoother_matches_cpp_osqp_settings():
+    """
+    Regression test: FemPosDeviationSmoother.Solve() never set scaled_termination
+    and never warm-started OSQP's primal variables. C++
+    (FemPosDeviationOsqpInterface::Solve(), fem_pos_deviation_osqp_interface.cc:89-90)
+    explicitly sets settings->scaled_termination = scaled_termination_ (which
+    defaults to true in fem_pos_deviation_smoother_config.proto:23, and this
+    project has no config plumbing to override it away from that default) and
+    warm-starts the primal variables from the raw reference points
+    (SetPrimalWarmStart, same file:257-264) rather than osqp's default zero
+    vector -- both affect ADMM convergence, not just logging/formatting.
+    """
+    import numpy as np
+    import osqp
+    from common.fem_pos_deviation_smoother import FemPosDeviationSmoother
+
+    captured_kwargs = {}
+    captured_warm_start = {}
+    original_setup = osqp.OSQP.setup
+    original_warm_start = osqp.OSQP.warm_start
+
+    def _capturing_setup(self, *args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return original_setup(self, *args, **kwargs)
+
+    def _capturing_warm_start(self, *args, **kwargs):
+        captured_warm_start["x"] = kwargs.get("x")
+        return original_warm_start(self, *args, **kwargs)
+
+    osqp.OSQP.setup = _capturing_setup
+    osqp.OSQP.warm_start = _capturing_warm_start
+    try:
+        smoother = FemPosDeviationSmoother()
+        raw_point2d = [(0.0, 0.0), (1.0, 0.5), (2.0, 0.0)]
+        smoother.Solve(raw_point2d, [0.5, 0.5, 0.5])
+    finally:
+        osqp.OSQP.setup = original_setup
+        osqp.OSQP.warm_start = original_warm_start
+
+    assert captured_kwargs.get("scaled_termination") is True
+
+    expected_warm_start = np.array([0.0, 0.0, 1.0, 0.5, 2.0, 0.0])
+    assert captured_warm_start.get("x") is not None, "primal variables must be warm-started"
+    assert np.allclose(captured_warm_start["x"], expected_warm_start), (
+        "warm start must seed from the raw reference points, matching "
+        "FemPosDeviationOsqpInterface::SetPrimalWarmStart"
+    )
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -2701,6 +2806,7 @@ def main():
     check_reference_line_info_copies_reference_line()
     check_qp_spline_reference_line_smoothing()
     check_qp_spline_solver_basic()
+    check_osqp_spline_2d_solver_matches_cpp_no_status_check()
     check_obstacle_decision_property_api()
     check_obstacle_copies_trajectory()
     check_obstacle_empty_trajectory_is_static_for_st_graph()
@@ -2758,6 +2864,7 @@ def main():
     check_fem_pos_deviation_smoother_solve_reports_failure_on_too_few_points()
     check_discrete_points_smoother_propagates_solve_failure()
     check_fem_pos_deviation_smoother_never_sets_polish()
+    check_fem_pos_deviation_smoother_matches_cpp_osqp_settings()
     print("lattice component checks succeeded")
 
 

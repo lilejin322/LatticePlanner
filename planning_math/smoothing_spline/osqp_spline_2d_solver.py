@@ -92,7 +92,5 @@ class OsqpSpline2dSolver:
             verbose=False,
         )
         result = solver.solve()
-        if result.info.status_val not in (1, 2):
-            return False
         solved_params = result.x.reshape(-1, 1)
         return self._spline.set_splines(solved_params, self._spline.spline_order)

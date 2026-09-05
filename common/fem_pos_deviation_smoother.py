@@ -102,7 +102,15 @@ class FemPosDeviationSmoother:
             u=upper,
             verbose=False,
             max_iter=self.max_iter,
+            scaled_termination=True,
         )
+
+        primal_warm_start = np.zeros(num_vars)
+        for i, (x_ref, y_ref) in enumerate(raw_point2d):
+            primal_warm_start[i * 2] = x_ref
+            primal_warm_start[i * 2 + 1] = y_ref
+        solver.warm_start(x=primal_warm_start)
+
         result = solver.solve()
         if result.info.status_val not in (1, 2):
             return False, [], []
