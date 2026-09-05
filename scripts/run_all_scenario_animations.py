@@ -7,7 +7,6 @@
 
 用法:
   .venv/bin/python scripts/run_all_scenario_animations.py
-  .venv/bin/python scripts/run_all_scenario_animations.py --frames
   .venv/bin/python scripts/run_all_scenario_animations.py --tag lattice
   .venv/bin/python scripts/run_all_scenario_animations.py --list
 """
@@ -28,7 +27,6 @@ os.environ.setdefault("MPLCONFIGDIR", str(PROJECT_ROOT / "scripts" / "output" / 
 from scripts.lattice_scenarios import SCENARIOS
 from scripts.run_lattice_scenario_cases import (
     DEFAULT_ANIM_DIR,
-    DEFAULT_FRAMES_DIR,
     RunOutcome,
     execute,
     print_outcome,
@@ -52,11 +50,6 @@ def main() -> int:
         help="列出将参与动画的场景（含预计是否可生成）",
     )
     parser.add_argument(
-        "--frames",
-        action="store_true",
-        help="同时导出逐帧 PNG 到 scripts/output/frames/<场景名>/",
-    )
-    parser.add_argument(
         "--animate-dt",
         type=float,
         default=0.1,
@@ -73,12 +66,6 @@ def main() -> int:
         type=Path,
         default=DEFAULT_ANIM_DIR,
         help="GIF 输出目录",
-    )
-    parser.add_argument(
-        "--frames-dir",
-        type=Path,
-        default=DEFAULT_FRAMES_DIR,
-        help="逐帧 PNG 根目录",
     )
     parser.add_argument(
         "--dpi",
@@ -122,8 +109,6 @@ def main() -> int:
     print("=" * 60)
     print("全部场景动画生成")
     print(f"  场景数: {len(scenarios)} | dt={args.animate_dt}s | 输出: {args.anim_dir}")
-    if args.frames:
-        print(f"  逐帧 PNG: {args.frames_dir}")
     print("=" * 60)
 
     outcomes: list[RunOutcome] = []
@@ -140,8 +125,6 @@ def main() -> int:
             args.anim_dir,
             dt=args.animate_dt,
             fps=args.animate_fps,
-            save_frames=args.frames,
-            frames_root=args.frames_dir,
             dpi=args.dpi,
         )
     except ImportError as exc:

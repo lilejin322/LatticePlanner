@@ -1,6 +1,6 @@
 """
 Animation of ego vehicle motion on XY map at fixed time steps (default 0.1s).
-Output GIF, or frame PNG sequence (frame_0000.png, ...).
+Output GIF.
 """
 
 from __future__ import annotations
@@ -200,7 +200,6 @@ def animate_context(
     ctx: PlotContext,
     *,
     output_gif: Optional[Path] = None,
-    frames_dir: Optional[Path] = None,
     dt: float = 0.1,
     fps: Optional[float] = None,
     dpi: int = 100,
@@ -270,14 +269,6 @@ def animate_context(
     )
 
     saved_gif: Optional[Path] = None
-    if frames_dir is not None:
-        frames_dir = Path(frames_dir)
-        frames_dir.mkdir(parents=True, exist_ok=True)
-        for i in range(len(samples)):
-            _update(i)
-            fig.savefig(frames_dir / f"frame_{i:04d}.png", dpi=dpi)
-        saved_gif = frames_dir
-
     if output_gif is not None:
         output_gif = Path(output_gif)
         output_gif.parent.mkdir(parents=True, exist_ok=True)
@@ -296,11 +287,6 @@ def animate_context(
 def default_animation_path(plot_dir: Path, scenario_name: str) -> Path:
     safe = scenario_name.replace("/", "_")
     return plot_dir / f"{safe}.gif"
-
-
-def default_frames_dir(plot_dir: Path, scenario_name: str) -> Path:
-    safe = scenario_name.replace("/", "_")
-    return plot_dir / safe
 
 
 def main() -> int:

@@ -18,7 +18,6 @@ sys.path.insert(0, str(PROJECT_ROOT))
 # 复用全场景 runner
 from scripts.run_lattice_scenario_cases import (
     DEFAULT_ANIM_DIR,
-    DEFAULT_FRAMES_DIR,
     execute,
     print_outcome,
     save_animations,
@@ -45,9 +44,7 @@ def main() -> int:
         help="场景动画 GIF（0.1s/帧）",
     )
     parser.add_argument("--animate-dt", type=float, default=0.1)
-    parser.add_argument("--animate-frames", action="store_true", help="同时导出逐帧 PNG")
     parser.add_argument("--anim-dir", type=Path, default=DEFAULT_ANIM_DIR)
-    parser.add_argument("--frames-dir", type=Path, default=DEFAULT_FRAMES_DIR)
     parser.add_argument("--show", action="store_true", help="弹窗显示动画")
     args = parser.parse_args()
 
@@ -73,8 +70,6 @@ def main() -> int:
                 outcomes,
                 args.anim_dir,
                 dt=args.animate_dt,
-                save_frames=args.animate_frames,
-                frames_root=args.frames_dir,
                 show=args.show,
             )
         except ImportError:

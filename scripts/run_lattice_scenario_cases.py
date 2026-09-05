@@ -7,7 +7,6 @@ Lattice 全场景测试（34 项）：按类别跑 Lattice / Decider / OnLane / 
   .venv/bin/python scripts/run_lattice_scenario_cases.py
   .venv/bin/python scripts/run_lattice_scenario_cases.py --tag lattice
   .venv/bin/python scripts/run_lattice_scenario_cases.py open_road --animate
-  .venv/bin/python scripts/run_lattice_scenario_cases.py open_road --animate --animate-frames
 """
 
 from __future__ import annotations
@@ -31,7 +30,6 @@ from protoclass.adc_trajectory import ADCTrajectory
 from scripts.lattice_scenarios import SCENARIOS, SCENARIOS_BY_NAME, Scenario
 
 DEFAULT_ANIM_DIR = PROJECT_ROOT / "scripts" / "output" / "animations"
-DEFAULT_FRAMES_DIR = PROJECT_ROOT / "scripts" / "output" / "frames"
 
 
 @dataclass
@@ -187,16 +185,10 @@ def save_animations(
     *,
     dt: float = 0.1,
     fps: Optional[float] = None,
-    save_frames: bool = False,
-    frames_root: Optional[Path] = None,
     dpi: int = 100,
     show: bool = False,
 ) -> None:
-    from scripts.lattice_animation import (
-        animate_context,
-        default_animation_path,
-        default_frames_dir,
-    )
+    from scripts.lattice_animation import animate_context, default_animation_path
 
     anim_dir = Path(anim_dir)
     saved = 0
@@ -205,14 +197,9 @@ def save_animations(
         if out.scene_context is None or not out.scene_context.traj_x:
             continue
         gif_path = default_animation_path(anim_dir, out.scenario.name)
-        frames_dir = None
-        if save_frames:
-            root = Path(frames_root or DEFAULT_FRAMES_DIR)
-            frames_dir = default_frames_dir(root, out.scenario.name)
         path, n = animate_context(
             out.scene_context,
             output_gif=gif_path,
-            frames_dir=frames_dir,
             dt=dt,
             fps=fps,
             dpi=dpi,
@@ -226,8 +213,6 @@ def save_animations(
     print(
         f"\n已保存 {saved} 个场景动画（共 {total_frames} 帧 @ {dt}s）→ {anim_dir.resolve()}"
     )
-    if save_frames:
-        print(f"  逐帧 PNG → {(frames_root or DEFAULT_FRAMES_DIR).resolve()}")
 
 
 def print_outcome(out: RunOutcome) -> None:
@@ -283,21 +268,10 @@ def main() -> int:
         help="GIF 播放帧率（默认 1/animate-dt，即实时）",
     )
     parser.add_argument(
-        "--animate-frames",
-        action="store_true",
-        help="同时导出逐帧 PNG 到 scripts/output/frames/<场景名>/",
-    )
-    parser.add_argument(
         "--anim-dir",
         type=Path,
         default=DEFAULT_ANIM_DIR,
         help="GIF 输出目录",
-    )
-    parser.add_argument(
-        "--frames-dir",
-        type=Path,
-        default=DEFAULT_FRAMES_DIR,
-        help="逐帧 PNG 根目录",
     )
     parser.add_argument(
         "--show",
@@ -363,8 +337,6 @@ def main() -> int:
                 args.anim_dir,
                 dt=args.animate_dt,
                 fps=args.animate_fps,
-                save_frames=args.animate_frames,
-                frames_root=args.frames_dir,
                 dpi=args.dpi,
                 show=args.show,
             )
