@@ -63,6 +63,29 @@ def _lerp_angle(a: float, b: float, r: float) -> float:
     return a + da * r
 
 
+def _interp_obstacle_pose(obs, t: float) -> Tuple[float, float, float]:
+    """在障碍物记录的轨迹点上按时间 t 线性插值位姿；
+    超出记录范围时钉在首/尾点，行为对齐 Obstacle.GetPointAtTime 的截断逻辑。
+    """
+
+    times = obs.traj_t
+    if len(times) < 2:
+        return obs.traj_x[0], obs.traj_y[0], obs.traj_theta[0]
+    if t <= times[0]:
+        return obs.traj_x[0], obs.traj_y[0], obs.traj_theta[0]
+    if t >= times[-1]:
+        return obs.traj_x[-1], obs.traj_y[-1], obs.traj_theta[-1]
+    j = 0
+    while j + 1 < len(times) and times[j + 1] < t:
+        j += 1
+    t0, t1 = times[j], times[j + 1]
+    r = 0.0 if t1 <= t0 else (t - t0) / (t1 - t0)
+    x = _lerp(obs.traj_x[j], obs.traj_x[j + 1], r)
+    y = _lerp(obs.traj_y[j], obs.traj_y[j + 1], r)
+    theta = _lerp_angle(obs.traj_theta[j], obs.traj_theta[j + 1], r)
+    return x, y, theta
+
+
 def sample_trajectory_frames(
     ctx: PlotContext,
     dt: float = 0.1,
@@ -124,10 +147,20 @@ def sample_trajectory_frames(
     return samples
 
 
+def _box_polygon_xy(cx: float, cy: float, theta: float, length: float, width: float) -> List[Tuple[float, float]]:
+    """矩形四角坐标（中心 cx,cy，朝向 theta，长 length，宽 width）。"""
+
+    hl = length / 2.0
+    hw = width / 2.0
+    local = [(-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)]
+    c, s = math.cos(theta), math.sin(theta)
+    return [(cx + lx * c - ly * s, cy + lx * s + ly * c) for lx, ly in local]
+
+
 def _ego_polygon_xy(x: float, y: float, theta: float) -> List[Tuple[float, float]]:
     """Treat trajectory points as rear axle center,
     convert to vehicle geometric center and draw rectangle.
-    
+
     :param x: x coordinate
     :param y: y coordinate
     :param theta: heading angle
@@ -138,11 +171,7 @@ def _ego_polygon_xy(x: float, y: float, theta: float) -> List[Tuple[float, float
     shift = config_module.EGO_VEHICLE_LENGTH / 2.0 - config_module.EGO_BACK_EDGE_TO_CENTER
     cx = x + shift * math.cos(theta)
     cy = y + shift * math.sin(theta)
-    hl = config_module.EGO_VEHICLE_LENGTH / 2.0
-    hw = config_module.EGO_VEHICLE_WIDTH / 2.0
-    local = [(-hl, -hw), (hl, -hw), (hl, hw), (-hl, hw)]
-    c, s = math.cos(theta), math.sin(theta)
-    return [(cx + lx * c - ly * s, cy + lx * s + ly * c) for lx, ly in local]
+    return _box_polygon_xy(cx, cy, theta, config_module.EGO_VEHICLE_LENGTH, config_module.EGO_VEHICLE_WIDTH)
 
 
 def _compute_view_limits(ctx: PlotContext,
@@ -170,6 +199,16 @@ def _compute_view_limits(ctx: PlotContext,
 def _draw_static_scene(ax, ctx: PlotContext) -> None:
     if ctx.ref_x:
         ax.plot(ctx.ref_x, ctx.ref_y, color="#bbbbbb", linewidth=2.0, zorder=1)
+    if ctx.other_lane_x:
+        ax.plot(
+            ctx.other_lane_x,
+            ctx.other_lane_y,
+            color="#f39c12",
+            linewidth=1.5,
+            linestyle="--",
+            alpha=0.6,
+            zorder=1,
+        )
     if ctx.path_x:
         ax.plot(
             ctx.path_x,
@@ -181,6 +220,8 @@ def _draw_static_scene(ax, ctx: PlotContext) -> None:
             zorder=2,
         )
     for obs in ctx.obstacles:
+        if not obs.is_static:
+            continue
         color = "#e74c3c" if obs.is_blocking else "#9b59b6"
         ax.fill(
             obs.xs,
@@ -238,6 +279,15 @@ def animate_context(
         zorder=10,
     )
 
+    moving_obstacles = [obs for obs in ctx.obstacles if not obs.is_static]
+    moving_patches = []
+    for obs in moving_obstacles:
+        patch = MplPolygon(
+            [[0, 0]], closed=True, facecolor="#e67e22", edgecolor="#a04000", linewidth=1.5, alpha=0.85, zorder=6
+        )
+        ax.add_patch(patch)
+        moving_patches.append(patch)
+
     if ctx.traj_x:
         full_line.set_data(ctx.traj_x, ctx.traj_y)
 
@@ -257,7 +307,10 @@ def animate_context(
         trail_line.set_data(trail_x, trail_y)
         ego_patch.set_xy(_ego_polygon_xy(ego.x, ego.y, ego.theta))
         time_text.set_text(f"t = {ego.t:.1f} s\nv = {ego.v:.2f} m/s\n({ego.x:.1f}, {ego.y:.1f})")
-        return trail_line, ego_patch, time_text
+        for obs, patch in zip(moving_obstacles, moving_patches):
+            ox, oy, otheta = _interp_obstacle_pose(obs, ego.t)
+            patch.set_xy(_box_polygon_xy(ox, oy, otheta, obs.length, obs.width))
+        return (trail_line, ego_patch, time_text, *moving_patches)
 
     anim = animation.FuncAnimation(
         fig,
