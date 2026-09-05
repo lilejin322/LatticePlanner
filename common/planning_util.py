@@ -331,7 +331,7 @@ def AggregateReferenceLineTrajectory(
         ) > 0
 
     trajectory = DiscretizedTrajectory()
-    start_s = planning_start_point.path_point.s if planning_start_point.path_point else 0.0
+    start_s = (planning_start_point.path_point.s or 0.0) if planning_start_point.path_point else 0.0
     rel_t = planning_start_point.relative_time or 0.0
     if reference_line_info.CombinePathAndSpeedProfile(rel_t, start_s, trajectory):
         reference_line_info.SetTrajectory(trajectory)

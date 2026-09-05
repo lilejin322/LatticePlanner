@@ -28,6 +28,24 @@ kStBoundaryDeltaS: float = 0.2;        # meters
 kStBoundarySparseDeltaS: float = 1.0   # meters
 kStBoundaryDeltaT: float = 0.05        # seconds
 
+
+def _value_or_zero(value: float) -> float:
+    """
+    An unset protobuf scalar field reads back as its type's zero default in
+    C++ (e.g. an unset `double` is 0.0, never null). This project's
+    dataclasses instead default such fields to `None` to mark "not
+    explicitly set". Reading a `None` field where C++ would read 0.0 must
+    go through this helper before any arithmetic/`math.isnan` check, or
+    Python crashes on inputs (e.g. untrusted prediction-module messages)
+    that C++ handles without issue.
+
+    :param float value: The field value, or None if unset.
+    :returns: value, or 0.0 if value is None.
+    :rtype: float
+    """
+
+    return 0.0 if value is None else value
+
 def DistanceXY(point1: PathPoint, point2: PathPoint) -> float:
     """
     Calculate the distance between two points
@@ -444,7 +462,7 @@ class Obstacle:
         if predictions is None:
             return obstacles
         for prediction_obstacle in predictions.prediction_obstacle:
-            if not Obstacle.IsValidObstacle(prediction_obstacle.perception_obstacle):
+            if not Obstacle.IsValidPerceptionObstacle(prediction_obstacle.perception_obstacle):
                 logger.error(f"Invalid perception obstacle: {prediction_obstacle.perception_obstacle}")
                 continue
             perception_id = str(prediction_obstacle.perception_obstacle.id)
@@ -514,13 +532,13 @@ class Obstacle:
         :rtype: bool
         """
 
-        if obstacle.length <= 0.0:
+        if _value_or_zero(obstacle.length) <= 0.0:
             logger.error(f"invalid obstacle length: {obstacle.length}")
             return False
-        if obstacle.width <= 0.0:
+        if _value_or_zero(obstacle.width) <= 0.0:
             logger.error(f"invalid obstacle width: {obstacle.width}")
             return False
-        if obstacle.height <= 0.0:
+        if _value_or_zero(obstacle.height) <= 0.0:
             logger.error(f"invalid obstacle height: {obstacle.height}")
             return False
         if obstacle.velocity is not None:
@@ -545,13 +563,16 @@ class Obstacle:
 
         if point.path_point is None:
             return False
-        if math.isnan(point.path_point.x) or math.isnan(point.path_point.y) or math.isnan(point.path_point.z):
+        path_point = point.path_point
+        if math.isnan(_value_or_zero(path_point.x)) or math.isnan(_value_or_zero(path_point.y)) \
+                or math.isnan(_value_or_zero(path_point.z)):
             return False
-        if math.isnan(point.path_point.kappa) or math.isnan(point.path_point.s):
+        if math.isnan(_value_or_zero(path_point.kappa)) or math.isnan(_value_or_zero(path_point.s)):
             return False
-        if math.isnan(point.path_point.dkappa) or math.isnan(point.path_point.ddkappa):
+        if math.isnan(_value_or_zero(path_point.dkappa)) or math.isnan(_value_or_zero(path_point.ddkappa)):
             return False
-        if math.isnan(point.v) or math.isnan(point.a) or math.isnan(point.relative_time):
+        if math.isnan(_value_or_zero(point.v)) or math.isnan(_value_or_zero(point.a)) \
+                or math.isnan(_value_or_zero(point.relative_time)):
             return False
         return True
 
@@ -1130,8 +1151,8 @@ class Obstacle:
         :rtype: bool
         """
 
-        object_width = perception_obstacle.width
-        object_length = perception_obstacle.length
+        object_width = _value_or_zero(perception_obstacle.width)
+        object_length = _value_or_zero(perception_obstacle.length)
 
         kMinObjectDimension: float = 1.0e-6
         return not math.isnan(object_width) and not math.isnan(object_length) and \

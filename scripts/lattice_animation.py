@@ -7,16 +7,19 @@ from __future__ import annotations
 
 import math
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
-import config as config_module
-from scripts.lattice_visualization import PlotContext
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PROJECT_ROOT))
 _MPL_CACHE_DIR = PROJECT_ROOT / "scripts" / "output" / "mpl-cache"
 _MPL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MPL_CACHE_DIR))
+
+import config as config_module
+from scripts.lattice_visualization import PlotContext
 
 import matplotlib
 
@@ -298,3 +301,16 @@ def default_animation_path(plot_dir: Path, scenario_name: str) -> Path:
 def default_frames_dir(plot_dir: Path, scenario_name: str) -> Path:
     safe = scenario_name.replace("/", "_")
     return plot_dir / safe
+
+
+def main() -> int:
+    print(
+        "lattice_animation.py is the animation tool module, please generate animations through the scenario runner:\n"
+        "  python scripts/run_lattice_scenario_cases.py open_road --animate\n"
+        "  python scripts/run_overtake_animations.py"
+    )
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

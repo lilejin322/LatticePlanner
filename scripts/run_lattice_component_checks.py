@@ -2309,6 +2309,75 @@ def check_path_bounds_sweep_line_updates_center_line_per_edge():
     assert bound_at_5_5[1] <= bound_at_5_5[2], "corridor at s=5.5 must remain feasible (l_min <= l_max)"
 
 
+def check_obstacle_validators_treat_none_as_protobuf_zero_default():
+    """
+    Regression test: an unset protobuf scalar field reads back as its type's
+    zero default in C++ (a `double` field that was never set() is 0.0, not
+    null); this project's dataclasses instead default such fields to `None`.
+    Obstacle.IsValidPerceptionObstacle/IsValidTrajectoryPoint/IsValidObstacle
+    exist specifically to validate untrusted external (prediction-module)
+    input, and used to call math.isnan()/do comparisons directly on fields
+    that can legitimately be None, raising TypeError where C++ (reading the
+    protobuf default) degrades gracefully to "invalid". Mirrors
+    modules/planning/common/obstacle_test.cc's own default-message test.
+    """
+    # A completely unset PerceptionObstacle -- exactly the scenario the
+    # vendored C++ unit test (obstacle_test.cc) exercises -- must be
+    # rejected, not crash.
+    assert Obstacle.IsValidPerceptionObstacle(PerceptionObstacle()) is False
+    assert Obstacle.IsValidPerceptionObstacle(
+        PerceptionObstacle(length=4.0, width=2.0, height=1.5)
+    ) is True
+
+    assert Obstacle.IsValidObstacle(PerceptionObstacle(length=4.0)) is False
+    assert Obstacle.IsValidObstacle(PerceptionObstacle(length=4.0, width=2.0)) is True
+
+    sparse_trajectory_point = TrajectoryPoint(
+        path_point=PathPoint(x=0.0, y=0.0, z=0.0, kappa=0.0, s=0.0)
+    )
+    assert Obstacle.IsValidTrajectoryPoint(sparse_trajectory_point) is True
+
+
+def check_create_obstacles_uses_perception_validator_like_cpp():
+    """
+    Regression test: Obstacle.CreateObstacles used to gate obstacles through
+    IsValidObstacle (which only checks width/length), but
+    modules/planning/common/obstacle.cc:200 gates through
+    IsValidPerceptionObstacle (which additionally checks height and, when
+    present, velocity/polygon-point NaNs). An obstacle with valid
+    width/length but a NaN velocity must be rejected, matching C++, not
+    silently accepted.
+    """
+    bad_velocity_obstacle = PerceptionObstacle(
+        id=1, length=4.0, width=2.0, height=1.5,
+        velocity=Point3D(x=float("nan"), y=0.0, z=0.0),
+    )
+    predictions = PredictionObstacles(
+        prediction_obstacle=[
+            PredictionObstacle(perception_obstacle=bad_velocity_obstacle, is_static=True)
+        ]
+    )
+    assert Obstacle.CreateObstacles(predictions) == []
+
+
+def check_aggregate_reference_line_trajectory_handles_none_start_s():
+    """
+    Regression test: AggregateReferenceLineTrajectory read
+    planning_start_point.path_point.s directly, which defaults to None
+    (unset protobuf scalar) rather than 0.0, raising TypeError downstream
+    in ReferenceLineInfo.CombinePathAndSpeedProfile's `path_point.s += start_s`.
+    """
+    from common.planning_util import AggregateReferenceLineTrajectory
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    planning_start_point = TrajectoryPoint(
+        path_point=PathPoint(x=0.0, y=0.0, theta=0.0), v=1.0, a=0.0, relative_time=0.0
+    )
+    assert planning_start_point.path_point.s is None
+    AggregateReferenceLineTrajectory(reference_line_info, planning_start_point)
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -2395,6 +2464,9 @@ def main():
     check_path_overlap_with_approximation_enabled()
     check_kd_tree_nearest_object_matches_brute_force()
     check_path_bounds_sweep_line_updates_center_line_per_edge()
+    check_obstacle_validators_treat_none_as_protobuf_zero_default()
+    check_create_obstacles_uses_perception_validator_like_cpp()
+    check_aggregate_reference_line_trajectory_handles_none_start_s()
     print("lattice component checks succeeded")
 
 
