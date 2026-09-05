@@ -14,6 +14,13 @@ class ObstacleDraw:
     ys: List[float]
     label: str
     is_blocking: bool = False
+    is_static: bool = True
+    length: float = 4.0
+    width: float = 2.0
+    traj_t: List[float] = field(default_factory=list)
+    traj_x: List[float] = field(default_factory=list)
+    traj_y: List[float] = field(default_factory=list)
+    traj_theta: List[float] = field(default_factory=list)
 
 
 @dataclass
@@ -23,6 +30,8 @@ class PlotContext:
     passed: bool
     ref_x: List[float] = field(default_factory=list)
     ref_y: List[float] = field(default_factory=list)
+    other_lane_x: List[float] = field(default_factory=list)
+    other_lane_y: List[float] = field(default_factory=list)
     traj_x: List[float] = field(default_factory=list)
     traj_y: List[float] = field(default_factory=list)
     traj_t: List[float] = field(default_factory=list)
@@ -52,6 +61,7 @@ def context_from_reference_line_info(
     title: str,
     passed: bool,
     note: str = "",
+    other_reference_line=None,
 ) -> PlotContext:
     ctx = PlotContext(
         scenario_name=scenario_name,
@@ -68,6 +78,12 @@ def context_from_reference_line_info(
         ctx.ref_x.append(pt.x)
         ctx.ref_y.append(pt.y)
 
+    if other_reference_line is not None:
+        other_ref = other_reference_line.reference_line
+        for pt in other_ref.reference_points:
+            ctx.other_lane_x.append(pt.x)
+            ctx.other_lane_y.append(pt.y)
+
     start = reference_line_info._adc_planning_point
     if start and start.path_point:
         ctx.ego_x = start.path_point.x
@@ -83,14 +99,24 @@ def context_from_reference_line_info(
 
     for obs in reference_line_info.path_decision.obstacles.values():
         xs, ys = _box_corners(obs)
-        ctx.obstacles.append(
-            ObstacleDraw(
-                xs=xs,
-                ys=ys,
-                label=obs.Id(),
-                is_blocking=(obs.Id() == blocking_id),
-            )
+        is_static = not obs.HasTrajectory()
+        draw = ObstacleDraw(
+            xs=xs,
+            ys=ys,
+            label=obs.Id(),
+            is_blocking=(obs.Id() == blocking_id),
+            is_static=is_static,
         )
+        if not is_static:
+            perception = obs.Perception()
+            draw.length = perception.length
+            draw.width = perception.width
+            for pt in obs.Trajectory().trajectory_point:
+                draw.traj_t.append(float(pt.relative_time))
+                draw.traj_x.append(pt.path_point.x)
+                draw.traj_y.append(pt.path_point.y)
+                draw.traj_theta.append(pt.path_point.theta or 0.0)
+        ctx.obstacles.append(draw)
 
     traj = reference_line_info.trajectory
     if traj:

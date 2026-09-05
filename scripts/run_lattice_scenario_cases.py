@@ -87,6 +87,7 @@ def _build_scene_context(
     *,
     reference_line_info=None,
     adc_trajectory=None,
+    other_reference_line=None,
     note: str = "",
 ):
     from scripts.lattice_visualization import (
@@ -102,6 +103,7 @@ def _build_scene_context(
             title=title,
             passed=passed,
             note=note,
+            other_reference_line=other_reference_line,
         )
     if adc_trajectory is not None:
         return context_from_adc_trajectory(
@@ -157,12 +159,28 @@ def execute(scenario: Scenario) -> RunOutcome:
             got_ok = run_lattice_plan(
                 frame, rli, start, scenario.backup if scenario.backup is not None else backup
             )
+
+        other_rli = None
+        if len(frame.mutable_reference_line_info) > 1:
+            driven = frame.FindDriveReferenceLineInfo()
+            if driven is not None:
+                other_rli = next(
+                    (r for r in frame.mutable_reference_line_info if r is not driven), None
+                )
+                rli = driven
+
         detail = trajectory_summary(rli)
         if extra:
             detail = f"{extra} | {detail}"
 
         passed = got_ok == scenario.expect_ok
-        scene_ctx = _build_scene_context(scenario, passed, reference_line_info=rli, note=detail)
+        scene_ctx = _build_scene_context(
+            scenario,
+            passed,
+            reference_line_info=rli,
+            other_reference_line=other_rli,
+            note=detail,
+        )
 
         return RunOutcome(
             scenario=scenario,
