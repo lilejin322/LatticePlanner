@@ -245,7 +245,7 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="列出用例")
     parser.add_argument(
         "--tag",
-        choices=["lattice", "decider", "on_lane", "stress", "overtake", "all"],
+        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "all"],
         default="all",
         help="按类别筛选",
     )
@@ -302,7 +302,7 @@ def main() -> int:
         if args.cases:
             print(f"筛选: cases={', '.join(args.cases)}")
         print()
-        categories = ("lattice", "decider", "on_lane", "stress", "overtake")
+        categories = ("lattice", "decider", "on_lane", "stress", "overtake", "lane_change")
         for cat in categories:
             items = [s for s in selected if s.category == cat]
             if not items:

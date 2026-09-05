@@ -40,7 +40,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--tag",
-        choices=["lattice", "decider", "on_lane", "stress", "overtake", "all"],
+        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "all"],
         default="all",
         help="只处理某一类场景（默认 all）",
     )
@@ -91,7 +91,7 @@ def main() -> int:
     if args.list:
         print(f"共 {len(scenarios)} 个场景（tag={args.tag}）:\n")
         for s in scenarios:
-            hint = "可动画" if s.category in ("lattice", "on_lane", "overtake") else "可能无轨迹"
+            hint = "可动画" if s.category in ("lattice", "on_lane", "overtake", "lane_change") else "可能无轨迹"
             if not s.expect_ok and not s.informational:
                 hint = "通常跳过"
             if s.name == "decider_bounds_assessment":

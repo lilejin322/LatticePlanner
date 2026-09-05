@@ -16,6 +16,7 @@ from protoclass.point_enu import PointENU
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
+from protoclass.decision_result import ChangeLaneType
 
 
 def build_straight_lane(lane_id: str = "lane_0", length: float = 100.0) -> Lane:
@@ -887,3 +888,117 @@ def build_overtake_borrow_frame(
     )
     ok, detail = apply_borrow_path_trajectory(rli, start, path_label)
     return frame, rli, start, ok, None, detail
+
+
+def build_lane_change_curve(
+    length: float,
+    y_final: float,
+    transition_length: float,
+    *,
+    step: float = 1.0,
+) -> list:
+    """从 y=0 平滑过渡到 y=y_final 的换道曲线点序列（升余弦过渡，两端切线水平，
+    避免与直线车道拼接处出现曲率突变）。"""
+    points = []
+    x = 0.0
+    while x <= length + 1e-6:
+        if x <= transition_length:
+            y = y_final * 0.5 * (1.0 - math.cos(math.pi * x / transition_length))
+        else:
+            y = y_final
+        points.append(PointENU(x=x, y=y))
+        x += step
+    return points
+
+
+def build_lane_change_frame(
+    *,
+    length: float = 100.0,
+    ego_v: float = 10.0,
+    npc_start_x: float = 20.0,
+    npc_v: float = 3.0,
+    npc_steps: int = 16,
+    transition_length: float = 30.0,
+):
+    """
+    双车道换道超车场景：本车道（lane_left, y=0）前方有一辆匀速慢速 NPC，
+    目标车道（lane_right）用一条从 y=0 平滑过渡到 y=-3.5 的"换道曲线"表示
+    （模拟真实换道参考线，而非简单的车道宽度侧移——直接侧移会让 init_d 过大，
+    超出 lattice 1D 采样器的横向端点范围 [-0.5, 0, 0.5]，导致规划失败）。
+
+    返回 (frame, target_reference_line_info, start_point)。
+    frame.mutable_reference_line_info == [current_rli, target_rli]，
+    交给 LatticePlanner.Plan() 后可用 frame.FindDriveReferenceLineInfo()
+    取得成本更低的那条（预期是 target_rli）。
+    """
+    from common.frame import Frame
+
+    y_target = -3.5
+
+    left = build_straight_lane("lane_left", length=length)
+    left.right_neighbor_forward_lane_id = [Lane.Id("lane_right")]
+
+    right = Lane(
+        id=Lane.Id("lane_right"),
+        central_curve=Curve(
+            segment=[
+                CurveSegment(
+                    curve_type=LineSegment(
+                        point=build_lane_change_curve(length, y_target, transition_length)
+                    )
+                )
+            ]
+        ),
+        length=length,
+        speed_limit=10.0,
+        left_neighbor_forward_lane_id=[Lane.Id("lane_left")],
+        right_neighbor_forward_lane_id=[],
+        left_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        right_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
+        type=Lane.LaneType.CITY_DRIVING,
+    )
+
+    hdmap = HDMap()
+    left_info = hdmap.AddLane(left)
+    right_info = hdmap.AddLane(right)
+    HDMapUtil.SetBaseMap(hdmap)
+
+    def _build_rli(lane_info, lane_id: str, on_segment: bool, previous_action=None):
+        route_segments = RouteSegments()
+        route_segments.SetIsOnSegment(on_segment)
+        route_segments.SetId(lane_id)
+        if previous_action is not None:
+            route_segments.SetPreviousAction(previous_action)
+        route_segments.append(LaneSegment(lane_info, 0.0, length - 1.0))
+        reference_line = ReferenceLine(MapPath(route_segments))
+        start_point = TrajectoryPoint(
+            path_point=PathPoint(
+                x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0
+            ),
+            v=ego_v,
+            a=0.0,
+            relative_time=0.0,
+        )
+        vehicle_state = VehicleState()
+        vehicle_state.x = 0.0
+        vehicle_state.y = 0.0
+        vehicle_state.heading = 0.0
+        rli = ReferenceLineInfo(vehicle_state, start_point, reference_line, route_segments)
+        return rli, start_point
+
+    current_rli, start_point = _build_rli(left_info, "lane_left", True)
+    target_rli, _ = _build_rli(right_info, "lane_right", False, ChangeLaneType.RIGHT)
+
+    npc = build_dynamic_obstacle(
+        "npc_slow", start_x=npc_start_x, start_y=0.0, vx=npc_v, steps=npc_steps
+    )
+    obstacle_list = [npc]
+
+    current_rli.Init(obstacle_list, 10.0)
+    target_rli.Init(obstacle_list, 10.0)
+
+    frame = Frame(0)
+    frame._obstacles = {npc.Id(): npc}
+    frame._reference_line_info = [current_rli, target_rli]
+
+    return frame, target_rli, start_point

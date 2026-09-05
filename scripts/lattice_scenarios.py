@@ -16,6 +16,7 @@ from scripts.planner_test_fixtures import (
     build_curved_static_obstacle,
     build_center_lane_reference_line,
     build_lattice_plan_frame,
+    build_lane_change_frame,
     build_overtake_lattice_frame,
     build_path_bounds_overtake_frame,
     build_synthetic_overtake_frame,
@@ -516,6 +517,14 @@ def s_overtake_stack_combine() -> BuilderResult:
     return frame, rli, start, ok, backup, detail
 
 
+# --- lane_change ---
+
+
+def s_lane_change_overtake_slow_npc() -> BuilderResult:
+    frame, rli, start = build_lane_change_frame()
+    return frame, rli, start, True, None, None
+
+
 SCENARIOS: List[Scenario] = [
     # lattice
     Scenario("open_road", "空旷直道", "lattice", s_open_road),
@@ -674,6 +683,12 @@ SCENARIOS: List[Scenario] = [
         "overtake",
         s_overtake_stack_combine,
         skip_lattice=True,
+    ),
+    Scenario(
+        "lane_change_overtake_slow_npc",
+        "本车道慢速动态NPC阻挡，自车换道超车",
+        "lane_change",
+        s_lane_change_overtake_slow_npc,
     ),
 ]
 
