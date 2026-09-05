@@ -1096,6 +1096,50 @@ def check_qp_spline_solver_basic():
     assert abs(solver.spline.y(1.0)) < 0.5
 
 
+def check_curve_math_matches_cpp_unconditional_division():
+    """
+    Regression test: ComputeCurvature/ComputeCurvatureDerivative used to guard
+    their division with `if abs(denominator) < 1e-12: return 0.0`. C++
+    (curve_math.cc:29-48) divides unconditionally -- for a degenerate sample
+    where the fitted spline's tangent vector (dx, dy) vanishes (a rare
+    coincident-anchor-point scenario reached via
+    qp_spline_reference_line_smoother.py's ComputeCurvature/
+    ComputeCurvatureDerivative calls), that division is 0.0/0.0, which is
+    IEEE-754 nan in C++, not the silently-substituted 0.0 Python used to
+    return. Also reproduces curve_math_test.cc's normal-case fixtures
+    (straight line, unit circle at t=0 and t=pi/4) to confirm the ordinary,
+    non-degenerate math is unaffected.
+    """
+    import math
+    from planning_math.curve_math import ComputeCurvature, ComputeCurvatureDerivative
+
+    assert math.isclose(ComputeCurvature(1.0, 0.0, 1.0, 0.0), 0.0, abs_tol=1e-6)
+    assert math.isclose(
+        ComputeCurvatureDerivative(1.0, 0.0, 0.0, 1.0, 0.0, 0.0), 0.0, abs_tol=1e-6
+    )
+    assert math.isclose(ComputeCurvature(0.0, -1.0, 1.0, 0.0), 1.0, abs_tol=1e-6)
+
+    cos_angle = math.cos(math.pi / 4)
+    sin_angle = math.sin(math.pi / 4)
+    assert math.isclose(
+        ComputeCurvature(-sin_angle, -cos_angle, cos_angle, -sin_angle), 1.0, abs_tol=1e-6
+    )
+    assert math.isclose(
+        ComputeCurvatureDerivative(
+            -sin_angle, -cos_angle, sin_angle, cos_angle, -sin_angle, -cos_angle
+        ),
+        0.0,
+        abs_tol=1e-6,
+    )
+
+    assert math.isnan(ComputeCurvature(0.0, 1.0, 0.0, 1.0)), (
+        "a degenerate zero tangent vector must yield IEEE-754 nan like C++, not 0.0"
+    )
+    assert math.isnan(ComputeCurvatureDerivative(0.0, 1.0, 1.0, 0.0, 1.0, 1.0)), (
+        "a degenerate zero tangent vector must yield IEEE-754 nan like C++, not 0.0"
+    )
+
+
 def check_osqp_spline_2d_solver_matches_cpp_no_status_check():
     """
     Regression test: OsqpSpline2dSolver.solve() used to check
@@ -2806,6 +2850,7 @@ def main():
     check_reference_line_info_copies_reference_line()
     check_qp_spline_reference_line_smoothing()
     check_qp_spline_solver_basic()
+    check_curve_math_matches_cpp_unconditional_division()
     check_osqp_spline_2d_solver_matches_cpp_no_status_check()
     check_obstacle_decision_property_api()
     check_obstacle_copies_trajectory()
