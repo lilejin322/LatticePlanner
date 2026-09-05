@@ -2,7 +2,7 @@
 Discretized path submodule
 """
 from typing import List, Optional
-from bisect import bisect_left, bisect_right
+from bisect import bisect_left
 from collections import UserList
 from path_matcher import PathMatcher
 from protoclass.path_point import PathPoint
@@ -78,11 +78,25 @@ class DiscretizedPath(UserList):
 
     def QueryUpperBound(self, path_s: float) -> int:
         """
-        Returns the index of the PathPoint object that is less than or equal to the specified path_s
+        Mirrors C++ DiscretizedPath::QueryUpperBound (discretized_path.cc), which is
+        std::upper_bound with comparator func(path_s, tp) = tp.s() < path_s. This is
+        the reverse-path counterpart of QueryLowerBound: it is only meaningful when
+        `s` is monotonically *decreasing* (e.g. reverse/parking paths), so it cannot
+        be implemented with bisect_right, which assumes ascending order.
 
         :param path_s: The path_s value
         :returns: The index of the PathPoint object
         :rtype: int
         """
 
-        return bisect_right(self, path_s, key=lambda tp: tp.s)
+        first = 0
+        count = len(self)
+        while count > 0:
+            step = count // 2
+            it = first + step
+            if not (self[it].s < path_s):
+                first = it + 1
+                count -= step + 1
+            else:
+                count = step
+        return first

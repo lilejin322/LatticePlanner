@@ -129,8 +129,12 @@ def BuildStopDecisionOnLane(
     stop_point = reference_line.GetReferencePoint(
         stop_wall.PerceptionSLBoundary().start_s - stop_distance
     )
+    # NOTE: the C++ lane_id/lane_s overload (modules/planning/common/util/common.cc)
+    # never calls add_wait_for_obstacle() for this variant -- wait_for_obstacles is
+    # accepted for signature parity with BuildStopDecision but is otherwise dead
+    # here, so it must not be forwarded into the resulting decision.
     stop = _make_stop_decision(
-        stop_reason_code, stop_distance, stop_point.heading, stop_point, wait_for_obstacles
+        stop_reason_code, stop_distance, stop_point.heading, stop_point, []
     )
     reference_line_info.path_decision.AddLongitudinalDecision(decision_tag, stop_wall.Id(), stop)
     return 0

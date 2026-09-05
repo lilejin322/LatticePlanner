@@ -20,8 +20,8 @@ def FillPlanningPb(timestamp: float, trajectory_pb: ADCTrajectory, local_view) -
         trajectory_pb.header.camera_timestamp = prediction.header.camera_timestamp
         trajectory_pb.header.radar_timestamp = prediction.header.radar_timestamp
     routing = getattr(local_view, "routing", None)
-    if routing is not None and routing.header is not None:
-        trajectory_pb.routing_header = routing.header
+    if routing is not None:
+        trajectory_pb.routing_header = routing.header if routing.header is not None else Header()
 
 
 def GenerateStopTrajectory(trajectory_pb: ADCTrajectory, vehicle_state: VehicleState) -> None:
@@ -38,7 +38,7 @@ def GenerateStopTrajectory(trajectory_pb: ADCTrajectory, vehicle_state: VehicleS
         relative_time=0.0,
     )
     t = 0.0
-    while t < config_module.FLAGS_fallback_total_time + 1e-6:
+    while t < config_module.FLAGS_fallback_total_time:
         point = TrajectoryPoint(
             path_point=PathPoint(
                 x=tp.path_point.x,
@@ -53,5 +53,4 @@ def GenerateStopTrajectory(trajectory_pb: ADCTrajectory, vehicle_state: VehicleS
         trajectory_pb.trajectory_point.append(point)
         t += config_module.FLAGS_fallback_time_unit
     trajectory_pb.total_path_length = 0.0
-    trajectory_pb.total_path_time = config_module.FLAGS_fallback_total_time
     trajectory_pb.gear = GearPosition.GEAR_DRIVE

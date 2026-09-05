@@ -1,3 +1,4 @@
+import math
 from enum import Enum
 from typing import List, Tuple
 from reference_line import ReferenceLine
@@ -421,8 +422,15 @@ class PathData:
                 last: Vec2d = Vec2d(path_points[-1].x, path_points[-1].y)
                 distance: float = (last - cartesian_point).Length()
                 s = path_points[-1].s + distance
-                if distance > 1e-6:
-                    dkappa = (kappa - path_points[-1].kappa) / distance
+                dkappa_diff: float = kappa - path_points[-1].kappa
+                if distance != 0.0:
+                    dkappa = dkappa_diff / distance
+                elif dkappa_diff > 0.0:
+                    dkappa = math.inf
+                elif dkappa_diff < 0.0:
+                    dkappa = -math.inf
+                else:
+                    dkappa = math.nan
             path_points.append(PathPoint(cartesian_point.x, cartesian_point.y, 0.0, theta, kappa, s, dkappa))
 
         return True, DiscretizedPath(path_points)

@@ -3,6 +3,7 @@
 
 from pathlib import Path
 import importlib
+import math
 import sys
 from types import SimpleNamespace
 
@@ -1755,7 +1756,7 @@ def check_reference_line_smoothing_shrinks_box_bounds():
     class CapturingSolver:
         def Solve(self, points, bounds):
             captured_bounds.extend(bounds)
-            return [point[0] for point in points], [point[1] for point in points]
+            return True, [point[0] for point in points], [point[1] for point in points]
 
     smoother._solver = CapturingSolver()
     assert smoother.Smooth(reference_line) is not None
@@ -2378,6 +2379,288 @@ def check_aggregate_reference_line_trajectory_handles_none_start_s():
     AggregateReferenceLineTrajectory(reference_line_info, planning_start_point)
 
 
+def check_discretized_path_evaluate_reverse_matches_cpp_reverse_case():
+    """
+    Regression test: DiscretizedPath.QueryUpperBound used bisect_right, which
+    assumes an ascending `s` array. C++'s QueryUpperBound (discretized_path.cc)
+    is std::upper_bound with a comparator that only makes sense for a
+    *descending* `s` array -- it backs EvaluateReverse, used for reverse/
+    parking paths. On a descending array bisect_right always returns len(self),
+    so EvaluateReverse silently degenerated to "always return the last point,
+    never interpolate". Reproduces
+    modules/planning/common/path/discretized_path_test.cc's reverse_case
+    fixture and expected values exactly.
+    """
+    from common.discretized_path import DiscretizedPath
+
+    sqrt2 = math.sqrt(2.0)
+    s1 = 0.0
+    s2 = s1 - sqrt2
+    s3 = s2 - sqrt2
+    s4 = s3 - sqrt2
+    discretized_path = DiscretizedPath([
+        PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=s1),
+        PathPoint(x=1.0, y=1.0, z=0.0, theta=0.0, kappa=0.0, s=s2),
+        PathPoint(x=2.0, y=2.0, z=0.0, theta=0.0, kappa=0.0, s=s3),
+        PathPoint(x=3.0, y=3.0, z=0.0, theta=0.0, kappa=0.0, s=s4),
+    ])
+    assert math.isclose(discretized_path.Length(), -sqrt2 * 3.0)
+
+    eval_p1 = discretized_path.EvaluateReverse(0.0)
+    assert math.isclose(eval_p1.s, 0.0, abs_tol=1e-9)
+    assert math.isclose(eval_p1.x, 0.0, abs_tol=1e-9)
+    assert math.isclose(eval_p1.y, 0.0, abs_tol=1e-9)
+
+    eval_p2 = discretized_path.EvaluateReverse(-0.3 * sqrt2)
+    assert math.isclose(eval_p2.x, 0.3, abs_tol=1e-9)
+    assert math.isclose(eval_p2.y, 0.3, abs_tol=1e-9)
+
+    eval_p3 = discretized_path.EvaluateReverse(-1.8)
+    assert math.isclose(eval_p3.x, (1.0 + 0.8) / sqrt2, abs_tol=1e-9)
+    assert math.isclose(eval_p3.y, (1.0 + 0.8) / sqrt2, abs_tol=1e-9)
+
+    eval_p4 = discretized_path.EvaluateReverse(-2.5)
+    assert math.isclose(eval_p4.x, (2.0 + 0.5) / sqrt2, abs_tol=1e-9)
+    assert math.isclose(eval_p4.y, (2.0 + 0.5) / sqrt2, abs_tol=1e-9)
+
+
+def check_path_data_sl_to_xy_matches_cpp_unconditional_dkappa_division():
+    """
+    Regression test: PathData.SLToXY guarded `dkappa = (kappa - last.kappa) /
+    distance` with `if distance > 1e-6`, silently returning 0.0 whenever two
+    consecutive frenet samples map to (near-)identical cartesian points. C++
+    (path_data.cc SLToXY) divides unconditionally; when distance is exactly
+    0.0 that is a real IEEE-754 +-inf/nan, not a translation artifact to be
+    papered over.
+    """
+    from common.path_data import PathData
+    from common.frenet_frame_path import FrenetFramePath
+    from protoclass.frenet_frame_point import FrenetFramePoint
+    from common.map_path_point import MapPathPoint
+
+    class _CoincidentPointReferenceLine:
+        def __init__(self, kappas):
+            self._kappas = list(kappas)
+            self._calls = 0
+
+        def SLToXY(self, sl_point):
+            return True, Vec2d(1.0, 1.0)
+
+        def GetReferencePoint(self, s):
+            kappa = self._kappas[self._calls]
+            self._calls += 1
+            return ReferencePoint(MapPathPoint(point=(1.0, 1.0), heading=0.0), kappa=kappa, dkappa=0.0)
+
+    path_data = PathData()
+    path_data.SetReferenceLine(_CoincidentPointReferenceLine(kappas=[0.0, 1.0]))
+    frenet_path = FrenetFramePath([
+        FrenetFramePoint(s=0.0, l=0.0, dl=0.0, ddl=0.0),
+        FrenetFramePoint(s=1.0, l=0.0, dl=0.0, ddl=0.0),
+    ])
+    ok, discretized_path = path_data.SLToXY(frenet_path)
+    assert ok
+    assert discretized_path[0].s == 0.0
+    assert discretized_path[1].s == 0.0, "coincident cartesian points must not advance s"
+    assert discretized_path[1].dkappa == math.inf
+
+
+def check_generate_stop_trajectory_matches_cpp_loop_and_default_total_path_time():
+    """
+    Regression test: GenerateStopTrajectory's loop used `t < max_t + 1e-6`
+    where C++ (on_lane_planning.cc:201) is a strict `for (t=0; t<max_t;
+    t+=unit_t)` -- the epsilon made Python emit one extra trailing point
+    (31 vs C++'s 30 for max_t=3.0, unit_t=0.1). It also unconditionally set
+    total_path_time to FLAGS_fallback_total_time, but C++'s
+    GenerateStopTrajectory never calls set_total_path_time() at all, so the
+    real field stays at the protobuf default 0.0 in this fallback branch.
+    """
+    from common.planning_output import GenerateStopTrajectory
+    from protoclass.adc_trajectory import ADCTrajectory
+    from protoclass.vehicle_state import VehicleState
+
+    trajectory_pb = ADCTrajectory()
+    GenerateStopTrajectory(trajectory_pb, VehicleState(x=0.0, y=0.0, heading=0.0))
+
+    assert len(trajectory_pb.trajectory_point) == 30, (
+        f"expected 30 points like C++, got {len(trajectory_pb.trajectory_point)}"
+    )
+    assert math.isclose(trajectory_pb.trajectory_point[-1].relative_time, 2.9, abs_tol=1e-9)
+    assert trajectory_pb.total_path_time is None, (
+        "total_path_time must stay at the protobuf default (unset/None -> 0.0), "
+        "C++ never calls set_total_path_time() in this fallback branch"
+    )
+
+
+def check_fill_planning_pb_copies_routing_header_unconditionally():
+    """
+    Regression test: FillPlanningPb only copied routing_header when
+    `routing.header is not None`. C++ (planning_base.cc:53-54) unconditionally
+    does `mutable_routing_header()->CopyFrom(local_view_.routing->header())` --
+    when routing exists but its header was never set, C++ still writes a
+    default-initialized Header message; Python used to leave routing_header
+    untouched instead.
+    """
+    from common.planning_output import FillPlanningPb
+    from protoclass.adc_trajectory import ADCTrajectory
+    from protoclass.routing import RoutingResponse
+
+    trajectory_pb = ADCTrajectory()
+    local_view = LocalView(routing=RoutingResponse(header=None))
+    FillPlanningPb(0.0, trajectory_pb, local_view)
+    assert trajectory_pb.routing_header is not None, (
+        "routing_header must be copied even when routing.header is unset, matching "
+        "C++'s unconditional CopyFrom"
+    )
+
+
+def check_build_stop_decision_on_lane_never_sets_wait_for_obstacle():
+    """
+    Regression test: BuildStopDecisionOnLane forwarded wait_for_obstacles into
+    the resulting ObjectStop, but the corresponding C++ overload
+    (lane_id/lane_s version, modules/planning/common/util/common.cc:79-131)
+    never calls add_wait_for_obstacle() -- that parameter is dead for this
+    particular overload (unlike the stop_line_s overload, which does populate
+    it). Passing a non-empty list must not leak into the decision.
+    """
+    from common.planning_util import BuildStopDecisionOnLane
+    from protoclass.decision_result import StopReasonCode
+
+    class _FakeBox:
+        center = object()
+
+    class _FakeSLBoundary:
+        start_s = 5.0
+
+    class _FakeStopWall:
+        def PerceptionBoundingBox(self):
+            return _FakeBox()
+
+        def PerceptionSLBoundary(self):
+            return _FakeSLBoundary()
+
+        def Id(self):
+            return "stop_wall"
+
+    class _FakeReferenceLine:
+        def IsOnLane(self, point):
+            return True
+
+        def GetReferencePoint(self, s):
+            return SimpleNamespace(x=0.0, y=0.0, heading=0.0)
+
+    class _FakePathDecision:
+        def __init__(self):
+            self.recorded = None
+
+        def AddLongitudinalDecision(self, decision_tag, obstacle_id, decision):
+            self.recorded = decision
+
+    class _FakeReferenceLineInfo:
+        def __init__(self):
+            self.reference_line = _FakeReferenceLine()
+            self.path_decision = _FakePathDecision()
+
+        def AddObstacle(self, obstacle):
+            return _FakeStopWall()
+
+    class _FakeFrame:
+        def CreateStopObstacle(self, stop_wall_id, lane_id, lane_s):
+            return object()
+
+    reference_line_info = _FakeReferenceLineInfo()
+    result = BuildStopDecisionOnLane(
+        "stop_wall_id", "lane_1", 10.0, 1.0, StopReasonCode.STOP_REASON_DESTINATION,
+        ["obstacle_a", "obstacle_b"], "decision_tag", _FakeFrame(), reference_line_info
+    )
+    assert result == 0
+    decision = reference_line_info.path_decision.recorded
+    assert decision.object_tag.wait_for_obstacle == [], (
+        "wait_for_obstacles must never populate the decision for this overload, "
+        "matching C++'s lane_id/lane_s BuildStopDecision which never touches it"
+    )
+
+
+def check_fem_pos_deviation_smoother_solve_reports_failure_on_too_few_points():
+    """
+    Regression test: FemPosDeviationSmoother.Solve() used to silently return the
+    raw, unsmoothed points disguised as a solved result when n<3 (or on OSQP
+    non-convergence). C++ (FemPosDeviationOsqpInterface::Solve(),
+    fem_pos_deviation_osqp_interface.cc:42-45) aborts with `return false` in
+    this case, and the caller (FemPosDeviationSmoother::QpWithOsqp) propagates
+    the failure instead of returning a "smoothed" result built from the
+    unsmoothed input.
+    """
+    from common.fem_pos_deviation_smoother import FemPosDeviationSmoother
+
+    smoother = FemPosDeviationSmoother()
+    solved, opt_x, opt_y = smoother.Solve([(0.0, 0.0), (1.0, 1.0)], [0.5, 0.5])
+    assert solved is False
+    assert opt_x == []
+    assert opt_y == []
+
+
+def check_discrete_points_smoother_propagates_solve_failure():
+    """
+    Regression test: DiscretePointsReferenceLineSmoother.Smooth() used to
+    unconditionally unpack Solve()'s two return values, wrapping a solver
+    failure into a "successful" ReferenceLine built from unsmoothed points.
+    C++'s DiscretePointsReferenceLineSmoother::FemPosSmooth
+    (discrete_points_reference_line_smoother.cc:154-159) returns false when
+    smoother.Solve() fails, and Smooth() itself returns false -- there is no
+    silent fallback to raw points at this layer (any fallback to the raw
+    reference line happens one layer up, in ReferenceLineProvider).
+    """
+    from reference_line.discrete_points_reference_line_smoother import (
+        AnchorPoint,
+        DiscretePointsReferenceLineSmoother,
+    )
+
+    reference_line, _, _ = _build_reference_line()
+    smoother = DiscretePointsReferenceLineSmoother()
+    smoother.SetAnchorPoints([
+        AnchorPoint(PathPoint(x=0.0, y=0.0), lateral_bound=2.0),
+        AnchorPoint(PathPoint(x=10.0, y=0.0), lateral_bound=2.0),
+        AnchorPoint(PathPoint(x=20.0, y=0.0), lateral_bound=2.0),
+    ])
+
+    class _FailingSolver:
+        def Solve(self, points, bounds):
+            return False, [], []
+
+    smoother._solver = _FailingSolver()
+    assert smoother.Smooth(reference_line) is None
+
+
+def check_fem_pos_deviation_smoother_never_sets_polish():
+    """
+    Regression test: FemPosDeviationSmoother.Solve() used to pass polish=True
+    to OSQP. C++'s FemPosDeviationOsqpInterface::Solve()
+    (fem_pos_deviation_osqp_interface.cc:84-90) only ever sets max_iter/
+    time_limit/verbose/scaled_termination/warm_start on OSQPSettings -- never
+    polish -- and the config proto has no such field either, so real Apollo
+    always runs with the osqp library's own default (polish off). Setting
+    polish=True made Python run an extra refinement pass C++ never performs.
+    """
+    import osqp
+    from common.fem_pos_deviation_smoother import FemPosDeviationSmoother
+
+    captured_kwargs = {}
+    original_setup = osqp.OSQP.setup
+
+    def _capturing_setup(self, *args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return original_setup(self, *args, **kwargs)
+
+    osqp.OSQP.setup = _capturing_setup
+    try:
+        smoother = FemPosDeviationSmoother()
+        smoother.Solve([(0.0, 0.0), (1.0, 0.0), (2.0, 0.0)], [0.5, 0.5, 0.5])
+    finally:
+        osqp.OSQP.setup = original_setup
+
+    assert "polish" not in captured_kwargs, "polish must not be set; C++ never configures it"
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -2467,6 +2750,14 @@ def main():
     check_obstacle_validators_treat_none_as_protobuf_zero_default()
     check_create_obstacles_uses_perception_validator_like_cpp()
     check_aggregate_reference_line_trajectory_handles_none_start_s()
+    check_discretized_path_evaluate_reverse_matches_cpp_reverse_case()
+    check_path_data_sl_to_xy_matches_cpp_unconditional_dkappa_division()
+    check_generate_stop_trajectory_matches_cpp_loop_and_default_total_path_time()
+    check_fill_planning_pb_copies_routing_header_unconditionally()
+    check_build_stop_decision_on_lane_never_sets_wait_for_obstacle()
+    check_fem_pos_deviation_smoother_solve_reports_failure_on_too_few_points()
+    check_discrete_points_smoother_propagates_solve_failure()
+    check_fem_pos_deviation_smoother_never_sets_polish()
     print("lattice component checks succeeded")
 
 

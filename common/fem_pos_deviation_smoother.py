@@ -29,10 +29,16 @@ class FemPosDeviationSmoother:
         self,
         raw_point2d: Sequence[Tuple[float, float]],
         bounds: Sequence[float],
-    ) -> Tuple[List[float], List[float]]:
+    ) -> Tuple[bool, List[float], List[float]]:
+        """
+        Mirrors FemPosDeviationOsqpInterface::Solve() (fem_pos_deviation_osqp_interface.cc),
+        which aborts (returns false) rather than substituting the raw, unsmoothed
+        points -- callers must check the returned success flag instead of assuming
+        opt_x/opt_y are always a valid smoothed result.
+        """
         n = len(raw_point2d)
         if n < 3 or len(bounds) != n:
-            return [p[0] for p in raw_point2d], [p[1] for p in raw_point2d]
+            return False, [], []
 
         import numpy as np
 
@@ -96,12 +102,11 @@ class FemPosDeviationSmoother:
             u=upper,
             verbose=False,
             max_iter=self.max_iter,
-            polish=True,
         )
         result = solver.solve()
         if result.info.status_val not in (1, 2):
-            return [p[0] for p in raw_point2d], [p[1] for p in raw_point2d]
+            return False, [], []
 
         opt_x = [result.x[i * 2] for i in range(n)]
         opt_y = [result.x[i * 2 + 1] for i in range(n)]
-        return opt_x, opt_y
+        return True, opt_x, opt_y

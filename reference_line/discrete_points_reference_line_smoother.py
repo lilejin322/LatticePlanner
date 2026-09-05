@@ -94,7 +94,9 @@ class DiscretePointsReferenceLineSmoother:
         bounds[-1] = 0.0
 
         normalized, self._ref_x, self._ref_y = self._normalize_points(raw_point2d)
-        opt_x, opt_y = self._solver.Solve(normalized, bounds)
+        solved, opt_x, opt_y = self._solver.Solve(normalized, bounds)
+        if not solved:
+            return None
         opt_x = [x + self._ref_x for x in opt_x]
         opt_y = [y + self._ref_y for y in opt_y]
 
