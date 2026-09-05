@@ -1,7 +1,6 @@
 from typing import Dict
 from collections import OrderedDict
 from protoclass.decision_result import MainStop, ObjectDecisionType, ObjectStop
-from common.nudge_info import NudgeInfo
 from common.obstacle import Obstacle
 from protoclass.perception_obstacle import PerceptionObstacle
 from common.st_boundary import STBoundary
@@ -26,8 +25,6 @@ class PathDecision:
         self._obstacles: Dict[str, Obstacle] = OrderedDict()   # the cpp source code is IndexedList<string, Obstacle>
         self._main_stop: MainStop = None
         self._stop_reference_line_s: float = float('inf')
-        # nudge info
-        self._nudge_info: NudgeInfo = NudgeInfo()
 
     def AddObstacle(self, obstacle: Obstacle) -> Obstacle:
         """
@@ -187,14 +184,3 @@ class PathDecision:
         self._stop_reference_line_s = stop_line_s
         logger.debug(f"main stop obstacle id: {obj_id}, stop_line_s: {stop_line_s}, stop_point: ({obj_stop.stop_point.x}, {obj_stop.stop_point.y}), stop_heading: {obj_stop.stop_heading}")
         return True
-
-    @property
-    def nudge_info(self) -> NudgeInfo:
-        """
-        Get the nudge info
-
-        :returns: the nudge info
-        :rtype: NudgeInfo
-        """
-
-        return self._nudge_info
