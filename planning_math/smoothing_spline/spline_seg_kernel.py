@@ -1,7 +1,6 @@
 """
 Spline segment kernel aligned with spline_seg_kernel.cc.
 """
-
 from __future__ import annotations
 import numpy as np
 
@@ -21,6 +20,7 @@ class SplineSegKernel:
         Constructor
 
         :param int reserved_order: The reserved order of the spline segment kernel.
+        :returns: None
         """
         self._reserved_order = reserved_order
         self._kernel_fx: np.ndarray | None = None
@@ -36,6 +36,9 @@ class SplineSegKernel:
     def instance(cls) -> "SplineSegKernel":
         """
         Get the singleton instance of SplineSegKernel.
+
+        :returns: The singleton instance of SplineSegKernel.
+        :rtype: SplineSegKernel
         """
         if cls._instance is None:
             cls._instance = cls()
@@ -138,6 +141,7 @@ class SplineSegKernel:
         Calculate the kernel matrix for the function values.
 
         :param int num_params: The number of parameters.
+        :returns: None
         """
         kernel = np.zeros((num_params, num_params))
         for r in range(num_params):
@@ -150,6 +154,7 @@ class SplineSegKernel:
         Calculate the kernel matrix for the first derivative.
 
         :param int num_params: The number of parameters.
+        :returns: None
         """
         kernel = np.zeros((num_params, num_params))
         for r in range(1, num_params):
@@ -162,6 +167,7 @@ class SplineSegKernel:
         Calculate the kernel matrix for the second order derivative.
 
         :param int num_params: The number of parameters.
+        :returns: None
         """
         kernel = np.zeros((num_params, num_params))
         for r in range(2, num_params):
@@ -174,6 +180,7 @@ class SplineSegKernel:
         Calculate the kernel matrix for the third order derivative.
 
         :param int num_params: The number of parameters.
+        :returns: None
         """
         kernel = np.zeros((num_params, num_params))
         for r in range(3, num_params):

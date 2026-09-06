@@ -17,6 +17,7 @@ class AffineConstraint:
         Constructor
 
         :param bool is_equality: Whether the constraint is an equality constraint (True) or an inequality constraint (False).
+        :returns: None
         """
         self._is_equality = is_equality
         self._constraint_matrix = np.zeros((0, 0))

@@ -1,19 +1,32 @@
-"""Spline 2D constraints aligned with spline_2d_constraint.cc."""
-
+"""
+Spline 2D constraints aligned with spline_2d_constraint.cc.
+"""
 from __future__ import annotations
-
 import bisect
 import math
-from typing import List, Sequence, Tuple
-
 import numpy as np
-
+from typing import List, Sequence
 from common.vec2d import Vec2d
 from planning_math.smoothing_spline.affine_constraint import AffineConstraint
 
-
 class Spline2dConstraint:
-    def __init__(self, t_knots: List[float], spline_order: int):
+    """
+    Spline 2D constraints aligned with spline_2d_constraint.cc.
+    """
+    _t_knots: List[float]
+    _spline_order: int
+    _total_param: int
+    _inequality_constraint: AffineConstraint
+    _equality_constraint: AffineConstraint
+
+    def __init__(self, t_knots: List[float], spline_order: int) -> None:
+        """
+        Constructor
+
+        :param List[float] t_knots: The knot points for the spline.
+        :param int spline_order: The order of the spline.
+        :returns: None
+        """
         self._t_knots = list(t_knots)
         self._spline_order = spline_order
         self._total_param = 2 * (spline_order + 1) * max(0, len(t_knots) - 1)
@@ -23,19 +36,47 @@ class Spline2dConstraint:
     def add_inequality_constraint(
         self, constraint_matrix: np.ndarray, constraint_boundary: np.ndarray
     ) -> bool:
+        """
+        Add an inequality constraint to the spline solver.
+
+        :param np.ndarray constraint_matrix: The constraint matrix.
+        :param np.ndarray constraint_boundary: The constraint boundary.
+        :returns: True if the constraint was added successfully, False otherwise.
+        :rtype: bool
+        """
         return self._inequality_constraint.add_constraint(constraint_matrix, constraint_boundary)
 
     def add_equality_constraint(
         self, constraint_matrix: np.ndarray, constraint_boundary: np.ndarray
     ) -> bool:
+        """
+        Add an equality constraint to the spline solver.
+
+        :param np.ndarray constraint_matrix: The constraint matrix.
+        :param np.ndarray constraint_boundary: The constraint boundary.
+        :returns: True if the constraint was added successfully, False otherwise.
+        :rtype: bool
+        """
         return self._equality_constraint.add_constraint(constraint_matrix, constraint_boundary)
 
     @property
     def inequality_constraint(self) -> AffineConstraint:
+        """
+        Get the inequality constraint object for the spline solver.
+
+        :returns: The inequality constraint object.
+        :rtype: AffineConstraint
+        """
         return self._inequality_constraint
 
     @property
     def equality_constraint(self) -> AffineConstraint:
+        """
+        Get the equality constraint object for the spline solver.
+
+        :returns: The equality constraint object.
+        :rtype: AffineConstraint
+        """
         return self._equality_constraint
 
     def add_2d_boundary(
@@ -46,6 +87,17 @@ class Spline2dConstraint:
         longitudinal_bound: Sequence[float],
         lateral_bound: Sequence[float],
     ) -> bool:
+        """
+        Add 2D boundary constraints to the spline solver.
+
+        :param Sequence[float] t_coord: The time coordinates for the boundary constraints.
+        :param Sequence[float] angle: The angles for the boundary constraints.
+        :param Sequence[Vec2d] ref_point: The reference points for the boundary constraints
+        :param Sequence[float] longitudinal_bound: The longitudinal bounds for the boundary constraints.
+        :param Sequence[float] lateral_bound: The lateral bounds for the boundary constraints.
+        :returns: True if the constraints were added successfully, False otherwise.
+        :rtype: bool
+        """
         if not (
             len(t_coord) == len(angle) == len(ref_point) == len(lateral_bound) == len(longitudinal_bound)
         ):
@@ -73,6 +125,14 @@ class Spline2dConstraint:
         return self.add_inequality_constraint(affine_inequality, affine_boundary)
 
     def add_point_angle_constraint(self, t: float, angle: float) -> bool:
+        """
+        Add a point angle constraint to the spline solver.
+
+        :param float t: The time coordinate for the point angle constraint.
+        :param float angle: The angle for the point angle constraint.
+        :returns: True if the constraint was added successfully, False otherwise.
+        :rtype: bool
+        """
         num_params = self._spline_order + 1
         index = self._find_index(t)
         index_offset = index * 2 * num_params
@@ -100,6 +160,12 @@ class Spline2dConstraint:
         return self.add_inequality_constraint(affine_inequality, affine_inequality_boundary)
 
     def add_second_derivative_smooth_constraint(self) -> bool:
+        """
+        Add a second derivative smoothness constraint to the spline solver.
+
+        :returns: True if the constraint was added successfully, False otherwise.
+        :rtype: bool
+        """
         if len(self._t_knots) < 3:
             return True
         num_params = self._spline_order + 1
@@ -128,16 +194,37 @@ class Spline2dConstraint:
         return self.add_equality_constraint(affine_equality, affine_boundary)
 
     def _find_index(self, t: float) -> int:
+        """
+        Find the index of the knot point that is less than or equal to t.
+
+        :param float t: The time coordinate to find the index for.
+        :returns: The index of the knot point that is less than or equal to t.
+        :rtype: int
+        """
         upper = bisect.bisect_right(self._t_knots, t, 1, len(self._t_knots))
         return min(len(self._t_knots) - 1, upper) - 1
 
     def _poly_coef(self, t: float) -> List[float]:
+        """
+        Calculate the polynomial coefficients for a given time t.
+
+        :param float t: The time coordinate to calculate the polynomial coefficients for.
+        :returns: A list of polynomial coefficients.
+        :rtype: List[float]
+        """
         result = [1.0] * (self._spline_order + 1)
         for i in range(1, len(result)):
             result[i] = result[i - 1] * t
         return result
 
     def _derivative_coef(self, t: float) -> List[float]:
+        """
+        Calculate the derivative coefficients for a given time t.
+
+        :param float t: The time coordinate to calculate the derivative coefficients for.
+        :returns: A list of derivative coefficients.
+        :rtype: List[float]
+        """
         result = [0.0] * (self._spline_order + 1)
         power_t = self._poly_coef(t)
         for i in range(1, len(result)):
@@ -145,6 +232,13 @@ class Spline2dConstraint:
         return result
 
     def _second_derivative_coef(self, t: float) -> List[float]:
+        """
+        Calculate the second derivative coefficients for a given time t.
+
+        :param float t: The time coordinate to calculate the second derivative coefficients for.
+        :returns: A list of second derivative coefficients.
+        :rtype: List[float]
+        """
         result = [0.0] * (self._spline_order + 1)
         power_t = self._poly_coef(t)
         for i in range(2, len(result)):
@@ -152,6 +246,14 @@ class Spline2dConstraint:
         return result
 
     def _affine_coef(self, angle: float, t: float) -> List[float]:
+        """
+        Calculate the affine coefficients for a given angle and time t.
+
+        :param float angle: The angle coordinate to calculate the affine coefficients for.
+        :param float t: The time coordinate to calculate the affine coefficients for.
+        :returns: A list of affine coefficients.
+        :rtype: List[float]
+        """
         num_params = self._spline_order + 1
         result = [0.0] * (num_params * 2)
         x_coef = -math.sin(angle)
@@ -164,6 +266,14 @@ class Spline2dConstraint:
         return result
 
     def _affine_derivative_coef(self, angle: float, t: float) -> List[float]:
+        """
+        Calculate the derivative of the affine coefficients for a given angle and time t.
+
+        :param float angle: The angle coordinate to calculate the derivative of the affine coefficients for.
+        :param float t: The time coordinate to calculate the derivative of the affine coefficients for.
+        :returns: A list of derivative of affine coefficients.
+        :rtype: List[float]
+        """
         num_params = self._spline_order + 1
         result = [0.0] * (num_params * 2)
         x_coef = -math.sin(angle)
@@ -176,4 +286,12 @@ class Spline2dConstraint:
 
     @staticmethod
     def _sign_distance(xy_point: Vec2d, angle: float) -> float:
+        """
+        Calculate the signed distance from a point to a line defined by an angle.
+
+        :param Vec2d xy_point: The point to calculate the signed distance for.
+        :param float angle: The angle of the line.
+        :returns: The signed distance.
+        :rtype: float
+        """
         return xy_point.x * (-math.sin(angle)) + xy_point.y * math.cos(angle)
