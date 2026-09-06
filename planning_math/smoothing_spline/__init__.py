@@ -1,1 +1,3 @@
-"""2D spline smoothing utilities aligned with Apollo planning."""
+"""
+2D spline smoothing utilities aligned with Apollo planning.
+"""
