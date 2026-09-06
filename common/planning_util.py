@@ -461,8 +461,14 @@ K_PATH_BOUNDS_DECIDER_RESOLUTION = 0.5
 
 
 def _smoothstep01(r: float) -> float:
+    """Quintic smoothstep (6r^5-15r^4+10r^3): unlike the classic cubic
+    smoothstep, both its first AND second derivatives vanish at r=0/r=1, so
+    splicing it onto a flat (constant) region on either side introduces no
+    curvature discontinuity -- the ramp-into-plateau transition used by
+    BuildOvertakePathDataFromPathBoundary stays visually smooth instead of
+    kinking at the splice points."""
     r = max(0.0, min(1.0, r))
-    return r * r * (3.0 - 2.0 * r)
+    return r * r * r * (10.0 + r * (-15.0 + 6.0 * r))
 
 
 def _pass_l_from_boundary_point(pt, label: str) -> float:
@@ -529,8 +535,8 @@ def BuildOvertakePathDataFromPathBoundary(
     reference_line_info: ReferenceLineInfo,
     boundary: PathBoundary,
     *,
-    nudge_ramp: float = 5.0,
-    return_ramp: float = 5.0,
+    nudge_ramp: float = 9.0,
+    return_ramp: float = 7.0,
 ) -> Optional[PathData]:
     """
     借道 PathBounds 走廊生成 S 形 Frenet 路径：本车道 → 绕开 blocking → 回归。
