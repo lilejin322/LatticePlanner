@@ -1,24 +1,35 @@
-"""QP spline reference line smoother aligned with qp_spline_reference_line_smoother.cc."""
-
+"""
+QP spline reference line smoother aligned with qp_spline_reference_line_smoother.cc.
+"""
 from __future__ import annotations
-
 import math
 from typing import List, Optional
-
-from reference_line.discrete_points_reference_line_smoother import AnchorPoint, DiscretePointsReferenceLineSmoother
+import config as config_module
+from common.vec2d import Vec2d
 from common.map_path_point import MapPathPoint
 from reference_line import ReferenceLine
 from reference_line.reference_point import ReferencePoint
-from common.vec2d import Vec2d
-import config as config_module
+from reference_line.discrete_points_reference_line_smoother import AnchorPoint, DiscretePointsReferenceLineSmoother
 from planning_math.curve_math import ComputeCurvature, ComputeCurvatureDerivative
 from planning_math.smoothing_spline.osqp_spline_2d_solver import OsqpSpline2dSolver
 
-
 class QpSplineReferenceLineSmoother:
-    """Reference line smoother using 2D QP splines."""
+    """
+    Reference line smoother using 2D QP splines.
+    """
+    _anchor_points: List[AnchorPoint]
+    _t_knots: List[float]
+    _ref_x: float
+    _ref_y: float
+    _fallback: DiscretePointsReferenceLineSmoother
+    _solver: OsqpSpline2dSolver
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Initializes the QpSplineReferenceLineSmoother with default values and prepares the solver.
+
+        :returns: None
+        """
         self._anchor_points: List[AnchorPoint] = []
         self._t_knots: List[float] = []
         self._ref_x = 0.0
@@ -27,11 +38,24 @@ class QpSplineReferenceLineSmoother:
         self._solver = OsqpSpline2dSolver([], config_module.FLAGS_qp_spline_order)
 
     def SetAnchorPoints(self, anchor_points: List[AnchorPoint]) -> None:
+        """
+        Sets the anchor points for the reference line smoother.
+
+        :param List[AnchorPoint] anchor_points: A list of AnchorPoint objects representing the anchor points.
+        :returns: None
+        """
         if len(anchor_points) < 2:
             raise ValueError("anchor_points must contain at least two points")
         self._anchor_points = list(anchor_points)
 
     def Smooth(self, raw_reference_line: ReferenceLine) -> Optional[ReferenceLine]:
+        """
+        Smooths the given raw reference line using QP splines.
+
+        :param ReferenceLine raw_reference_line: The raw reference line to be smoothed.
+        :returns: A smoothed ReferenceLine object if successful, otherwise None.
+        :rtype: Optional[ReferenceLine]
+        """
         if not self._anchor_points:
             return ReferenceLine(raw_reference_line)
 
@@ -103,6 +127,12 @@ class QpSplineReferenceLineSmoother:
         return ReferenceLine(ref_points)
 
     def _sampling(self) -> bool:
+        """
+        Samples the anchor points to create knots for the spline.
+
+        :returns: True if sampling is successful, otherwise False.
+        :rtype: bool
+        """
         length = self._anchor_points[-1].path_point.s - self._anchor_points[0].path_point.s
         num_spline = max(1, int(length / config_module.FLAGS_qp_spline_max_spline_length + 0.5))
         self._t_knots = [float(i) for i in range(num_spline + 1)]
@@ -111,6 +141,12 @@ class QpSplineReferenceLineSmoother:
         return True
 
     def _add_constraint(self) -> bool:
+        """
+        Adds constraints to the QP solver based on the anchor points.
+
+        :returns: True if constraints are added successfully, otherwise False.
+        :rtype: bool
+        """
         headings: List[float] = []
         longitudinal_bound: List[float] = []
         lateral_bound: List[float] = []
@@ -139,6 +175,12 @@ class QpSplineReferenceLineSmoother:
         return constraint.add_second_derivative_smooth_constraint()
 
     def _add_kernel(self) -> bool:
+        """
+        Adds kernel matrices to the QP solver for smoothing.
+
+        :returns: True if kernel matrices are added successfully, otherwise False.
+        :rtype: bool
+        """
         kernel = self._solver.mutable_kernel
         if config_module.FLAGS_qp_spline_second_derivative_weight > 0.0:
             kernel.add_second_order_derivative_matrix(config_module.FLAGS_qp_spline_second_derivative_weight)

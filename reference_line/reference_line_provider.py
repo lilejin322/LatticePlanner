@@ -1,33 +1,30 @@
+import concurrent.futures
 import math
 import threading
 import time
-import concurrent.futures
 from collections import deque
 from copy import deepcopy
-from typing import List, Tuple, Set, Optional
-
+from typing import List, Optional, Set, Tuple
+import config as config_module
+from common.geometry_utils import AngleDiff
 from common.hd_map import HDMapUtil
-from common.lane_info import LaneInfo, Id, MakeMapId
-from common.pnc_map import PncMap
-from reference_line import ReferenceLine
-from common.route_segments import RouteSegments
-from common.map_path_point import LaneWaypoint
+from common.lane_info import Id, LaneInfo, MakeMapId
+from common.lane_types import LaneSegment
+from common.map_path_point import LaneWaypoint, MapPathPoint
 from common.path import Path as MapPath
-from reference_line.discrete_points_reference_line_smoother import AnchorPoint, DiscretePointsReferenceLineSmoother
-from reference_line.qp_spline_reference_line_smoother import QpSplineReferenceLineSmoother
+from common.pnc_map import PncMap
+from common.route_segments import RouteSegments
 from common.vec2d import Vec2d
+from protoclass.decision_result import ChangeLaneType
+from protoclass.lane import LaneBoundary, LaneBoundaryType
 from protoclass.point_enu import PointENU
+from protoclass.routing import RoutingResponse
 from protoclass.sl_boundary import SLPoint
 from protoclass.vehicle_state import VehicleState
-from protoclass.routing import RoutingResponse
-from protoclass.lane import LaneBoundary, LaneBoundaryType
-from common.lane_types import LaneSegment
-from protoclass.decision_result import ChangeLaneType
+from reference_line import ReferenceLine
+from reference_line.discrete_points_reference_line_smoother import AnchorPoint, DiscretePointsReferenceLineSmoother
+from reference_line.qp_spline_reference_line_smoother import QpSplineReferenceLineSmoother
 from reference_line.reference_point import ReferencePoint
-from common.map_path_point import MapPathPoint
-from common.geometry_utils import AngleDiff
-import config as config_module
-
 
 def uniform_slice(start: float, end: float, num: int) -> List[float]:
     if num <= 0:
@@ -36,7 +33,6 @@ def uniform_slice(start: float, end: float, num: int) -> List[float]:
         return [start, end]
     step = (end - start) / num
     return [start + i * step for i in range(num + 1)]
-
 
 class ReferenceLineProvider:
     """
