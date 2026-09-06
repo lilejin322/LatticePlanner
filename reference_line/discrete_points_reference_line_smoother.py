@@ -1,33 +1,43 @@
 """
 Discrete-points reference line smoother aligned with Apollo.
 """
-
 from __future__ import annotations
-
 import math
+import config as config_module
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
-
+from protoclass.path_point import PathPoint
+from common.vec2d import Vec2d
+from common.map_path_point import MapPathPoint
 from common.fem_pos_deviation_smoother import FemPosDeviationSmoother
 from reference_line import ReferenceLine
 from reference_line.reference_point import ReferencePoint
-from common.map_path_point import MapPathPoint
-from common.vec2d import Vec2d
-from protoclass.path_point import PathPoint
-from protoclass.sl_boundary import SLPoint
-import config as config_module
-
 
 @dataclass
 class AnchorPoint:
+    """
+    Anchor point for reference line smoothing.
+    """
     path_point: PathPoint
     lateral_bound: float = 0.0
     longitudinal_bound: float = 0.0
     enforced: bool = False
 
-
 class DiscretePointsReferenceLineSmoother:
-    def __init__(self):
+    """
+    Discrete points reference line smoother.
+    """
+    _anchor_points: List[AnchorPoint] = field(default_factory=list)
+    _solver: FemPosDeviationSmoother = field(default_factory=FemPosDeviationSmoother)
+    _ref_x: float = 0.0
+    _ref_y: float = 0.0
+
+    def __init__(self) -> None:
+        """
+        Initialize the discrete points reference line smoother.
+
+        :returns: None
+        """
         self._anchor_points: List[AnchorPoint] = []
         self._solver = FemPosDeviationSmoother(
             weight_fem_pos_deviation=config_module.FLAGS_fem_pos_weight_deviation,
@@ -38,10 +48,23 @@ class DiscretePointsReferenceLineSmoother:
         self._ref_y = 0.0
 
     def SetAnchorPoints(self, anchor_points: List[AnchorPoint]) -> None:
+        """
+        Set the anchor points for reference line smoothing.
+
+        :param List[AnchorPoint] anchor_points: List of anchor points.
+        :returns: None
+        """
         self._anchor_points = list(anchor_points)
 
     @staticmethod
     def _normalize_points(points: List[Tuple[float, float]]) -> Tuple[List[Tuple[float, float]], float, float]:
+        """
+        Normalize the points by subtracting the reference point.
+        
+        :param List[Tuple[float, float]] points: List of points to normalize.
+        :returns: Tuple containing the normalized points, reference x, and reference y.
+        :rtype: Tuple[List[Tuple[float, float]], float, float]
+        """
         if not points:
             return points, 0.0, 0.0
         ref_x, ref_y = points[0]
@@ -52,6 +75,14 @@ class DiscretePointsReferenceLineSmoother:
     def _compute_heading_and_kappa(
         xs: List[float], ys: List[float]
     ) -> Tuple[List[float], List[float], List[float]]:
+        """
+        Compute the heading, curvature (kappa), and derivative of curvature (dkappa) for a list of points.
+
+        :param List[float] xs: List of x coordinates.
+        :param List[float] ys: List of y coordinates.
+        :returns: Tuple containing lists of headings, kappas, and dkappas.
+        :rtype: Tuple[List[float], List[float], List[float]]
+        """
         headings, kappas, dkappas = [], [], []
         n = len(xs)
         for i in range(n):
@@ -84,6 +115,13 @@ class DiscretePointsReferenceLineSmoother:
         return headings, kappas, dkappas
 
     def Smooth(self, raw_reference_line: ReferenceLine) -> Optional[ReferenceLine]:
+        """
+        Smooth the reference line based on the anchor points.
+
+        :param ReferenceLine raw_reference_line: The raw reference line to smooth.
+        :returns: The smoothed reference line or None if smoothing fails.
+        :rtype: Optional[ReferenceLine]
+        """
         if not self._anchor_points:
             return ReferenceLine(raw_reference_line)
 

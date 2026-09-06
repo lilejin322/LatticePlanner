@@ -1,3 +1,6 @@
+"""
+Reference line module
+"""
 from copy import deepcopy
 from common.vec2d import Vec2d, kMathEpsilon
 from reference_line.reference_point import ReferencePoint
