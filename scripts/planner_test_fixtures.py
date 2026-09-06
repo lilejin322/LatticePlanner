@@ -461,8 +461,12 @@ def build_slow_leader_obstacle(
 
 
 def _smoothstep01(r: float) -> float:
+    """Quintic smoothstep: first AND second derivatives vanish at r=0/r=1,
+    so ramp-into-flat-plateau splices (see common/planning_util.py's
+    identical helper) don't kink at the curvature level like the classic
+    cubic smoothstep does."""
     r = max(0.0, min(1.0, r))
-    return r * r * (3.0 - 2.0 * r)
+    return r * r * r * (10.0 + r * (-15.0 + 6.0 * r))
 
 
 def build_cartesian_overtake_path_points(

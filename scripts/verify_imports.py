@@ -10,7 +10,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # Directories that sit alongside the project's own packages but aren't part
 # of it: this checker's own home, vendored/generated code, and scratch space.
-_EXCLUDED_DIRS = {"scripts", "generated", "modules", "z3"}
+_EXCLUDED_DIRS = {"scripts", "generated", "modules", "verification"}
 
 
 def _discover_top_level_packages() -> list[str]:
