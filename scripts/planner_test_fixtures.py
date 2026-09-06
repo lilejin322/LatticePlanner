@@ -328,7 +328,7 @@ def build_curved_lattice_plan_frame(
 
 
 def build_parallel_lanes_hdmap(length: float = 100.0):
-    """双车道直道：lane_left (y=0) 与 lane_right (y=-3.5)。"""
+    """Two-lane straight road: lane_left (y=0) and lane_right (y=-3.5)."""
     left = build_straight_lane("lane_left", length=length)
     left.left_neighbor_forward_lane_id = []
     left.right_neighbor_forward_lane_id = [Lane.Id("lane_right")]
@@ -364,7 +364,7 @@ def build_parallel_lanes_hdmap(length: float = 100.0):
 
 
 def build_left_lane_reference_line(length: float = 100.0, init_v: float = 1.0):
-    """在左车道（lane_left）上建参考线。"""
+    """Build a reference line on the left lane (lane_left)."""
     _, left_info = build_parallel_lanes_hdmap(length=length)
     route_segments = RouteSegments()
     route_segments.SetIsOnSegment(True)
@@ -451,7 +451,8 @@ def build_slow_leader_obstacle(
     y: float = 0.0,
     vx: float = 0.0,
 ):
-    """前车：默认静止；vx>0 表示慢速行驶（仅用于标注速度，仍按静态参与规划）。"""
+    """Leading vehicle: stationary by default; vx>0 marks it as moving slowly
+    (only annotates the speed -- it still participates in planning as static)."""
     from protoclass.adc_trajectory import Point3D
 
     obs = build_static_obstacle(obs_id, x, y=y)
@@ -480,7 +481,8 @@ def build_cartesian_overtake_path_points(
     pass_length: float = 10.0,
     return_ramp: float = 5.0,
 ):
-    """在 Cartesian 下直接构造 S 形绕行路径（用于可视化与 Combine）。"""
+    """Directly construct an S-curve bypass path in Cartesian coordinates
+    (for visualization and Combine)."""
     from protoclass.path_point import PathPoint
 
     x_out = obstacle_x - nudge_start_before
@@ -584,8 +586,10 @@ def build_frenet_overtake_path_points(
     step: float = 0.5,
 ):
     """
-  构造 Frenet 超车轮廓：本车道 → 横向绕开障碍（S 形）→ 回到本车道。
-  obstacle_s 为前车中心在参考线 s 上的大致位置。
+    Construct a Frenet overtaking profile: ego lane -> laterally bypass the
+    obstacle (S-curve) -> return to the ego lane.
+    obstacle_s is the approximate position of the leading vehicle's center
+    along the reference line s.
     """
     from protoclass.frenet_frame_point import FrenetFramePoint
 
@@ -619,7 +623,7 @@ def apply_frenet_overtake_trajectory(
     *,
     cruise_v: float = 6.0,
 ) -> tuple[bool, str]:
-    """优先 Frenet→XY；失败则回退为 Cartesian 点列。"""
+    """Prefer Frenet->XY; fall back to a Cartesian point list on failure."""
     from common.frenet_frame_path import FrenetFramePath
     from common.path_data import PathData
 
@@ -645,7 +649,7 @@ def apply_frenet_overtake_trajectory(
             if max(ys) > 0.5:
                 return True, f"frenet_xy max|y|={max(ys):.2f}"
 
-    # Frenet SLToXY 在部分参考线上不可用 → Cartesian S 曲线
+    # Frenet SLToXY is unavailable on some reference lines -> fall back to a Cartesian S-curve
     cart_pts = build_cartesian_overtake_path_points(
         obstacle_x=30.0,
         peak_y=3.2,
@@ -662,7 +666,8 @@ def build_synthetic_overtake_frame(
     peak_y: float = 3.2,
     length: float = 100.0,
 ):
-    """标准超车动画：前车 + Cartesian S 形绕行（绕开→回归，非全程偏置）。"""
+    """Standard overtaking animation: leading vehicle + Cartesian S-curve
+    bypass (bypass -> return, not a constant offset for the whole path)."""
     leader = build_slow_leader_obstacle("slow_leader", leader_x)
     frame, rli, start = build_lattice_plan_frame(
         [leader],
@@ -687,7 +692,8 @@ def build_lattice_overtake_combined_frame(
     init_v: float = 5.0,
     peak_y: float = 3.2,
 ):
-    """Lattice 纵向往前 + Cartesian S 形路径经 Combine（合成栈一致）。"""
+    """Lattice longitudinal profile + Cartesian S-curve path via Combine
+    (consistent with the synthetic stack)."""
     leader = build_slow_leader_obstacle("slow_leader", leader_x)
     frame, rli, start = build_lattice_plan_frame(
         [leader], init_v=init_v, blocking_obstacle_id="slow_leader"
@@ -710,7 +716,8 @@ def apply_path_bounds_overtake_trajectory(
     obstacle_x: float = 30.0,
 ) -> tuple[bool, str]:
     """
-    C++ 对齐超车：PathBounds 借道走廊 + S 形 l(s) 剖面 + Combine（非纯 Lattice）。
+    C++-aligned overtaking: PathBounds lane-borrow corridor + S-curve l(s)
+    profile + Combine (not pure Lattice).
     """
     from common.discretized_trajectory import DiscretizedTrajectory
     from common.path_bounds_decider import PathBoundsDecider
@@ -786,7 +793,8 @@ def build_path_bounds_overtake_frame(
     length: float = 100.0,
     cruise_v: float = 6.0,
 ):
-    """超车场景（推荐）：PathBounds 左借道 + S 形剖面 + Combine。"""
+    """Overtaking scenario (recommended): PathBounds left-borrow + S-curve
+    profile + Combine."""
     leader = build_slow_leader_obstacle("slow_leader", leader_x)
     from common.frame import Frame
 
@@ -811,8 +819,10 @@ def apply_borrow_path_trajectory(
     lane_borrow: bool = True,
 ) -> tuple[bool, str]:
     """
-    PathBounds 借道候选 + 指定 path_label + Combine 写入 reference_line_info.trajectory。
-    用于「超车绕行」类场景动画（不经过 Lattice 1D 搜索）。
+    PathBounds lane-borrow candidate + the given path_label + Combine, written
+    into reference_line_info.trajectory.
+    Used for "overtaking bypass" style scenario animations (bypasses the
+    Lattice 1D search).
     """
     from common.discretized_trajectory import DiscretizedTrajectory
     from common.path_bounds_decider import PathBoundsDecider, BuildCandidatePathsFromBoundaries
@@ -863,7 +873,8 @@ def build_overtake_lattice_frame(
     slow_y: float = 0.0,
     length: float = 100.0,
 ):
-    """Lattice 超车尝试：本车道前车（多为跟停，非借道超车）。"""
+    """Lattice overtaking attempt: leading vehicle in the ego lane (usually
+    results in follow-and-stop, not lane-borrow overtaking)."""
     leader = build_slow_leader_obstacle("slow_leader", slow_x, y=slow_y)
     return build_lattice_plan_frame(
         [leader],
@@ -880,7 +891,8 @@ def build_overtake_borrow_frame(
     init_v: float = 5.0,
     length: float = 100.0,
 ):
-    """借道绕行轨迹（left/right），已写入 trajectory，供动画直接播放。"""
+    """Lane-borrow bypass trajectory (left/right), already written into
+    trajectory for the animation to play directly."""
     from common.frame import Frame
 
     leader = build_slow_leader_obstacle("slow_leader", slow_x)
@@ -901,8 +913,9 @@ def build_lane_change_curve(
     *,
     step: float = 1.0,
 ) -> list:
-    """从 y=0 平滑过渡到 y=y_final 的换道曲线点序列（升余弦过渡，两端切线水平，
-    避免与直线车道拼接处出现曲率突变）。"""
+    """Lane-change curve point sequence transitioning smoothly from y=0 to
+    y=y_final (raised-cosine transition, horizontal tangent at both ends,
+    avoiding a curvature discontinuity at the splice with the straight lane)."""
     points = []
     x = 0.0
     while x <= length + 1e-6:
@@ -925,15 +938,19 @@ def build_lane_change_frame(
     transition_length: float = 30.0,
 ):
     """
-    双车道换道超车场景：本车道（lane_left, y=0）前方有一辆匀速慢速 NPC，
-    目标车道（lane_right）用一条从 y=0 平滑过渡到 y=-3.5 的"换道曲线"表示
-    （模拟真实换道参考线，而非简单的车道宽度侧移——直接侧移会让 init_d 过大，
-    超出 lattice 1D 采样器的横向端点范围 [-0.5, 0, 0.5]，导致规划失败）。
+    Two-lane lane-change overtaking scenario: the ego lane (lane_left, y=0)
+    has a constant-speed, slow-moving NPC ahead; the target lane (lane_right)
+    is represented by a "lane-change curve" transitioning smoothly from y=0
+    to y=-3.5 (simulating a realistic lane-change reference line, rather than
+    a simple lane-width lateral shift -- a direct shift would make init_d too
+    large, exceeding the lattice 1D sampler's lateral endpoint range
+    [-0.5, 0, 0.5] and causing planning to fail).
 
-    返回 (frame, target_reference_line_info, start_point)。
-    frame.mutable_reference_line_info == [current_rli, target_rli]，
-    交给 LatticePlanner.Plan() 后可用 frame.FindDriveReferenceLineInfo()
-    取得成本更低的那条（预期是 target_rli）。
+    Returns (frame, target_reference_line_info, start_point).
+    frame.mutable_reference_line_info == [current_rli, target_rli]; after
+    handing this to LatticePlanner.Plan(), frame.FindDriveReferenceLineInfo()
+    can be used to obtain whichever has the lower cost (expected to be
+    target_rli).
     """
     from common.frame import Frame
 

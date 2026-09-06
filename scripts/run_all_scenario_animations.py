@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """
-为全部 Lattice 场景用例生成场景动画（默认 0.1s/帧 GIF）。
+Generate scenario animations for all Lattice scenario cases (default 0.1s/frame GIF).
 
-等价于对 scripts/lattice_scenarios.py 中每个场景执行规划并 --animate，
-跳过无法产出轨迹的场景（如 stress 扫描、仅 PathBounds 等）。
+Equivalent to running planning with --animate for every scenario in
+scripts/lattice_scenarios.py, skipping scenarios that cannot produce a
+trajectory (e.g. stress sweeps, PathBounds-only scenarios, etc.).
 
-用法:
+Usage:
   .venv/bin/python scripts/run_all_scenario_animations.py
   .venv/bin/python scripts/run_all_scenario_animations.py --tag lattice
   .venv/bin/python scripts/run_all_scenario_animations.py --list
@@ -21,7 +22,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# matplotlib 缓存写到工程内，避免权限问题
+# write matplotlib's cache inside the project to avoid permission issues
 os.environ.setdefault("MPLCONFIGDIR", str(PROJECT_ROOT / "scripts" / "output" / "mpl-cache"))
 
 from scripts.lattice_scenarios import SCENARIOS
@@ -36,47 +37,47 @@ from scripts.run_lattice_scenario_cases import (
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="为全部场景用例生成场景动画 GIF（0.1s/帧）"
+        description="Generate scenario animation GIFs for all scenario cases (0.1s/frame)"
     )
     parser.add_argument(
         "--tag",
         choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "all"],
         default="all",
-        help="只处理某一类场景（默认 all）",
+        help="Only process one category of scenarios (default: all)",
     )
     parser.add_argument(
         "--list",
         action="store_true",
-        help="列出将参与动画的场景（含预计是否可生成）",
+        help="List the scenarios that would be animated (including whether they're expected to produce one)",
     )
     parser.add_argument(
         "--animate-dt",
         type=float,
         default=0.1,
-        help="动画时间步 [s]（默认 0.1）",
+        help="Animation time step [s] (default 0.1)",
     )
     parser.add_argument(
         "--animate-fps",
         type=float,
         default=None,
-        help="GIF 帧率（默认 10，即实时播放）",
+        help="GIF frame rate (default 10, i.e. real-time playback)",
     )
     parser.add_argument(
         "--anim-dir",
         type=Path,
         default=DEFAULT_ANIM_DIR,
-        help="GIF 输出目录",
+        help="GIF output directory",
     )
     parser.add_argument(
         "--dpi",
         type=int,
         default=100,
-        help="GIF/PNG 分辨率",
+        help="GIF/PNG resolution",
     )
     parser.add_argument(
         "--include-stress",
         action="store_true",
-        help="包含 stress 类（默认过滤；通常无轨迹，会跳过动画）",
+        help="Include the stress category (filtered out by default; usually has no trajectory and is skipped)",
     )
     args = parser.parse_args()
 
@@ -89,36 +90,36 @@ def main() -> int:
         scenarios = [s for s in scenarios if s.category != "stress"]
 
     if args.list:
-        print(f"共 {len(scenarios)} 个场景（tag={args.tag}）:\n")
+        print(f"{len(scenarios)} scenarios total (tag={args.tag}):\n")
         for s in scenarios:
-            hint = "可动画" if s.category in ("lattice", "on_lane", "overtake", "lane_change") else "可能无轨迹"
+            hint = "animatable" if s.category in ("lattice", "on_lane", "overtake", "lane_change") else "may have no trajectory"
             if not s.expect_ok and not s.informational:
-                hint = "通常跳过"
+                hint = "usually skipped"
             if s.name == "decider_bounds_assessment":
-                hint = "可动画"
+                hint = "animatable"
             elif s.name in (
                 "decider_lane_borrow_bounds",
                 "decider_cruise_speed_data",
             ):
-                hint = "通常跳过"
+                hint = "usually skipped"
             elif s.category == "stress":
-                hint = "跳过（无轨迹）"
+                hint = "skipped (no trajectory)"
             print(f"  {s.category:8s} {s.name:36s} {hint}  {s.description}")
         return 0
 
     print("=" * 60)
-    print("全部场景动画生成")
-    print(f"  场景数: {len(scenarios)} | dt={args.animate_dt}s | 输出: {args.anim_dir}")
+    print("Generating animations for all scenarios")
+    print(f"  Scenarios: {len(scenarios)} | dt={args.animate_dt}s | output: {args.anim_dir}")
     print("=" * 60)
 
     outcomes: list[RunOutcome] = []
     for scenario in scenarios:
-        print(f"\n>>> 运行: {scenario.name} ...", flush=True)
+        print(f"\n>>> Running: {scenario.name} ...", flush=True)
         out = execute(scenario)
         outcomes.append(out)
 
     print("\n" + "-" * 60)
-    print("生成动画 ...")
+    print("Generating animations ...")
     try:
         save_animations(
             outcomes,
@@ -128,12 +129,12 @@ def main() -> int:
             dpi=args.dpi,
         )
     except ImportError as exc:
-        print("需要依赖: pip install matplotlib pillow", file=sys.stderr)
+        print("Missing dependency: pip install matplotlib pillow", file=sys.stderr)
         print(f"  ({exc})", file=sys.stderr)
         return 3
 
     print("\n" + "=" * 60)
-    print("结果汇总")
+    print("Result summary")
     print("=" * 60)
 
     animated = 0
@@ -146,18 +147,18 @@ def main() -> int:
             animated += 1
         elif out.scene_context and out.scene_context.traj_x:
             skipped += 1
-            print("  (有轨迹但未生成动画)")
+            print("  (has a trajectory but no animation was generated)")
         else:
             skipped += 1
-            print("  (跳过动画: 无轨迹或仅 decider/stress)")
+            print("  (animation skipped: no trajectory, or decider/stress only)")
         if not out.passed and not out.scenario.informational:
             test_failed += 1
 
     print(
-        f"\n动画: {animated} 个 GIF | 跳过: {skipped} | "
-        f"场景断言失败: {test_failed}（不影响已生成的 GIF）"
+        f"\nAnimations: {animated} GIFs | Skipped: {skipped} | "
+        f"Scenario assertion failures: {test_failed} (does not affect GIFs already generated)"
     )
-    print(f"GIF 目录: {args.anim_dir.resolve()}")
+    print(f"GIF directory: {args.anim_dir.resolve()}")
 
     return 0
 

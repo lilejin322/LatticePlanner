@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""一键：全部超车场景测试 + 场景动画 GIF。"""
+"""One-click: run all overtaking scenario tests + generate scenario animation GIFs."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ def main() -> int:
     if "--list" not in extra_args:
         cmd.append("--animate")
     cmd.extend(extra_args)
-    print("运行:", " ".join(cmd), "\n", flush=True)
+    print("Running:", " ".join(cmd), "\n", flush=True)
     return subprocess.call(cmd, cwd=str(PROJECT_ROOT))
 
 

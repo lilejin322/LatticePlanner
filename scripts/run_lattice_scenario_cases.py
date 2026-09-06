@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Lattice 全场景测试（34 项）：按类别跑 Lattice / Decider / OnLane / Stress / Overtake。
+Lattice full scenario test suite (34 cases): run Lattice / Decider / OnLane / Stress / Overtake by category.
 
-用法:
+Usage:
   .venv/bin/python scripts/run_lattice_scenario_cases.py --list
   .venv/bin/python scripts/run_lattice_scenario_cases.py
   .venv/bin/python scripts/run_lattice_scenario_cases.py --tag lattice
@@ -52,14 +52,14 @@ class RunOutcome:
 def trajectory_summary(reference_line_info) -> str:
     traj = reference_line_info.trajectory
     if not traj or len(traj) == 0:
-        return "轨迹: 无"
+        return "Trajectory: none"
     first, last = traj[0], traj[-1]
     max_v = max(pt.v for pt in traj)
     max_a = max(abs(pt.a) for pt in traj)
     max_y = max(abs(pt.path_point.y) for pt in traj)
     tname = reference_line_info.trajectory_type.name
     return (
-        f"轨迹 {len(traj)} 点 | {tname} | "
+        f"Trajectory {len(traj)} pts | {tname} | "
         f"({first.path_point.x:.1f},{first.path_point.y:.2f},v={first.v:.2f})→"
         f"({last.path_point.x:.1f},{last.path_point.y:.2f},v={last.v:.2f}) | "
         f"max|v|={max_v:.2f} max|a|={max_a:.2f} max|y|={max_y:.2f}"
@@ -122,7 +122,7 @@ def execute(scenario: Scenario) -> RunOutcome:
         extra = built[5] if len(built) > 5 else None
         adc = built[6] if len(built) > 6 else None
 
-        # OnLane / decider-only / stress（无完整轨迹）
+        # OnLane / decider-only / stress (no complete trajectory)
         if built[0] is None:
             rli = built[1]
             got_ok = bool(built[3])
@@ -150,7 +150,7 @@ def execute(scenario: Scenario) -> RunOutcome:
             return RunOutcome(
                 scenario=scenario,
                 got_ok=True,
-                detail="decider 跳过（未产出 path）",
+                detail="decider skipped (no path produced)",
             )
 
         if scenario.skip_lattice:
@@ -229,7 +229,7 @@ def save_animations(
             saved += 1
             total_frames += n
     print(
-        f"\n已保存 {saved} 个场景动画（共 {total_frames} 帧 @ {dt}s）→ {anim_dir.resolve()}"
+        f"\nSaved {saved} scenario animations ({total_frames} frames total @ {dt}s) -> {anim_dir.resolve()}"
     )
 
 
@@ -246,64 +246,64 @@ def print_outcome(out: RunOutcome) -> None:
         status = "INFO"
     else:
         status = "PASS" if out.passed else "FAIL"
-    expect = "成功" if s.expect_ok else "失败"
-    got = "成功" if out.got_ok else "失败"
+    expect = "success" if s.expect_ok else "failure"
+    got = "success" if out.got_ok else "failure"
     print(f"\n[{status}] [{tag}] {s.name}")
     print(f"  {s.description}")
     if not s.informational:
-        print(f"  期望: {expect} | 实际: {got}")
+        print(f"  Expected: {expect} | Actual: {got}")
     print(f"  {out.detail}")
     if out.animation_path is not None:
-        print(f"  动画: {out.animation_path} ({out.animation_frames} 帧)")
+        print(f"  Animation: {out.animation_path} ({out.animation_frames} frames)")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Lattice 全场景测试")
-    parser.add_argument("cases", nargs="*", help="用例名")
-    parser.add_argument("--list", action="store_true", help="列出用例")
+    parser = argparse.ArgumentParser(description="Lattice full scenario test suite")
+    parser.add_argument("cases", nargs="*", help="Case names")
+    parser.add_argument("--list", action="store_true", help="List the cases")
     parser.add_argument(
         "--tag",
         choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "all"],
         default="all",
-        help="按类别筛选",
+        help="Filter by category",
     )
-    parser.add_argument("--fail-fast", action="store_true", help="首个失败即退出")
+    parser.add_argument("--fail-fast", action="store_true", help="Exit on the first failure")
     parser.add_argument(
         "--animate",
         action="store_true",
-        help="场景动画 GIF：地图上自车每 0.1s 一帧运动",
+        help="Scenario animation GIF: the ego vehicle moves on the map one frame every 0.1s",
     )
     parser.add_argument(
         "--animate-dt",
         type=float,
         default=0.1,
-        help="动画时间步长 [s]（默认 0.1）",
+        help="Animation time step [s] (default 0.1)",
     )
     parser.add_argument(
         "--animate-fps",
         type=float,
         default=None,
-        help="GIF 播放帧率（默认 1/animate-dt，即实时）",
+        help="GIF playback frame rate (default 1/animate-dt, i.e. real-time)",
     )
     parser.add_argument(
         "--anim-dir",
         type=Path,
         default=DEFAULT_ANIM_DIR,
-        help="GIF 输出目录",
+        help="GIF output directory",
     )
     parser.add_argument(
         "--show",
         action="store_true",
-        help="弹窗显示动画（需 GUI）",
+        help="Show the animation in a popup window (requires a GUI)",
     )
-    parser.add_argument("--dpi", type=int, default=120, help="动画渲染 DPI")
+    parser.add_argument("--dpi", type=int, default=120, help="Animation render DPI")
     args = parser.parse_args()
 
     if args.cases:
         selected = []
         for name in args.cases:
             if name not in SCENARIOS_BY_NAME:
-                print(f"未知用例: {name}", file=sys.stderr)
+                print(f"Unknown case: {name}", file=sys.stderr)
                 return 2
             selected.append(SCENARIOS_BY_NAME[name])
     else:
@@ -314,11 +314,11 @@ def main() -> int:
         )
 
     if args.list:
-        print(f"共 {len(selected)} 个场景")
+        print(f"{len(selected)} scenarios total")
         if args.tag != "all":
-            print(f"筛选: tag={args.tag}")
+            print(f"Filter: tag={args.tag}")
         if args.cases:
-            print(f"筛选: cases={', '.join(args.cases)}")
+            print(f"Filter: cases={', '.join(args.cases)}")
         print()
         categories = ("lattice", "decider", "on_lane", "stress", "overtake", "lane_change")
         for cat in categories:
@@ -329,13 +329,13 @@ def main() -> int:
             for s in items:
                 mark = "ℹ" if s.informational else ("✓" if s.expect_ok else "✗")
                 print(f"    {mark} {s.name:36s} {s.description}")
-        print("\n动画: --animate 场景 GIF（0.1s/帧）")
+        print("\nAnimation: --animate for scenario GIFs (0.1s/frame)")
         return 0
 
-    print(f"Lattice 场景测试 | tag={args.tag} | 共 {len(selected)} 项")
-    print(f"backup 默认: {config.FLAGS_enable_backup_trajectory}")
+    print(f"Lattice scenario test suite | tag={args.tag} | {len(selected)} cases total")
+    print(f"backup default: {config.FLAGS_enable_backup_trajectory}")
     if args.animate:
-        print(f"场景动画 dt={args.animate_dt}s → {args.anim_dir}")
+        print(f"Scenario animation dt={args.animate_dt}s -> {args.anim_dir}")
     if args.animate or args.show:
         print()
     else:
@@ -359,7 +359,7 @@ def main() -> int:
                 show=args.show,
             )
         except ImportError as exc:
-            print("\n动画需要 matplotlib pillow: pip install matplotlib pillow", file=sys.stderr)
+            print("\nAnimation requires matplotlib pillow: pip install matplotlib pillow", file=sys.stderr)
             print(f"  ({exc})", file=sys.stderr)
             return 3
 
@@ -368,9 +368,9 @@ def main() -> int:
 
     passed = sum(1 for o in outcomes if o.passed)
     failed = [o.scenario.name for o in outcomes if not o.passed]
-    print(f"\n合计: {passed}/{len(outcomes)} 通过", end="")
+    print(f"\nTotal: {passed}/{len(outcomes)} passed", end="")
     if failed:
-        print(f" | 未通过: {', '.join(failed)}", end="")
+        print(f" | Failed: {', '.join(failed)}", end="")
     print()
     return 0 if passed == len(outcomes) else 1
 

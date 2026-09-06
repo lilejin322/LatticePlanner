@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-精简演示（6 项）。全量场景请用 run_lattice_scenario_cases.py。
+Condensed demo (6 items). For the full set of scenarios use run_lattice_scenario_cases.py.
 
   .venv/bin/python scripts/run_lattice_demo_cases.py --list
   .venv/bin/python scripts/run_lattice_scenario_cases.py --list
@@ -15,7 +15,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# 复用全场景 runner
+# reuse the full-scenario runner
 from scripts.run_lattice_scenario_cases import (
     DEFAULT_ANIM_DIR,
     execute,
@@ -35,21 +35,21 @@ DEMO_CASE_NAMES = [
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Lattice 精简演示（6 项）")
-    parser.add_argument("cases", nargs="*", help="用例名")
+    parser = argparse.ArgumentParser(description="Lattice condensed demo (6 items)")
+    parser.add_argument("cases", nargs="*", help="Case names")
     parser.add_argument("--list", action="store_true")
     parser.add_argument(
         "--animate",
         action="store_true",
-        help="场景动画 GIF（0.1s/帧）",
+        help="Scenario animation GIF (0.1s/frame)",
     )
     parser.add_argument("--animate-dt", type=float, default=0.1)
     parser.add_argument("--anim-dir", type=Path, default=DEFAULT_ANIM_DIR)
-    parser.add_argument("--show", action="store_true", help="弹窗显示动画")
+    parser.add_argument("--show", action="store_true", help="Show the animation in a popup window")
     args = parser.parse_args()
 
     if args.list:
-        print("精简演示用例（完整列表见 run_lattice_scenario_cases.py --list）:\n")
+        print("Condensed demo cases (see run_lattice_scenario_cases.py --list for the full list):\n")
         for name in DEMO_CASE_NAMES:
             s = SCENARIOS_BY_NAME[name]
             print(f"  {name:32s} {s.description}")
@@ -59,7 +59,7 @@ def main() -> int:
     outcomes = []
     for name in names:
         if name not in SCENARIOS_BY_NAME:
-            print(f"未知用例: {name}", file=sys.stderr)
+            print(f"Unknown case: {name}", file=sys.stderr)
             return 2
         out = execute(SCENARIOS_BY_NAME[name])
         outcomes.append(out)
@@ -73,14 +73,14 @@ def main() -> int:
                 show=args.show,
             )
         except ImportError:
-            print("需要: pip install matplotlib pillow", file=sys.stderr)
+            print("Requires: pip install matplotlib pillow", file=sys.stderr)
             return 3
 
     for out in outcomes:
         print_outcome(out)
 
     passed = sum(1 for o in outcomes if o.passed)
-    print(f"\n合计: {passed}/{len(outcomes)} 通过")
+    print(f"\nTotal: {passed}/{len(outcomes)} passed")
     return 0 if passed == len(outcomes) else 1
 
 

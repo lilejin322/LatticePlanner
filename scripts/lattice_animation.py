@@ -64,8 +64,9 @@ def _lerp_angle(a: float, b: float, r: float) -> float:
 
 
 def _interp_obstacle_pose(obs, t: float) -> Tuple[float, float, float]:
-    """在障碍物记录的轨迹点上按时间 t 线性插值位姿；
-    超出记录范围时钉在首/尾点，行为对齐 Obstacle.GetPointAtTime 的截断逻辑。
+    """Linearly interpolate the pose at time t over the obstacle's recorded
+    trajectory points; clamp to the first/last point when t is out of the
+    recorded range, matching the clamping behavior of Obstacle.GetPointAtTime.
     """
 
     times = obs.traj_t
@@ -148,7 +149,7 @@ def sample_trajectory_frames(
 
 
 def _box_polygon_xy(cx: float, cy: float, theta: float, length: float, width: float) -> List[Tuple[float, float]]:
-    """矩形四角坐标（中心 cx,cy，朝向 theta，长 length，宽 width）。"""
+    """Rectangle corner coordinates (center cx,cy; heading theta; length; width)."""
 
     hl = length / 2.0
     hw = width / 2.0
@@ -247,8 +248,8 @@ def animate_context(
     show: bool = False,
 ) -> Tuple[Optional[Path], int]:
     """
-    生成场景动画。返回 (gif路径, 帧数)。
-    fps 默认 1/dt，即实时播放。
+    Generate the scenario animation. Returns (gif_path, frame_count).
+    fps defaults to 1/dt, i.e. real-time playback.
     """
     samples = sample_trajectory_frames(ctx, dt=dt)
     if not samples:

@@ -472,7 +472,9 @@ def _smoothstep01(r: float) -> float:
 
 
 def _pass_l_from_boundary_point(pt, label: str) -> float:
-    """借道走廊内推荐通行横向位置（左借道偏上界，右借道偏下界）。"""
+    """Recommended lateral passing position within the borrow-lane corridor
+    (biased toward the upper bound when borrowing left, lower bound when
+    borrowing right)."""
     if "left" in label:
         return pt.l_upper.l * 0.85 + pt.l_lower.l * 0.15
     if "right" in label:
@@ -495,7 +497,8 @@ def _blocking_s_range_for_overtake(
     nudge_before: float = 10.0,
     return_after: float = 8.0,
 ) -> tuple[float, float]:
-    """从前车 SL 或走廊收窄段推断绕行 s 区间。"""
+    """Infer the bypass s-range from the leading obstacle's SL boundary,
+    or from the corridor's narrowest segment."""
     obs = reference_line_info.GetBlockingObstacle()
     if obs is not None:
         sl = obs.PerceptionSLBoundary()
@@ -539,8 +542,11 @@ def BuildOvertakePathDataFromPathBoundary(
     return_ramp: float = 7.0,
 ) -> Optional[PathData]:
     """
-    借道 PathBounds 走廊生成 S 形 Frenet 路径：本车道 → 绕开 blocking → 回归。
-    对应 C++ 栈里 PathBounds + path optimizer 应产出的超车形态（Python 用剖面近似）。
+    Generate an S-shaped Frenet path from the borrow-lane PathBounds corridor:
+    ego lane -> bypass the blocking obstacle -> return.
+    Corresponds to the overtaking shape that PathBounds + the path optimizer
+    would produce in the C++ stack (approximated here in Python with a
+    lateral-offset profile).
     """
     if not boundary:
         return None

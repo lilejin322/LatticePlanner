@@ -1,5 +1,5 @@
 """
-Lattice / OnLane 场景定义（供 run_lattice_scenario_cases.py 与 demo 复用）。
+Lattice / OnLane scenario definitions (shared by run_lattice_scenario_cases.py and the demo).
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from scripts.planner_test_fixtures import (
     build_static_obstacle,
 )
 
-# builder 返回: frame, rli, start, expect_ok, backup_flag, extra
+# builder returns: frame, rli, start, expect_ok, backup_flag, extra
 BuilderResult = Tuple
 
 
@@ -38,7 +38,7 @@ class Scenario:
     expect_ok: bool = True
     backup: Optional[bool] = None
     informational: bool = False
-    skip_lattice: bool = False  # 已预置 trajectory（借道超车等）
+    skip_lattice: bool = False  # trajectory already prebuilt (e.g. lane-borrow overtaking)
 
 
 def _lattice(
@@ -64,7 +64,7 @@ def _lattice(
     return frame, rli, start, expect_ok, backup, extra
 
 
-# --- lattice 核心 ---
+# --- lattice core ---
 
 
 def s_open_road() -> BuilderResult:
@@ -155,7 +155,7 @@ def s_curved_obstacle_stop() -> BuilderResult:
     return frame, rli, start, True, None, "left_arc obstacle_s=35m"
 
 
-# --- decider 层 ---
+# --- decider layer ---
 
 
 def s_decider_bounds_assessment() -> BuilderResult:
@@ -375,11 +375,11 @@ def s_on_lane_overtake_path_bounds() -> BuilderResult:
     return None, viz_rli, None, ok, None, extra, adc
 
 
-# --- stress / 探测 ---
+# --- stress / probing ---
 
 
 def s_stress_obstacle_distance_sweep() -> BuilderResult:
-    """在 10–40m 多档障碍距离上探测 lattice 是否成功（信息用例）。"""
+    """Probe whether lattice succeeds across several obstacle distances from 10-40m (informational case)."""
     results = []
     for x in (10, 15, 18, 22, 30, 40):
         obs = build_static_obstacle(f"car_{x}", float(x))
@@ -413,11 +413,11 @@ def s_stress_init_speed_sweep() -> BuilderResult:
     return None, None, None, True, None, extra
 
 
-# --- 超车：PathBounds S 形（推荐）/ 合成参考 / Lattice 跟停对照 ---
+# --- Overtaking: PathBounds S-curve (recommended) / synthetic reference / Lattice follow-and-stop control ---
 
 
 def s_overtake_path_bounds_left() -> BuilderResult:
-    """推荐：PathBounds 左借道 + S 形 l(s) + Combine（对齐 C++ 借道超车栈）。"""
+    """Recommended: PathBounds left-borrow + S-curve l(s) + Combine (matches the C++ lane-borrow overtaking stack)."""
     frame, rli, start, ok, backup, detail = build_path_bounds_overtake_frame(
         30.0, path_label="regular/left/forward", init_v=5.0
     )
@@ -425,7 +425,7 @@ def s_overtake_path_bounds_left() -> BuilderResult:
 
 
 def s_overtake_path_bounds_right() -> BuilderResult:
-    """PathBounds 右借道 + S 形剖面。"""
+    """PathBounds right-borrow + S-curve profile."""
     frame, rli, start, ok, backup, detail = build_path_bounds_overtake_frame(
         30.0, path_label="regular/right/forward", init_v=5.0
     )
@@ -433,7 +433,7 @@ def s_overtake_path_bounds_right() -> BuilderResult:
 
 
 def s_overtake_s_curve_pass() -> BuilderResult:
-    """参考动画：Cartesian S 形（与 PathBounds 剖面形态一致，便于对照）。"""
+    """Reference animation: Cartesian S-curve (matches the PathBounds profile shape, for comparison)."""
     frame, rli, start, ok, backup, detail = build_synthetic_overtake_frame(
         30.0, init_v=5.0, peak_y=3.2
     )
@@ -441,15 +441,17 @@ def s_overtake_s_curve_pass() -> BuilderResult:
 
 
 def s_overtake_lattice_follow_no_pass() -> BuilderResult:
-    """纯 Lattice：单车道只能跟停，不能横向超车（对照组）。"""
+    """Pure Lattice: single lane can only follow-and-stop, no lateral overtaking (control group)."""
     frame, rli, start = build_overtake_lattice_frame(30.0, init_v=5.0)
     return frame, rli, start, True, None, "lattice_follow_not_pass"
 
 
 def s_overtake_borrow_offset_not_s_curve() -> BuilderResult:
     """
-    PathBounds 左借道：全程固定横向偏移（旧版错误「超车」）。
-    用于对比说明：这不是绕障回归，而是借道定线行驶。
+    PathBounds left-borrow: a constant lateral offset for the whole path
+    (the old, incorrect "overtake").
+    For comparison: this is not a bypass-and-return maneuver, but driving
+    a fixed offset line while borrowing the lane.
     """
     from common.path_bounds_decider import PathBoundsDecider, BuildCandidatePathsFromBoundaries
     from common.planning_context import PlanningContext
@@ -476,7 +478,7 @@ def s_overtake_borrow_offset_not_s_curve() -> BuilderResult:
 
 
 def s_overtake_two_leaders_s_curve() -> BuilderResult:
-    """双前车：S 形绕行通过第一辆（第二辆仍较远）。"""
+    """Two leading vehicles: S-curve bypass past the first one (the second is still far ahead)."""
     from scripts.planner_test_fixtures import (
         apply_cartesian_overtake_trajectory,
         build_cartesian_overtake_path_points,
@@ -502,7 +504,7 @@ def s_overtake_two_leaders_s_curve() -> BuilderResult:
 
 
 def s_overtake_far_leader_s_curve() -> BuilderResult:
-    """前车较远 45m：更容易完成绕行。"""
+    """Leading vehicle farther away at 45m: easier to complete the bypass."""
     frame, rli, start, ok, backup, detail = build_synthetic_overtake_frame(
         45.0, init_v=6.0, peak_y=2.8
     )
@@ -510,7 +512,7 @@ def s_overtake_far_leader_s_curve() -> BuilderResult:
 
 
 def s_overtake_stack_combine() -> BuilderResult:
-    """经 PathData + Combine 栈生成 S 形超车轨迹。"""
+    """Generate an S-curve overtaking trajectory via the PathData + Combine stack."""
     frame, rli, start, ok, backup, detail = build_lattice_overtake_combined_frame(
         30.0, init_v=5.0, peak_y=3.2
     )
@@ -527,52 +529,52 @@ def s_lane_change_overtake_slow_npc() -> BuilderResult:
 
 SCENARIOS: List[Scenario] = [
     # lattice
-    Scenario("open_road", "空旷直道", "lattice", s_open_road),
-    Scenario("far_obstacle_stop", "35m 静止车 + blocking", "lattice", s_far_obstacle_stop),
+    Scenario("open_road", "Open straight road", "lattice", s_open_road),
+    Scenario("far_obstacle_stop", "35m stationary car + blocking", "lattice", s_far_obstacle_stop),
     Scenario(
         "close_obstacle_no_backup",
-        "8m 静止车，关 backup，应失败",
+        "8m stationary car, backup off, should fail",
         "lattice",
         s_close_obstacle_no_backup,
         expect_ok=False,
     ),
     Scenario(
         "close_obstacle_with_backup",
-        "8m 静止车，开 backup，fallback 成功",
+        "8m stationary car, backup on, fallback succeeds",
         "lattice",
         s_close_obstacle_with_backup,
         backup=True,
     ),
-    Scenario("higher_speed_cruise", "初速 5 m/s", "lattice", s_higher_speed_cruise),
-    Scenario("stopped_start", "近零速起步 v=0.1", "lattice", s_stopped_start),
-    Scenario("mid_lane_start", "从 x=20m 处接续规划", "lattice", s_mid_lane_start),
-    Scenario("lateral_offset_start", "横向偏置 y=0.6m 起步", "lattice", s_lateral_offset_start),
-    Scenario("two_obstacles_queue", "22m + 45m 双车队列", "lattice", s_two_obstacles_queue),
+    Scenario("higher_speed_cruise", "Initial speed 5 m/s", "lattice", s_higher_speed_cruise),
+    Scenario("stopped_start", "Near-zero-speed start v=0.1", "lattice", s_stopped_start),
+    Scenario("mid_lane_start", "Continue planning from x=20m", "lattice", s_mid_lane_start),
+    Scenario("lateral_offset_start", "Lateral offset y=0.6m start", "lattice", s_lateral_offset_start),
+    Scenario("two_obstacles_queue", "22m + 45m two-car queue", "lattice", s_two_obstacles_queue),
     Scenario(
         "obstacle_no_blocking_flag",
-        "30m 障碍但不标 blocking",
+        "30m obstacle but not flagged as blocking",
         "lattice",
         s_obstacle_no_blocking_flag,
     ),
     Scenario(
         "side_obstacle_adjacent_lane",
-        "邻车道静止车 y=2.8m",
+        "Stationary car in adjacent lane y=2.8m",
         "lattice",
         s_side_obstacle_adjacent_lane,
     ),
-    Scenario("medium_obstacle_18m", "18m blocking 停车", "lattice", s_medium_obstacle_18m),
-    Scenario("long_road_150m", "150m 长参考线", "lattice", s_long_road_150m),
-    Scenario("low_speed_creep", "蠕行 v=0.3", "lattice", s_low_speed_creep),
-    Scenario("obstacle_60m_pass", "60m 远处障碍", "lattice", s_obstacle_60m_pass),
+    Scenario("medium_obstacle_18m", "18m blocking stopped car", "lattice", s_medium_obstacle_18m),
+    Scenario("long_road_150m", "150m long reference line", "lattice", s_long_road_150m),
+    Scenario("low_speed_creep", "Creeping v=0.3", "lattice", s_low_speed_creep),
+    Scenario("obstacle_60m_pass", "Obstacle 60m ahead", "lattice", s_obstacle_60m_pass),
     Scenario(
         "backup_off_open_road",
-        "关 backup 空旷道仍应成功",
+        "Backup off, open road should still succeed",
         "lattice",
         s_backup_off_open_road,
         backup=False,
     ),
-    Scenario("curved_open_road", "曲线车道空旷巡航", "lattice", s_curved_open_road),
-    Scenario("curved_obstacle_stop", "曲线车道前车停车", "lattice", s_curved_obstacle_stop),
+    Scenario("curved_open_road", "Curved lane, open cruising", "lattice", s_curved_open_road),
+    Scenario("curved_obstacle_stop", "Curved lane, leading car stopped", "lattice", s_curved_obstacle_stop),
     # decider
     Scenario(
         "decider_bounds_assessment",
@@ -582,13 +584,13 @@ SCENARIOS: List[Scenario] = [
     ),
     Scenario(
         "decider_lane_borrow_bounds",
-        "借道场景 PathBounds 多边界",
+        "Lane-borrow scenario, PathBounds multiple boundaries",
         "decider",
         s_decider_lane_borrow_bounds,
     ),
     Scenario(
         "decider_boundary_combine",
-        "Path + 巡航速度 Combine",
+        "Path + cruise speed Combine",
         "decider",
         s_decider_boundary_combine,
     ),
@@ -601,28 +603,28 @@ SCENARIOS: List[Scenario] = [
     # on_lane
     Scenario(
         "on_lane_open_road",
-        "OnLanePlanning.RunOnce 空旷",
+        "OnLanePlanning.RunOnce, open road",
         "on_lane",
         s_on_lane_open_road,
         informational=True,
     ),
     Scenario(
         "on_lane_overtake_path_bounds",
-        "OnLanePlanning PathBounds 借道超车",
+        "OnLanePlanning PathBounds lane-borrow overtaking",
         "on_lane",
         s_on_lane_overtake_path_bounds,
     ),
     # stress
     Scenario(
         "stress_obstacle_distance_sweep",
-        "障碍距离 10–40m 扫描",
+        "Obstacle distance 10-40m sweep",
         "stress",
         s_stress_obstacle_distance_sweep,
         informational=True,
     ),
     Scenario(
         "stress_init_speed_sweep",
-        "初速 0.1–8 m/s 扫描",
+        "Initial speed 0.1-8 m/s sweep",
         "stress",
         s_stress_init_speed_sweep,
         informational=True,
@@ -630,34 +632,34 @@ SCENARIOS: List[Scenario] = [
     # overtake
     Scenario(
         "overtake_path_bounds_left",
-        "【推荐】PathBounds 左借道 S 形超车",
+        "[Recommended] PathBounds left-borrow S-curve overtaking",
         "overtake",
         s_overtake_path_bounds_left,
         skip_lattice=True,
     ),
     Scenario(
         "overtake_path_bounds_right",
-        "PathBounds 右借道 S 形超车",
+        "PathBounds right-borrow S-curve overtaking",
         "overtake",
         s_overtake_path_bounds_right,
         skip_lattice=True,
     ),
     Scenario(
         "overtake_s_curve_pass",
-        "Cartesian S 形参考轨迹（动画对照）",
+        "Cartesian S-curve reference trajectory (animation comparison)",
         "overtake",
         s_overtake_s_curve_pass,
         skip_lattice=True,
     ),
     Scenario(
         "overtake_lattice_follow_no_pass",
-        "纯 Lattice：单车道跟停，无法横向超车（对照）",
+        "Pure Lattice: single lane follow-and-stop, no lateral overtaking (control)",
         "overtake",
         s_overtake_lattice_follow_no_pass,
     ),
     Scenario(
         "overtake_borrow_constant_offset",
-        "PathBounds 左借道：全程固定横向偏移（非 S 形，旧误解）",
+        "PathBounds left-borrow: constant lateral offset for the whole path (not S-curve, old misconception)",
         "overtake",
         s_overtake_borrow_offset_not_s_curve,
         skip_lattice=True,
@@ -665,28 +667,28 @@ SCENARIOS: List[Scenario] = [
     ),
     Scenario(
         "overtake_two_leaders_s_curve",
-        "双前车：S 形绕开第一辆",
+        "Two leading vehicles: S-curve bypass around the first one",
         "overtake",
         s_overtake_two_leaders_s_curve,
         skip_lattice=True,
     ),
     Scenario(
         "overtake_far_leader_s_curve",
-        "前车 45m：S 形绕行",
+        "Leading vehicle at 45m: S-curve bypass",
         "overtake",
         s_overtake_far_leader_s_curve,
         skip_lattice=True,
     ),
     Scenario(
         "overtake_stack_combine",
-        "PathData + Combine 栈生成 S 形超车",
+        "PathData + Combine stack generates S-curve overtaking",
         "overtake",
         s_overtake_stack_combine,
         skip_lattice=True,
     ),
     Scenario(
         "lane_change_overtake_slow_npc",
-        "本车道慢速动态NPC阻挡，自车换道超车",
+        "Slow dynamic NPC blocking the ego lane, ego vehicle changes lanes to overtake",
         "lane_change",
         s_lane_change_overtake_slow_npc,
     ),
