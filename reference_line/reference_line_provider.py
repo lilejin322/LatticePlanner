@@ -27,6 +27,15 @@ from reference_line.qp_spline_reference_line_smoother import QpSplineReferenceLi
 from reference_line.reference_point import ReferencePoint
 
 def uniform_slice(start: float, end: float, num: int) -> List[float]:
+    """
+    Uniformly slice the range [start, end] into num segments.
+
+    :param float start: start value
+    :param float end: end value
+    :param int num: number of segments
+    :returns: list of sliced values
+    :rtype: List[float]
+    """
     if num <= 0:
         return [start]
     if num == 1:
@@ -40,7 +49,7 @@ class ReferenceLineProvider:
     It provides smoothed reference line to planning.
     """
 
-    def __init__(self, vehicle_state_provider=None, reference_line_config=None, relative_map=None, hdmap=None):
+    def __init__(self, vehicle_state_provider=None, relative_map=None, hdmap=None):
         self._is_initialized = False
         self._is_stop = False
         self._discrete_smoother = DiscretePointsReferenceLineSmoother()
@@ -133,12 +142,6 @@ class ReferenceLineProvider:
 
     def UpdatedReferenceLine(self) -> bool:
         return self._is_reference_line_updated
-
-    def GetEndLaneWayPoint(self, end_point: LaneWaypoint = None) -> Optional[LaneWaypoint]:
-        with self._reference_lines_mutex:
-            if self._route_segments:
-                return self._route_segments[-1].LastWayPoint()
-        return None
 
     def GetLaneById(self, id: Id) -> Optional[LaneInfo]:
         lane = HDMapUtil.BaseMap().GetLaneById(id)

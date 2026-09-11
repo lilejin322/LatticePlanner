@@ -4,7 +4,6 @@ from copy import copy, deepcopy
 from enum import Enum
 from logging import Logger
 from typing import Dict, List, Tuple
-
 import config as config_module
 from common.box2d import Box2d
 from common.discretized_trajectory import DiscretizedTrajectory

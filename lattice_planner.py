@@ -1,22 +1,21 @@
-"""Lattice planner aligned with modules/planning/planner/lattice/lattice_planner.cc."""
-
+"""
+Lattice planner aligned with modules/planning/planner/lattice/lattice_planner.cc
+"""
 import math
 import time
+import config
+from logging import Logger
 from typing import List, Optional, Tuple
-
 from path_matcher import PathMatcher
 from cartesian_frenet_converter import CartesianFrenetConverter
 from behavior.collision_checker import CollisionChecker
 from behavior.path_time_graph import PathTimeGraph
 from behavior.prediction_querier import PredictionQuerier
-from common.constraint_checker import ConstraintChecker
-from common.discretized_trajectory import DiscretizedTrajectory
 from common.frame import Frame
+from common.constraint_checker import ConstraintChecker
 from common.planning_context import PlanningContext
 from reference_line.reference_line_info import ReferenceLineInfo
 from reference_line.reference_point import ReferencePoint
-import config
-from logging import Logger
 from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
@@ -25,8 +24,14 @@ from trajectory_generation.trajectory1d_generator import Trajectory1dGenerator
 from trajectory_generation.trajectory_combiner import TrajectoryCombiner
 from trajectory_generation.trajectory_evaluator import TrajectoryEvaluator
 
-
 def ToDiscretizedReferenceLine(ref_points: List[ReferencePoint]) -> List[PathPoint]:
+    """
+    Convert a list of ReferencePoint to a list of PathPoint with s values computed.
+
+    :param List[ReferencePoint] ref_points: list of ReferencePoint
+    :returns: list of PathPoint with s values computed
+    :rtype: List[PathPoint]
+    """
     s = 0.0
     path_points: List[PathPoint] = []
     for ref_point in ref_points:
@@ -47,10 +52,16 @@ def ToDiscretizedReferenceLine(ref_points: List[ReferencePoint]) -> List[PathPoi
         path_points.append(path_point)
     return path_points
 
+def ComputeInitFrenetState(matched_point: PathPoint,
+                           cartesian_state: TrajectoryPoint) -> Tuple[List[float],List[float]]:
+    """
+    Compute the initial Frenet state based on the matched point and Cartesian state.
 
-def ComputeInitFrenetState(
-    matched_point: PathPoint, cartesian_state: TrajectoryPoint
-) -> Tuple[List[float], List[float]]:
+    :param PathPoint matched_point: the matched point on the reference line
+    :param TrajectoryPoint cartesian_state: the Cartesian state
+    :returns: the initial Frenet state
+    :rtype: Tuple[List[float], List[float]]
+    """
     return CartesianFrenetConverter.cartesian_to_frenet(
         matched_point.s,
         matched_point.x,
@@ -66,22 +77,35 @@ def ComputeInitFrenetState(
         cartesian_state.path_point.kappa,
     )
 
-
 class LatticePlanner:
-    """Pure lattice 1d-pair search + TrajectoryCombiner, matching Apollo lattice_planner.cc."""
+    """
+    Pure lattice 1d-pair search + TrajectoryCombiner, matching Apollo lattice_planner.cc.
+    """
+    num_planning_cycles: int
+    num_planning_succeeded_cycles: int
 
-    def __init__(self):
+    def __init__(self) -> None:
+        """
+        Constructor
+        """
         self.num_planning_cycles = 0
         self.num_planning_succeeded_cycles = 0
         self.logger = Logger("LatticePlanner")
 
-    def Plan(
-        self,
-        planning_start_point: TrajectoryPoint,
-        frame: Frame,
-        computed_trajectory: ADCTrajectory,
+    def Plan(self, planning_start_point: TrajectoryPoint,
+        frame: Frame, computed_trajectory: ADCTrajectory,
         planning_context: Optional[PlanningContext] = None,
     ) -> bool:
+        """
+        Plan trajectories on all candidate reference lines.
+
+        :param TrajectoryPoint planning_start_point: 
+        :param Frame frame:
+        :param ADCTrajectory computed_trajectory:
+        :param Optional[PlanningContext] planning_context: 
+        :returns:
+        :rtype: bool
+        """
         del computed_trajectory, planning_context
 
         success_line_count = 0
@@ -102,12 +126,16 @@ class LatticePlanner:
 
         return success_line_count > 0
 
-    def PlanOnReferenceLine(
-        self,
-        planning_init_point: TrajectoryPoint,
-        frame: Frame,
-        reference_line_info: ReferenceLineInfo,
-    ) -> bool:
+    def PlanOnReferenceLine(self, planning_init_point: TrajectoryPoint, frame: Frame,
+                            reference_line_info: ReferenceLineInfo) -> bool:
+        """
+
+        :param TrajectoryPoint planning_init_point:
+        :param Frame frame: 
+        :param ReferenceLineInfo reference_line_info:
+        :returns:
+        :rtype: bool
+        """
         start_time = time.time()
         current_time = start_time
 

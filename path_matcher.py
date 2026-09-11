@@ -1,7 +1,10 @@
-from protoclass.path_point import PathPoint
+"""
+PathMatcher class
+"""
 import math
-from typing import List, Tuple
 import bisect
+from typing import List, Tuple
+from protoclass.path_point import PathPoint
 
 class PathMatcher:
     """
@@ -18,7 +21,6 @@ class PathMatcher:
         :returns: normalized angle
         :rtype: float
         """
-
         a: float = math.fmod(angle + math.pi, 2.0 * math.pi)
         if a < 0.0:
             a += 2.0 * math.pi
@@ -38,7 +40,6 @@ class PathMatcher:
         :returns: slerp result
         :rtype: float
         """
-
         if abs(t1 - t0) <= epsilon:
             print("The time difference is too small")
             return PathMatcher.NormalizeAngle(a0)
@@ -64,7 +65,6 @@ class PathMatcher:
         :returns: interpolated path point
         :rtype: PathPoint
         """
-
         s0: float = p0.s
         s1: float = p1.s
 
@@ -88,7 +88,6 @@ class PathMatcher:
         :param float x: x coordinate
         :param float y: y coordinate
         """
-
         v0x: float = x - p0.x
         v0y: float = y - p0.y
 
@@ -114,7 +113,6 @@ class PathMatcher:
         :returns: matched point
         :rtype: PathPoint
         """
-
         if len(reference_line) == 0:
             raise ValueError("The reference line is empty")
         
@@ -147,7 +145,6 @@ class PathMatcher:
         :returns: matched point
         :rtype: PathPoint
         """
-
         comp = lambda point: point.s
         index = bisect.bisect_left(reference_line, s, key=comp)
         if index == 0:
@@ -170,7 +167,6 @@ class PathMatcher:
         :returns: frenet coordinate
         :rtype: Tuple[float, float]
         """
-
         matched_path_point: PathPoint = PathMatcher.MatchToPath(reference_line, x, y)
         rtheta: float = matched_path_point.theta
         rx: float = matched_path_point.x
