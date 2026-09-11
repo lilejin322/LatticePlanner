@@ -2,18 +2,18 @@
 Path time graph submodule
 """
 from typing import List, Tuple, Dict
+import config as config_module
 from common.obstacle import Obstacle
 from common.box2d import Box2d
 from common.vec2d import Vec2d
-from reference_line.reference_line_info import ReferenceLineInfo
 from common.st_boundary import STBoundary
 from common.st_point import STPoint
+from reference_line.reference_line_info import ReferenceLineInfo
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.sl_boundary import SLBoundary
 from path_matcher import PathMatcher
 from logging import Logger
-import config as config_module
 from bisect import bisect_left, bisect_right
 
 class PathTimeGraph:
@@ -23,20 +23,19 @@ class PathTimeGraph:
 
     def __init__(self, obstacles: List[Obstacle], discretized_ref_points: List[PathPoint],
                  reference_line_info: ReferenceLineInfo, s_start: float, s_end: float,
-                 t_start: float, t_end: float, init_d: List[float]):
+                 t_start: float, t_end: float, init_d: List[float]) -> None:
         """
         Construct a PathTimeGraph with obstacles, reference line info, and graph ranges.
 
-        :param List[Obstacle] obstacles: a list of obstacles.
-        :param List[PathPoint] discretized_ref_points: discretized reference points.
-        :param ReferenceLineInfo reference_line_info: reference line information.
-        :param float s_start: start s value of the graph.
-        :param float s_end: end s value of the graph.
-        :param float t_start: start time of the graph.
-        :param float t_end: end time of the graph.
-        :param List[float] init_d: initial d values.
+        :param List[Obstacle] obstacles: a list of obstacles
+        :param List[PathPoint] discretized_ref_points: discretized reference points
+        :param ReferenceLineInfo reference_line_info: reference line information
+        :param float s_start: start s value of the graph
+        :param float s_end: end s value of the graph
+        :param float t_start: start time of the graph
+        :param float t_end: end time of the graph
+        :param List[float] init_d: initial d values
         """
-
         assert s_start < s_end, "s_start must be less than s_end"
         assert t_start < t_end, "t_start must be less than t_end"
 
@@ -57,12 +56,11 @@ class PathTimeGraph:
         """
         Compute the boundary of the obstacle in the s-l coordinate.
 
-        :param List[Vec2d] vertices: vertices of the obstacle.
-        :param List[PathPoint] discretized_ref_points: discretized reference points.
-        :return: the boundary of the obstacle in the s-l coordinate.
+        :param List[Vec2d] vertices: vertices of the obstacle
+        :param List[PathPoint] discretized_ref_points: discretized reference points
+        :return: the boundary of the obstacle in the s-l coordinate
         :rtype: SLBoundary
         """
-    
         start_s = float('inf')
         end_s = float('-inf')
         start_l = float('inf')
@@ -81,8 +79,8 @@ class PathTimeGraph:
         """
         Set up obstacles for the PathTimeGraph.
 
-        :param List[Obstacle] obstacles: a list of obstacles.
-        :param List[PathPoint] discretized_ref_points: discretized reference points.
+        :param List[Obstacle] obstacles: a list of obstacles
+        :param List[PathPoint] discretized_ref_points: discretized reference points
         """
         for obstacle in obstacles:
             if obstacle.IsVirtual():
@@ -101,10 +99,9 @@ class PathTimeGraph:
         """
         Set a static obstacle for the PathTimeGraph.
 
-        :param Obstacle obstacle: a static obstacle.
-        :param List[PathPoint] discretized_ref_points: discretized reference points.
+        :param Obstacle obstacle: a static obstacle
+        :param List[PathPoint] discretized_ref_points: discretized reference points
         """
-
         polygon = obstacle.PerceptionPolygon()
 
         obstacle_id: str = obstacle.Id()
@@ -136,14 +133,13 @@ class PathTimeGraph:
         self.logger.debug(f"ST-Graph mapping static obstacle: {obstacle_id}, start_s: {sl_boundary.start_s}, "
                           f"end_s: {sl_boundary.end_s}, start_l: {sl_boundary.start_l}, end_l: {sl_boundary.end_l}")
 
-    def SetDynamicObstacle(self, obstacle: Obstacle, discretized_ref_points: List[PathPoint]):
+    def SetDynamicObstacle(self, obstacle: Obstacle, discretized_ref_points: List[PathPoint]) -> None:
         """
         Set a dynamic obstacle for the PathTimeGraph.
 
-        :param Obstacle obstacle: a dynamic obstacle.
-        :param List[PathPoint] discretized_ref_points: discretized reference points.
+        :param Obstacle obstacle: a dynamic obstacle
+        :param List[PathPoint] discretized_ref_points: discretized reference points
         """
-
         relative_time: float = self._time_range[0]
         while relative_time < self._time_range[1]:
             point: TrajectoryPoint = obstacle.GetPointAtTime(relative_time)
@@ -186,32 +182,32 @@ class PathTimeGraph:
         """
         Set a path-time point for the PathTimeGraph.
 
-        :param str obstacle_id: the obstacle ID.
-        :param float s: the s value.
-        :param float t: the time value.
-        :returns: the path-time point.
+        :param str obstacle_id: the obstacle ID
+        :param float s: the s value
+        :param float t: the time value
+        :returns: the path-time point
         :rtype: STPoint
         """
-
         path_time_point: STPoint = STPoint(s, t)
         return path_time_point
 
     def GetPathTimeObstacles(self) -> List[STBoundary]:
         """
         Get the path-time obstacles.
-        """
 
+        :returns: the list of path-time obstacles
+        :rtype: List[STBoundary]
+        """
         return self.path_time_obstacles
 
     def GetPathTimeObstacle(self, obstacle_id: str) -> Tuple[bool, STBoundary]:
         """
         Get the path-time obstacle by the obstacle ID.
 
-        :param str obstacle_id: the obstacle ID.
-        :returns: a tuple of a boolean value and the path-time obstacle.
+        :param str obstacle_id: the obstacle ID
+        :returns: a tuple of a boolean value and the path-time obstacle
         :rtype: Tuple[bool, STBoundary]
         """
-
         if obstacle_id in self.path_time_obstacle_map:
             return True, self.path_time_obstacle_map[obstacle_id]
         return False, None
@@ -220,11 +216,10 @@ class PathTimeGraph:
         """
         Get the path blocking intervals.
 
-        :param float t: the time value.
-        :returns: the path blocking intervals.
+        :param float t: the time value
+        :returns: the path blocking intervals
         :rtype: List[Tuple[float, float]]
         """
-
         assert self._time_range[0] <= t <= self._time_range[1], "Time t is out of the time range."
         intervals: List[Tuple[float, float]] = []
         for pt_obstacle in self.path_time_obstacles:
@@ -241,15 +236,15 @@ class PathTimeGraph:
         """
         Linear interpolation.
 
-        :param float x0: the x0 value.
-        :param float t0: the t0 value.
-        :param float x1: the x1 value.
-        :param float t1: the t1 value.
-        :param float t: the t value.
-        :returns: the interpolated value.
+        TODO: Need merge into a common place, too manny lerp()
+        :param float x0: the x0 value
+        :param float t0: the t0 value
+        :param float x1: the x1 value
+        :param float t1: the t1 value
+        :param float t: the t value
+        :returns: the interpolated value
         :rtype: float
         """
-
         if abs(t1 - t0) <= 1.0e-6:
             self.logger.error("Input time difference is too small")
             return x0
@@ -262,13 +257,12 @@ class PathTimeGraph:
         """
         Get the path blocking intervals.
 
-        :param float t_start: the start time value.
-        :param float t_end: the end time value.
-        :param float t_resolution: the time resolution.
-        :returns: the path blocking intervals.
+        :param float t_start: the start time value
+        :param float t_end: the end time value
+        :param float t_resolution: the time resolution
+        :returns: the path blocking intervals
         :rtype: List[List[Tuple[float, float]]]
         """
-
         intervals: List[List[Tuple[float, float]]] = []
         t = t_start
         while t <= t_end:
@@ -277,22 +271,33 @@ class PathTimeGraph:
         return intervals
 
     def get_path_range(self) -> Tuple[float, float]:
+        """
+        Get the path range, from s_start to s_end
+
+        :returns: the path range
+        :rtype: Tuple[float, float]
+        """
         return self._path_range
 
     def get_time_range(self) -> Tuple[float, float]:
+        """
+        Get the time range, from t_start to t_end
+
+        :returns: the time range
+        :rtype: Tuple[float, float]
+        """
         return self._time_range
 
     def GetObstacleSurroundingPoints(self, obstacle_id: str, s_dist: float, t_min_density: float) -> List[STPoint]:
         """
         Get the surrounding points of the obstacle.
 
-        :param str obstacle_id: the obstacle ID.
-        :param float s_dist: the s distance.
-        :param float t_min_density: the minimum time density.
-        :returns: the surrounding points of the obstacle.
+        :param str obstacle_id: the obstacle ID
+        :param float s_dist: the s distance
+        :param float t_min_density: the minimum time density
+        :returns: the surrounding points of the obstacle
         :rtype: List[STPoint]
         """
-
         assert t_min_density > 0.0, "t_min_density must be greater than 0.0"
         pt_pairs: List[STPoint] = []
         if obstacle_id not in self.path_time_obstacle_map:
@@ -340,21 +345,20 @@ class PathTimeGraph:
         """
         Check if the obstacle is in the graph.
 
-        :param str obstacle_id: the obstacle ID.
-        :returns: True if the obstacle is in the graph, False otherwise.
+        :param str obstacle_id: the obstacle ID
+        :returns: True if the obstacle is in the graph, False otherwise
         :rtype: bool
         """
-
         return obstacle_id in self.path_time_obstacle_map
 
     def GetLateralBounds(self, s_start: float, s_end: float, s_resolution: float) -> List[Tuple[float, float]]:
         """
         Get the lateral bounds.
 
-        :param float s_start: the start s value.
-        :param float s_end: the end s value.
-        :param float s_resolution: the s resolution.
-        :returns: the lateral bounds.
+        :param float s_start: the start s value
+        :param float s_end: the end s value
+        :param float s_resolution: the s resolution
+        :returns: the lateral bounds
         :rtype: List[Tuple[float, float]]
         """
         assert s_start < s_end, "s_start must be less than s_end"
@@ -397,13 +401,12 @@ class PathTimeGraph:
         """
         Update the lateral bounds by the obstacle.
 
-        :param SLBoundary sl_boundary: the s-l boundary of the obstacle.
-        :param List[float] discretized_path: the discretized path.
-        :param float s_start: the start s value.
-        :param float s_end: the end s value.
-        :param List[Tuple[float, float]] bounds: the lateral bounds.
+        :param SLBoundary sl_boundary: the s-l boundary of the obstacle
+        :param List[float] discretized_path: the discretized path
+        :param float s_start: the start s value
+        :param float s_end: the end s value
+        :param List[Tuple[float, float]] bounds: the lateral bounds
         """
-
         if sl_boundary.start_s > s_end or sl_boundary.end_s < s_start:
             return
         start_index: int = bisect_left(discretized_path, sl_boundary.start_s)

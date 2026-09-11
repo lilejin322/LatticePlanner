@@ -2,12 +2,12 @@
 Prediction querier submodule
 """
 from typing import List, Dict
-from common.obstacle import Obstacle
-from protoclass.path_point import PathPoint
 from logging import Logger
 from bisect import bisect_left
 from math import cos, sin
 from path_matcher import PathMatcher
+from common.obstacle import Obstacle
+from protoclass.path_point import PathPoint
 
 class PredictionQuerier:
     """

@@ -10,7 +10,7 @@ class FeasibleRegion:
     FeasibleRegion class
     """
 
-    def __init__(self, init_s: List[float]):
+    def __init__(self, init_s: List[float]) -> None:
         """
         Constructor
 
