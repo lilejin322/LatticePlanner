@@ -1,18 +1,17 @@
-from typing import List
-from protoclass.vehicle_state import VehicleState
-from protoclass.localization_estimate import LocalizationEstimate
-from protoclass.chassis import Chassis
-from common.vec2d import Vec2d
-from protoclass.pose import Pose, Quaternion
-from common.status import Status
-from protoclass.header import ErrorCode
-from logging import Logger
-import config as config_module
-from copy import deepcopy
 import math
 import numpy as np
+from copy import deepcopy
+from logging import Logger
+import config as config_module
 from scipy.spatial.transform import Rotation
-from common.path import NormalizeAngle
+from common.vec2d import Vec2d
+from common.status import Status
+from common.geometry_utils import NormalizeAngle
+from protoclass.header import ErrorCode
+from protoclass.chassis import Chassis
+from protoclass.pose import Pose, Quaternion
+from protoclass.vehicle_state import VehicleState
+from protoclass.localization_estimate import LocalizationEstimate
 
 logger = Logger("VehicleStateProvider")
 
@@ -28,7 +27,6 @@ def QuaternionToHeading(qw: float, qx: float, qy: float, qz: float) -> float:
     :returns: Heading encoded by given quaternion
     :rtype: float
     """
-
     yaw = math.atan2(2 * (qw * qz - qx * qy), 2 * (qw**2 + qy**2) - 1)
     # yaw is zero when the car is pointing North, but the heading is zero when the car is pointing East.
     return NormalizeAngle(yaw + math.pi / 2)
@@ -38,16 +36,17 @@ class VehicleStateProvider:
     The class of vehicle state.
     It includes basic information and computation about the state of the vehicle.
     """
+    _vehicle_state: VehicleState
+    _original_localization: LocalizationEstimate
 
-    def __init__(self):
+    def __init__(self) -> None:
         """
         Constructor
         """
-
         self._vehicle_state: VehicleState = None
         self._original_localization: LocalizationEstimate = None
 
-    def Update(self, *args):
+    def Update(self, *args) -> Status:
 
         if isinstance(args[0], VehicleState):
             self._vehicle_state = args[0]
@@ -57,10 +56,11 @@ class VehicleStateProvider:
             """
             Constructor by information of localization and chassis.
 
-            :param localization: Localization information of the vehicle.
-            :param chassis: Chassis information of the vehicle.
+            :param localization: Localization information of the vehicle
+            :param chassis: Chassis information of the vehicle
+            :returns: 
+            :rtype: Status
             """
-
             localization: LocalizationEstimate = args[0]
             chassis: Chassis= args[1]
             if self._vehicle_state is None:
@@ -104,10 +104,11 @@ class VehicleStateProvider:
             """
             Update VehicleStateProvider instance by protobuf files.
 
-            :param str localization_file: the localization protobuf file.
+            :param str localization_file: the localization protobuf file
             :param str chassis_file: The chassis protobuf file
+            :returns: 
+            :rtype: Status
             """
-
             localization_file: str = args[0]
             chassis_file: str = args[1]
 
@@ -119,41 +120,41 @@ class VehicleStateProvider:
     @property
     def timestamp(self) -> float:
         """
-        Return the timestamp
+        Return the timestamp.
+
+        :returns: 
+        :rtype: float
         """
-        
         return self._vehicle_state.timestamp
 
     @property
     def pose(self) -> Pose:
         """
-        Return the pose of the vehicle
+        Return the pose of the vehicle.
 
         :returns: The pose of the vehicle
         :rtype: Pose
         """
-
         return self._vehicle_state.pose
 
     @property
     def original_pose(self) -> Pose:
         """
-        Return the original pose of the vehicle
+        Return the original pose of the vehicle.
 
         :returns: The original pose of the vehicle
         :rtype: Pose
         """
-
         return self._original_localization.pose
 
     @property
     def x(self) -> float:
         """
         Get the x-coordinate of vehicle position.
-        :returns: The x-coordinate of vehicle position.
+
+        :returns: The x-coordinate of vehicle position
         :rtype: float
         """
-
         return self._vehicle_state.x
 
     @property
@@ -161,10 +162,9 @@ class VehicleStateProvider:
         """
         Get the y-coordinate of vehicle position.
         
-        :returns: The y-coordinate of vehicle position.
+        :returns: The y-coordinate of vehicle position
         :rtype: float
         """
-
         return self._vehicle_state.y
 
     @property
@@ -172,10 +172,9 @@ class VehicleStateProvider:
         """
         Get the z coordinate of vehicle position.
         
-        :returns: The z-coordinate of vehicle position.
+        :returns: The z-coordinate of vehicle position
         :rtype: float
         """
-
         return self._vehicle_state.z
 
     @property
@@ -185,10 +184,9 @@ class VehicleStateProvider:
         the positive or negative sign is decided by the vehicle heading vector
         along the path
 
-        :returns: The kappa of vehicle position.
+        :returns: The kappa of vehicle position
         :rtype: float
         """
-
         return self._vehicle_state.kappa
 
     @property
@@ -196,10 +194,9 @@ class VehicleStateProvider:
         """
         Get the vehicle roll angle.
 
-        :returns: The euler roll angle.
+        :returns: The euler roll angle
         :rtype: float
         """
-
         return self._vehicle_state.roll
 
     @property
@@ -207,10 +204,9 @@ class VehicleStateProvider:
         """
         Get the vehicle pitch angle.
         
-        :returns: The euler pitch angle.
+        :returns: The euler pitch angle
         :rtype: float
         """
-
         return self._vehicle_state.pitch
 
     @property
@@ -219,9 +215,8 @@ class VehicleStateProvider:
         As of now, use the heading instead of yaw angle.
         Heading angle with East as zero, yaw angle has North as zero
 
-        :returns: The euler yaw angle.
+        :returns: The euler yaw angle
         """
-        
         return self._vehicle_state.yaw
 
     @property
@@ -233,7 +228,6 @@ class VehicleStateProvider:
         :returns: The angle between the vehicle's heading direction and the x-axis.
         :rtype: float
         """
-
         return self._vehicle_state.heading
 
     @property
@@ -243,7 +237,6 @@ class VehicleStateProvider:
         
         :returns: The vehicle's linear velocity.
         """
-        
         return self._vehicle_state.linear_velocity
 
     @property
@@ -253,7 +246,6 @@ class VehicleStateProvider:
         
         :returns: The vehicle's angular velocity.
         """
-
         return self._vehicle_state.angular_velocity
 
     @property
@@ -264,7 +256,6 @@ class VehicleStateProvider:
         :returns: The vehicle's linear acceleration.
         :rtype: float
         """
-
         return self._vehicle_state.linear_acceleration
 
     @property
@@ -275,7 +266,6 @@ class VehicleStateProvider:
         :returns: The vehicle's gear position.
         :rtype: float
         """
-
         return self._vehicle_state.gear
 
     @property
@@ -286,7 +276,6 @@ class VehicleStateProvider:
         :returns: The vehicle's steering angle.
         :rtype: float
         """
-
         return self._vehicle_state.steering_percentage
 
     def set_linear_velocity(self, linear_velocity: float) -> None:
@@ -295,7 +284,6 @@ class VehicleStateProvider:
         
         :param float linear_velocity: The value to set the vehicle's linear velocity.
         """
-
         self._vehicle_state.linear_velocity = linear_velocity
 
     def EstimateFuturePosition(self, t: float) -> Vec2d:
@@ -308,7 +296,6 @@ class VehicleStateProvider:
         :returns: The estimated future position in time t.
         :rtype: Vec2d
         """
-
         vec_distance = np.array([0.0, 0.0, 0.0])
         v: float = self._vehicle_state.linear_velocity
         # Predict distance travel vector
@@ -342,7 +329,6 @@ class VehicleStateProvider:
         :returns: The position of the vehicle's center of mass.
         :rtype: Vec2d
         """
-
         # set length as distance between rear wheel and center of mass.
         v = np.array([0.0, 0.0, 0.0])
         if (config_module.FLAGS_state_transform_to_com_reverse and self._vehicle_state.gear == Chassis.GearPosition.GEAR_REVERSE) or \
@@ -371,7 +357,6 @@ class VehicleStateProvider:
         :returns: The current vehicle state.
         :rtype: VehicleState
         """
-
         return self._vehicle_state
 
     def ConstructExceptLinearVelocity(self, localization: LocalizationEstimate) -> bool:
@@ -382,7 +367,6 @@ class VehicleStateProvider:
         :returns: A boolean indicating success.
         :rtype: bool
         """
-
         if localization.pose is None:
             logger.error("Invalid localization input.")
             return False

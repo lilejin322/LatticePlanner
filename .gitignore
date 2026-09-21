@@ -245,3 +245,6 @@ modules/
 # Ignore the Microsoft Z3 workspace
 z3/*
 !z3/.gitkeep
+
+# CommonRoad simulation artifacts.
+scripts/output/commonroad/

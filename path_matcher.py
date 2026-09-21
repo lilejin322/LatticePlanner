@@ -5,26 +5,13 @@ import math
 import bisect
 from typing import List, Tuple
 from protoclass.path_point import PathPoint
+from common.geometry_utils import NormalizeAngle
 
 class PathMatcher:
     """
     PathMatcher class
     Note that this class should not be instantiated. All methods should be called in a static context.
     """
-
-    @staticmethod
-    def NormalizeAngle(angle: float) -> float:
-        """
-        Normalize_Angle
-
-        :param float angle: angle
-        :returns: normalized angle
-        :rtype: float
-        """
-        a: float = math.fmod(angle + math.pi, 2.0 * math.pi)
-        if a < 0.0:
-            a += 2.0 * math.pi
-        return a - math.pi
 
     @staticmethod
     def slerp(a0: float, t0: float, a1:float, t1: float, t: float, epsilon:float=1e-10) -> float:
@@ -42,9 +29,9 @@ class PathMatcher:
         """
         if abs(t1 - t0) <= epsilon:
             print("The time difference is too small")
-            return PathMatcher.NormalizeAngle(a0)
-        a0_n: float = PathMatcher.NormalizeAngle(a0)
-        a1_n: float = PathMatcher.NormalizeAngle(a1)
+            return NormalizeAngle(a0)
+        a0_n: float = NormalizeAngle(a0)
+        a1_n: float = NormalizeAngle(a1)
         d: float = a1_n - a0_n
         if d > math.pi:
             d -= 2.0 * math.pi
@@ -52,7 +39,7 @@ class PathMatcher:
             d += 2.0 * math.pi
         r: float = (t - t0) / (t1 - t0)
         a: float = a0_n + d * r
-        return PathMatcher.NormalizeAngle(a)
+        return NormalizeAngle(a)
 
     @staticmethod
     def InterpolateUsingLinearApproximation(p0: PathPoint, p1: PathPoint, s: float) -> PathPoint:

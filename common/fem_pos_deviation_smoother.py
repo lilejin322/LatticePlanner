@@ -1,12 +1,12 @@
 """
 FEM-POS deviation smoother for reference line (OSQP)
 """
-
 from __future__ import annotations
-from typing import List, Sequence, Tuple
-import osqp
-import scipy.sparse as sparse
 
+import osqp
+import numpy as np
+import scipy.sparse as sparse
+from typing import List, Sequence, Tuple
 
 class FemPosDeviationSmoother:
     """
@@ -40,7 +40,7 @@ class FemPosDeviationSmoother:
         if n < 3 or len(bounds) != n:
             return False, [], []
 
-        import numpy as np
+
 
         num_vars = n * 2
         x_weight = self.weight_fem_pos_deviation

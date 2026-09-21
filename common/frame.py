@@ -1,53 +1,58 @@
-from protoclass.trajectory_point import TrajectoryPoint
-from typing import List, Dict, Optional, Any
-from protoclass.adc_trajectory import ADCTrajectory, Point3D
-from common.box2d import Box2d
-from reference_line.reference_line_info import ReferenceLineInfo
-from common.planning_context import PlanningContext
-from common.obstacle import Obstacle
-from protoclass.prediction_obstacles import PredictionObstacles
-from logging import Logger
-from protoclass.planning_status import ReroutingStatus, LaneFollowCommand
-from protoclass.pose import Pose
-from protoclass.point_enu import PointENU
-from protoclass.lane_waypoint import LaneWaypoint
-import config as config_module
-from reference_line import ReferenceLine
-from common.route_segments import RouteSegments
-from common.vec2d import Vec2d
-from protoclass.vehicle_state import VehicleState
-from reference_line.reference_point import ReferencePoint
-from common.lane_info import LaneInfo
-from protoclass.sl_boundary import SLPoint
-from common.line_segment2d import LineSegment2d
-from protoclass.header import ErrorCode
-from common.status import Status
-from common.polygon2d import Polygon2d
-from protoclass.debug import Debug
-from dataclasses import dataclass, field
-from copy import deepcopy
-from datetime import datetime
 import math
+from copy import deepcopy
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
-from protoclass.header import Header
-from protoclass.chassis import Chassis
-from protoclass.localization_estimate import LocalizationEstimate
-from protoclass.traffic_light_detection import TrafficLightDetection, TrafficLight
-from protoclass.planning_internal import MapMsg
-from protoclass.stories import Stories
-from protoclass.planning_command import PlanningCommand
-from protoclass.routing import RoutingResponse
+from logging import Logger
+from typing import Any, Dict, List, Optional
+import config as config_module
+from common.box2d import Box2d
 from common.discretized_path import DiscretizedPath
-from common.vehicle_state_provider import VehicleStateProvider
-from reference_line.reference_line_provider import ReferenceLineProvider
 from common.hd_map import HDMapUtil
+from common.lane_info import LaneInfo
+from common.line_segment2d import LineSegment2d
+from common.obstacle import Obstacle
+from common.planning_context import PlanningContext
+from common.polygon2d import Polygon2d
+from common.route_segments import RouteSegments
+from common.status import Status
+from common.vec2d import Vec2d
+from common.vehicle_state_provider import VehicleStateProvider
+from protoclass.adc_trajectory import ADCTrajectory, Point3D
+from protoclass.chassis import Chassis
+from protoclass.debug import Debug
+from protoclass.header import ErrorCode, Header
+from protoclass.lane_waypoint import LaneWaypoint
+from protoclass.localization_estimate import LocalizationEstimate
+from protoclass.planning_command import PlanningCommand
+from protoclass.planning_internal import MapMsg
+from protoclass.planning_status import LaneFollowCommand, ReroutingStatus
+from protoclass.point_enu import PointENU
+from protoclass.pose import Pose
+from protoclass.prediction_obstacles import PredictionObstacles
+from protoclass.routing import RoutingResponse
+from protoclass.sl_boundary import SLPoint
+from protoclass.stories import Stories
+from protoclass.traffic_light_detection import TrafficLight, TrafficLightDetection
+from protoclass.trajectory_point import TrajectoryPoint
+from protoclass.vehicle_state import VehicleState
+from reference_line import ReferenceLine
+from reference_line.reference_line_info import ReferenceLineInfo
+from reference_line.reference_line_provider import ReferenceLineProvider
+from reference_line.reference_point import ReferencePoint
 
 logger = Logger("Frame")
 
-
 class _VehicleStateUtil:
+    """
+
+    """
+
     @staticmethod
     def IsVehicleStateValid(vehicle_state: VehicleState) -> bool:
+        """
+
+        """
         if vehicle_state is None:
             return False
         values = (
@@ -64,9 +69,7 @@ class _VehicleStateUtil:
         except (TypeError, ValueError):
             return False
 
-
 util = _VehicleStateUtil()
-
 
 @dataclass
 class OpenSpaceInfo:

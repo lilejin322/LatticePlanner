@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import math
 from common.map_path_point import MapPathPoint
 from common.lane_types import LaneSegment, InterpolatedIndex
-from common.geometry_utils import kMathEpsilon, NormalizeAngle, AngleDiff
+from common.geometry_utils import kMathEpsilon, AngleDiff
 from common.vec2d import Vec2d
 from common.line_segment2d import LineSegment2d
 from common.box2d import Box2d

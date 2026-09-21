@@ -10,6 +10,7 @@ from protoclass.sl_boundary import SLBoundary
 from common.st_boundary import STBoundary
 from common.vec2d import Vec2d
 from common.st_point import STPoint
+from common.geometry_utils import NormalizeAngle
 import math
 from bisect import bisect_left
 from logging import Logger
@@ -270,21 +271,6 @@ class Obstacle:
         x = x0 + r * (x1 - x0)
         return x
     
-    @staticmethod
-    def NormalizeAngle(angle: float) -> float:
-        """
-        Normalize the angle to [-pi, pi]
-
-        :param float angle: the angle to normalize
-        :returns: the normalized angle
-        :rtype: float
-        """
-
-        a: float = math.fmod(angle + math.pi, 2 * math.pi)
-        if a < 0.0:
-            a += 2 * math.pi
-        return a - math.pi
-    
     def slerp(self, a0: float, t0: float, a1:float, t1: float, t: float, epsilon:float=1e-10) -> float:
         """
         Slerp function
@@ -301,9 +287,9 @@ class Obstacle:
 
         if abs(t1 - t0) <= epsilon:
             logger.warning("The time difference is too small")
-            return self.NormalizeAngle(a0)
-        a0_n: float = self.NormalizeAngle(a0)
-        a1_n: float = self.NormalizeAngle(a1)
+            return NormalizeAngle(a0)
+        a0_n: float = NormalizeAngle(a0)
+        a1_n: float = NormalizeAngle(a1)
         d: float = a1_n - a0_n
         if d > math.pi:
             d -= 2.0 * math.pi
@@ -311,7 +297,7 @@ class Obstacle:
             d += 2.0 * math.pi
         r: float = (t - t0) / (t1 - t0)
         a: float = a0_n + d * r
-        return self.NormalizeAngle(a)
+        return NormalizeAngle(a)
 
     def InterpolateUsingLinearApproximation(self, tp0: TrajectoryPoint, tp1: TrajectoryPoint, t: float) -> TrajectoryPoint:
         """

@@ -1,12 +1,13 @@
 """
 Box2d submodule
 """
+from logging import Logger
 from typing import List, Any
-from math import hypot, cos, sin, fmod, pi
+from math import hypot, cos, sin
 from common.line_segment2d import LineSegment2d
 from common.vec2d import Vec2d, kMathEpsilon
 from common.aabox2d import AABox2d
-from logging import Logger
+from common.geometry_utils import NormalizeAngle
 
 logger: Logger = Logger("Box2d")
 
@@ -14,20 +15,6 @@ def _is_polygon2d(obj: object) -> bool:
     from common.polygon2d import Polygon2d
 
     return isinstance(obj, Polygon2d)
-
-def NormalizeAngle(angle: float) -> float:
-    """
-    Normalize the angle to [-pi, pi]
-
-    :param float angle: the angle to normalize
-    :returns: the normalized angle
-    :rtype: float
-    """
-
-    a: float = fmod(angle + pi, 2 * pi)
-    if a < 0.0:
-        a += 2 * pi
-    return a - pi
 
 def PtSegDistance(query_x: float, query_y: float, start_x: float, start_y: float, end_x: float, end_y: float, length: float):
     """

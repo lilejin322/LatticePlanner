@@ -1,5 +1,6 @@
 import math
 from typing import List, Tuple
+from common.geometry_utils import NormalizeAngle
 
 class CartesianFrenetConverter:
     """
@@ -89,7 +90,7 @@ class CartesianFrenetConverter:
         delta_theta: float = math.atan2(d_condition[1], one_minus_kappa_r_d)
         cos_delta_theta: float = math.cos(delta_theta)
 
-        theta: float = CartesianFrenetConverter.NormalizeAngle(delta_theta + rtheta)
+        theta: float = NormalizeAngle(delta_theta + rtheta)
 
         kappa_r_d_prime: float = rdkappa * d_condition[0] + rkappa * d_condition[1]
 
@@ -103,21 +104,6 @@ class CartesianFrenetConverter:
         a: float = s_condition[2] * one_minus_kappa_r_d / cos_delta_theta + s_condition[1] * s_condition[1] / cos_delta_theta * (d_condition[1] * delta_theta_prime - kappa_r_d_prime)
 
         return x, y, theta, kappa, v, a
-
-    @staticmethod
-    def NormalizeAngle(angle: float) -> float:
-        """
-        Normalize the angle to [-pi, pi]
-
-        :param float angle: the angle to normalize
-        :returns: the normalized angle
-        :rtype: float
-        """
-
-        a: float = math.fmod(angle + math.pi, 2 * math.pi)
-        if a < 0.0:
-            a += 2 * math.pi
-        return a - math.pi
 
     @staticmethod
     def CalculateLateralDerivative(
@@ -152,7 +138,7 @@ class CartesianFrenetConverter:
         given sl point extract x, y, theta, kappa
         """
 
-        return CartesianFrenetConverter.NormalizeAngle(rtheta + math.atan2(dl, 1 - l * rkappa))
+        return NormalizeAngle(rtheta + math.atan2(dl, 1 - l * rkappa))
 
     @staticmethod
     def CalculateKappa(rkappa: float, rdkappa: float, l: float, dl: float, ddl: float) -> float:

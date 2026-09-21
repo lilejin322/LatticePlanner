@@ -11,12 +11,13 @@ from common.box2d import Box2d
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.frenet_frame_point import FrenetFramePoint
 from protoclass.sl_boundary import SLBoundary
+from common.geometry_utils import NormalizeAngle
 from common.polygon2d import Polygon2d
 from logging import Logger
 from bisect import bisect_left, bisect_right
 from cartesian_frenet_converter import CartesianFrenetConverter
 from scipy.optimize import minimize_scalar
-from math import sin, cos, hypot, pi, fmod
+from math import sin, cos, hypot, pi
 from common.map_path_point import MapPathPoint, LaneWaypoint
 from protoclass.point_enu import PointENU
 import config as config_module
@@ -1257,21 +1258,6 @@ class ReferenceLine:
         return x
 
     @staticmethod
-    def NormalizeAngle(angle: float) -> float:
-        """
-        Normalize the angle to [-pi, pi]
-
-        :param float angle: the angle to normalize
-        :returns: the normalized angle
-        :rtype: float
-        """
-
-        a: float = fmod(angle + pi, 2 * pi)
-        if a < 0.0:
-            a += 2 * pi
-        return a - pi
-
-    @staticmethod
     def slerp(a0: float, t0: float, a1: float, t1: float, t: float) -> float:
         """
         Slerp function
@@ -1287,10 +1273,10 @@ class ReferenceLine:
 
         if abs(t1 - t0) <= kMathEpsilon:
             logger.debug("input time difference is too small")
-            return ReferenceLine.NormalizeAngle(a0)
+            return NormalizeAngle(a0)
 
-        a0_n = ReferenceLine.NormalizeAngle(a0)
-        a1_n = ReferenceLine.NormalizeAngle(a1)
+        a0_n = NormalizeAngle(a0)
+        a1_n = NormalizeAngle(a1)
         d = a1_n - a0_n
 
         if d > pi:
@@ -1300,7 +1286,7 @@ class ReferenceLine:
 
         r = (t - t0) / (t1 - t0)
         a = a0_n + d * r
-        return ReferenceLine.NormalizeAngle(a)
+        return NormalizeAngle(a)
 
     @staticmethod
     def Interpolate(p0: ReferencePoint, s0: float, p1: ReferencePoint, s1: float, s: float) -> ReferencePoint:
