@@ -2,8 +2,11 @@
 Constant jerk trajectory1D submodule
 """
 from typing import override
+from logging import Logger
 import config as config_module
 from common.curve1d.curve1d import Curve1d
+
+logger = Logger("ConstantJerkTrajectory1d")
 
 class ConstantJerkTrajectory1d(Curve1d):
     """

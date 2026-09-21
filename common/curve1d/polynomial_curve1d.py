@@ -2,7 +2,10 @@
 Polynomial curve1D submodule
 """
 from abc import abstractmethod
+from logging import Logger
 from common.curve1d.curve1d import Curve1d
+
+logger = Logger("PolynomialCurve1d")
 
 class PolynomialCurve1d(Curve1d):
     """

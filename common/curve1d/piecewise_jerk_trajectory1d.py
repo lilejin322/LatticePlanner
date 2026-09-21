@@ -3,9 +3,12 @@ Piecewise jerk trajectory1D submodule
 """
 from bisect import bisect_left
 from typing import override, List
+from logging import Logger
 import config as config_module
 from common.curve1d.curve1d import Curve1d
 from common.curve1d.constant_jerk_trajectory1d import ConstantJerkTrajectory1d
+
+logger = Logger("PiecewiseJerkTrajectory1d")
 
 class PiecewiseJerkTrajectory1d(Curve1d):
     """

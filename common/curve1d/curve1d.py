@@ -2,6 +2,9 @@
 trajectory curve1D abstract class
 """
 from abc import ABC, abstractmethod
+from logging import Logger
+
+logger = Logger("Curve1d")
 
 class Curve1d(ABC):
     """

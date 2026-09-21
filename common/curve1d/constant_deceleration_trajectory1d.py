@@ -6,6 +6,8 @@ from typing import override
 import config as config_module
 from common.curve1d.curve1d import Curve1d
 
+logger = Logger("ConstantDecelerationTrajectory1d")
+
 class ConstantDecelerationTrajectory1d(Curve1d):
     """
     ConstantDecelerationTrajectory1d class
@@ -13,7 +15,6 @@ class ConstantDecelerationTrajectory1d(Curve1d):
     _init_s: float
     _deceleration: float
     _init_v: float
-    _logger: Logger
 
     def __init__(self, init_s: float, init_v: float, a: float) -> None:
         """
@@ -26,9 +27,8 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         super().__init__()
         self._init_s: float = init_s
         self._deceleration: float = -a
-        self.logger = Logger("ConstantDecelerationTrajectory1d")
         if init_v < -config_module.FLAGS_numerical_epsilon:
-            self.logger.error(f"negative init v = {init_v}")
+            logger.error(f"negative init v = {init_v}")
         self._init_v: float = abs(init_v)
         assert self._deceleration > 0.0, "Deceleration should be positive"
         self._end_t: float = self._init_v / self._deceleration

@@ -4,9 +4,12 @@ Piecewise acceleration trajectory1D submodule
 """
 from logging import Logger
 import config as config_module
+from logging import Logger
 from bisect import bisect_left
 from typing import override, Any, List
 from common.curve1d.curve1d import Curve1d
+
+logger = Logger("PiecewiseAccelerationTrajectory1d")
 
 class PiecewiseAccelerationTrajectory1d(Curve1d):
     """

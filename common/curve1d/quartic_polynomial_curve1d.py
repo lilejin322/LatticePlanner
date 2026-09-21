@@ -2,8 +2,11 @@
 Quartic polynomial curve1D submodule
 """
 from copy import deepcopy
+from logging import Logger
 from typing import List, override
 from common.curve1d.polynomial_curve1d import PolynomialCurve1d
+
+logger = Logger("QuarticPolynomialCurve1d")
 
 class QuarticPolynomialCurve1d(PolynomialCurve1d):
     """
