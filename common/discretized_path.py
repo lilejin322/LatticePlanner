@@ -2,31 +2,33 @@
 Discretized path submodule
 """
 from typing import List, Optional
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
+from logging import Logger
 from collections import UserList
 from path_matcher import PathMatcher
 from protoclass.path_point import PathPoint
-from logging import Logger
 
 logger = Logger("DiscretizedPath")
 
 class DiscretizedPath(UserList):
     """
     DiscretizedPath is a list of PathPoint objects can be iterated
+    Bug fix: inherit from UserList rather than list
     """
 
     def __init__(self, path_points: Optional[List[PathPoint]] = None):
         """
         Constructor
         """
-
         super().__init__(path_points)
     
     def Length(self) -> float:
         """
         Returns the length of the path
-        """
 
+        :returns: the length of the path
+        :rtype: float
+        """
         if len(self) == 0:
             return 0.0
         return self[-1].s - self[0].s
@@ -39,7 +41,6 @@ class DiscretizedPath(UserList):
         :returns: The PathPoint object
         :rtype: PathPoint
         """
-
         assert len(self) > 0, "path is empty"
         it_lower = self.QueryLowerBound(path_s)
         if it_lower == 0:
@@ -56,7 +57,6 @@ class DiscretizedPath(UserList):
         :returns: The PathPoint object
         :rtype: PathPoint
         """
-
         assert len(self) > 0, "path is empty"
         it_upper = self.QueryUpperBound(path_s)
         if it_upper == 0:
@@ -73,7 +73,6 @@ class DiscretizedPath(UserList):
         :returns: The index of the PathPoint object
         :rtype: int
         """
-
         return bisect_left(self, path_s, key=lambda tp: tp.s)
 
     def QueryUpperBound(self, path_s: float) -> int:
@@ -81,22 +80,14 @@ class DiscretizedPath(UserList):
         Mirrors C++ DiscretizedPath::QueryUpperBound (discretized_path.cc), which is
         std::upper_bound with comparator func(path_s, tp) = tp.s() < path_s. This is
         the reverse-path counterpart of QueryLowerBound: it is only meaningful when
-        `s` is monotonically *decreasing* (e.g. reverse/parking paths), so it cannot
-        be implemented with bisect_right, which assumes ascending order.
+        `s` is monotonically *decreasing* (e.g. reverse/parking paths), so a plain
+        bisect_right on tp.s would be wrong, as it assumes ascending order. Negating
+        the key makes the sequence ascending, and since `tp.s < path_s` is exactly
+        `-tp.s > -path_s`, bisect_right on the negated key reproduces the C++ result.
+        Negation is exact in IEEE 754, so this introduces no rounding of its own.
 
         :param path_s: The path_s value
         :returns: The index of the PathPoint object
         :rtype: int
         """
-
-        first = 0
-        count = len(self)
-        while count > 0:
-            step = count // 2
-            it = first + step
-            if not (self[it].s < path_s):
-                first = it + 1
-                count -= step + 1
-            else:
-                count = step
-        return first
+        return bisect_right(self, -path_s, key=lambda tp: -tp.s)

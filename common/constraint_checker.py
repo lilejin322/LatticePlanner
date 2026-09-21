@@ -3,10 +3,10 @@ Constraint checker submodule
 """
 import math
 from enum import Enum
-from common.discretized_trajectory import DiscretizedTrajectory
 from typing import Any
-import config as config_module
 from logging import Logger
+import config as config_module
+from common.discretized_trajectory import DiscretizedTrajectory
 
 logger = Logger("ConstraintChecker")
 
@@ -20,7 +20,6 @@ def WithinRange(v: Any, lower: Any, upper: Any) -> bool:
     returns: if the value is within the range
     rtype: bool
     """
-
     return lower <= v <= upper
 
 class ConstraintChecker:
@@ -33,7 +32,6 @@ class ConstraintChecker:
         """
         In case of instantiation, raise an error
         """
-
         if cls is ConstraintChecker:
             raise TypeError("ConstraintChecker class cannot be instantiated")
         return super().__new__(cls)
@@ -53,7 +51,6 @@ class ConstraintChecker:
         """
         This class cannot be instantiated
         """
-
         raise NotImplementedError("This class cannot be instantiated")
 
     @staticmethod
@@ -65,7 +62,6 @@ class ConstraintChecker:
         returns: the result of the check
         rtype: Result
         """
-
         kMaxCheckRelativeTime = config_module.FLAGS_trajectory_time_length
         for p in trajectory:
             t: float = p.relative_time

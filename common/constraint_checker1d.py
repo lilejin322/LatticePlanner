@@ -1,9 +1,9 @@
 """
 Constraint checker 1d submodule
 """
-from common.curve1d.curve1d import Curve1d
 import config as config_module
 from logging import Logger
+from common.curve1d.curve1d import Curve1d
 
 logger = Logger("ConstraintChecker1d")
 
@@ -33,7 +33,6 @@ class ConstraintChecker1d:
         :returns: fuzzy_within result
         :rtype: bool
         """
-
         return lower - e < v < upper + e
 
     @staticmethod
@@ -45,7 +44,6 @@ class ConstraintChecker1d:
         :returns: IsValidLongitudinalTrajectory result
         :rtype: bool
         """
-
         t: float = 0.0
         while t < lon_trajectory.ParamLength():
             v: float = lon_trajectory.Evaluate(1, t)    # evaluate_v
@@ -80,7 +78,6 @@ class ConstraintChecker1d:
         :returns: IsValidLateralTrajectory result
         :rtype: bool
         """
-
         t: float = 0.0
         while t < lon_trajectory.ParamLength():
             s: float = lon_trajectory.Evaluate(0, t)

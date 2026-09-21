@@ -50,6 +50,19 @@ class Box2d:
     heading direction the "heading-axis". The size of the heading-axis is
     called "length", and the size of the axis perpendicular to it "width".
     """
+    _center: Vec2d
+    _length: float
+    _width: float
+    _half_length: float
+    _half_width: float
+    _heading: float
+    _cos_heading: float
+    _sin_heading: float
+    _corners: List[Vec2d]
+    _max_x: float
+    _min_x: float
+    _max_y: float
+    _min_y: float
 
     def __init__(self, *args) -> None:
         """
@@ -635,7 +648,6 @@ class Box2d:
         """
         Initialize the corners of the box
         """
-
         dx1: float = self._cos_heading * self._half_length
         dy1: float = self._sin_heading * self._half_length
         dx2: float = self._sin_heading * self._half_width
