@@ -14,7 +14,7 @@ class PredictionQuerier:
     PredictionQuerier is a class that provides an interface to query obstacle prediction results.
     """
 
-    def __init__(self, obstacles: List[Obstacle], reference_line: List[PathPoint]):
+    def __init__(self, obstacles: List[Obstacle], reference_line: List[PathPoint]) -> None:
         """
         Constructor
 
@@ -41,7 +41,6 @@ class PredictionQuerier:
         :returns: a list of obstacles
         :rtype: List[Obstacle]
         """
-
         return self.obstacles
 
     def ProjectVelocityAlongReferenceLine(self, obstacle_id: str, s: float, t: float) -> float:
@@ -54,7 +53,6 @@ class PredictionQuerier:
         :returns: velocity of the obstacle along the reference line
         :rtype: float
         """
-
         assert obstacle_id in self.id_obstacle_map, f"Obstacle with id {obstacle_id} not found"
         trajectory = self.id_obstacle_map[obstacle_id].Trajectory()
         num_traj_point = len(trajectory.trajectory_point)

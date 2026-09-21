@@ -1,8 +1,12 @@
-from typing import override, Any, List
-from common.curve1d.curve1d import Curve1d
+
+"""
+Piecewise acceleration trajectory1D submodule
+"""
+from logging import Logger
 import config as config_module
 from bisect import bisect_left
-from logging import Logger
+from typing import override, Any, List
+from common.curve1d.curve1d import Curve1d
 
 class PiecewiseAccelerationTrajectory1d(Curve1d):
     """
@@ -10,15 +14,19 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
     We understand that this class has too many code duplication,
     but we are following the original code structure.
     """
+    _s: float
+    _v: float
+    _a: float
+    _t: float
+    logger: Logger
 
-    def __init__(self, start_s: float, start_v: float):
+    def __init__(self, start_s: float, start_v: float) -> None:
         """
         Constructor
 
         :param float start_s: The start s
         :param float start_v: The start v
         """
-
         super().__init__()
         self._s = [start_s]
         self._v: List[float] = [start_v]
@@ -56,7 +64,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         """
         Pop the last segment
         """
-
         if len(self._a) > 0:
             self._a.pop()
             self._v.pop()
@@ -71,7 +78,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: The ParamLength
         :rtype: float
         """
-
         assert len(self._t) > 1, "Trajectory length must be greater than 1"
         return self._t[-1] - self._t[0]
 
@@ -83,7 +89,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: The trajectory as a string representation
         :rtype: str
         """
-        
         return "\t".join(map(str, self._s)) + "\n" + \
                "\t".join(map(str, self._t)) + "\n" + \
                "\t".join(map(str, self._v)) + "\n" + \
@@ -101,7 +106,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: the interpolated value.
         :rtype: float
         """
-
         if abs(t1 - t0) <= 1.0e-6:
             self.logger.error("Input time difference is too small")
             return x0
@@ -111,8 +115,18 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
 
     @override
     def Evaluate(self, *args) -> Any:
+        """
+        Evaluate the curve
+        """
 
         if len(args) == 2:
+            """
+            :param int order: the order to be evaluated
+            :param float param: the param
+
+            :returns: the evaluated value
+            :rtype: float
+            """
             order, param = args
             assert len(self._t) > 1, "Trajectory length must be greater than 1"
             assert param >= self._t[0] and param <= self._t[-1], "Param must be within the trajectory time range"
@@ -129,8 +143,15 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
                 return 0.0
 
         elif len(args) == 1:
+            """
+            :param float t: the time to be evaluated
+
+            :returns: the evaluated s, v, a and j at t
+            :rtype: Tuple[float, float, float, float]
+            """
             t = args[0]
             assert len(self._t) > 1, "Trajectory length must be greater than 1"
+            assert t >= self._t[0] and t <= self._t[-1], "Param must be within the trajectory time range"
             index: int = min(max(1, bisect_left(self._t, t)), len(self._t) - 1)
 
             s0: float = self._s[index - 1]
@@ -156,7 +177,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: The evaluation of s at time t
         :rtype: float
         """
-
         index: int = min(max(1, bisect_left(self._t, t)), len(self._t) - 1)
         
         s0: float = self._s[index - 1]
@@ -178,7 +198,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: The evaluation of v at time t
         :rtype: float
         """
-
         index: int = min(max(1, bisect_left(self._t, t)), len(self._t) - 1)
 
         v0: float = self._v[index - 1]
@@ -198,7 +217,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: The evaluation of a at time t
         :rtype: float
         """
-
         index: int = min(max(1, bisect_left(self._t, t)), len(self._t) - 1)
         return self._a[index - 1]
 
@@ -210,5 +228,4 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         :returns: The evaluation of j at time t
         :rtype: float
         """
-
         return 0.0

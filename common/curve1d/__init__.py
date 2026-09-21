@@ -1,3 +1,3 @@
 """
-1D trajectory curves.
+1D trajectory curves submodule
 """

@@ -1,22 +1,28 @@
-from common.curve1d.curve1d import Curve1d
-from typing import List, override
-import config as config_module
+"""
+Constant deceleration trajectory1D submodule
+"""
 from logging import Logger
+from typing import override
+import config as config_module
+from common.curve1d.curve1d import Curve1d
 
 class ConstantDecelerationTrajectory1d(Curve1d):
     """
     ConstantDecelerationTrajectory1d class
     """
+    _init_s: float
+    _deceleration: float
+    _init_v: float
+    _logger: Logger
 
-    def __init__(self, init_s: float, init_v: float, a: float):
+    def __init__(self, init_s: float, init_v: float, a: float) -> None:
         """
         Constructor
 
         :param float init_s: init s
-        :param float init_v: init v
-        :param float a: param a
+        :param float init_v: init velocity
+        :param float a: deceleration value
         """
-
         super().__init__()
         self._init_s: float = init_s
         self._deceleration: float = -a
@@ -31,12 +37,11 @@ class ConstantDecelerationTrajectory1d(Curve1d):
     @override
     def ParamLength(self) -> float:
         """
-        Get the param
+        Get the param, coz this is a cpp style
 
         :returns: the param
         :rtype: float
         """
-
         return self._end_t
 
     @override
@@ -47,8 +52,7 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         :returns: The trajectory as a string representation
         :rtype: str
         """
-
-        return ""
+        return f"{self._init_s}\t{self._init_v}\t{-self._deceleration}\t{self._end_t}\n"
 
     @override
     def Evaluate(self, order: int, param: float) -> float:
@@ -61,7 +65,6 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         :returns: the evaluated value
         :rtype: float
         """
-
         if order == 0:
             return self.Evaluate_s(param)
         elif order == 1:
@@ -81,7 +84,6 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         :returns: the evaluated s
         :rtype: float
         """
-
         if t < self._end_t:
             curr_v: float = self._init_v - self._deceleration * t
             delta_s: float = (curr_v + self._init_v) * t * 0.5
@@ -97,7 +99,6 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         :returns: the evaluated v
         :rtype: float
         """
- 
         if t < self._end_t:
             
             return self._init_v - self._deceleration * t
@@ -112,7 +113,6 @@ class ConstantDecelerationTrajectory1d(Curve1d):
         :returns: the evaluated a
         :rtype: float
         """
-        
         if t < self._end_t:
             return -self._deceleration
         else:
@@ -120,11 +120,10 @@ class ConstantDecelerationTrajectory1d(Curve1d):
 
     def Evaluate_j(self, t: float) -> float:
         """
-        Evaluate j at t
+        Evaluate j at t, no j implemented
 
         :param float t: t
-        :returns: the evaluated j
+        :returns: the evaluated j, i.e. 0.0
         :rtype: float
         """
-
         return 0.0
