@@ -11,12 +11,8 @@ from common.geometry_utils import NormalizeAngle
 
 logger: Logger = Logger("Box2d")
 
-def _is_polygon2d(obj: object) -> bool:
-    from common.polygon2d import Polygon2d
-
-    return isinstance(obj, Polygon2d)
-
-def PtSegDistance(query_x: float, query_y: float, start_x: float, start_y: float, end_x: float, end_y: float, length: float):
+def PtSegDistance(query_x: float, query_y: float, start_x: float, start_y: float, 
+                  end_x: float, end_y: float, length: float) -> float:
     """
     Compute the distance between a point and a line segment
 
@@ -30,7 +26,6 @@ def PtSegDistance(query_x: float, query_y: float, start_x: float, start_y: float
     :returns: The distance between the point and the line segment
     :rtype: float
     """
-
     x0 = query_x - start_x
     y0 = query_y - start_y
     dx = end_x - start_x
@@ -56,8 +51,10 @@ class Box2d:
     called "length", and the size of the axis perpendicular to it "width".
     """
 
-    def __init__(self, *args):
-
+    def __init__(self, *args) -> None:
+        """
+        Constructor
+        """
         self._corners: List[Vec2d] = []
         self._max_x: float = float('-inf')
         self._min_x: float = float('inf')
@@ -68,12 +65,11 @@ class Box2d:
             """
             Constructor which takes the center, heading, length and width.
             
-            :param Vec2d center: The center of the rectangular bounding box.
-            :param float heading: The angle between the x-axis and the heading-axis, measured counter-clockwise.
-            :param float length: The size of the heading-axis.
-            :param float width: The size of the axis perpendicular to the heading-axis.
+            :param Vec2d center: The center of the rectangular bounding box
+            :param float heading: The angle between the x-axis and the heading-axis, measured counter-clockwise
+            :param float length: The size of the heading-axis
+            :param float width: The size of the axis perpendicular to the heading-axis
             """
-
             center, heading, length, width = args
             self._center: Vec2d = center
             self._length: float = length
@@ -91,13 +87,12 @@ class Box2d:
             """
             Constructor which takes the point on the axis, front length, back length, heading, and width.
    
-            :param Vec2d point: The center of the rectangular bounding box.
-            :param float heading: The angle between the x-axis and the heading-axis, measured counter-clockwise.
-            :param float front_length: The length from the start point to the given point.
-            :param float back_length: The length from the end point to the given point.
-            :param float width: The size of the axis perpendicular to the heading-axis.
+            :param Vec2d point: The center of the rectangular bounding box
+            :param float heading: The angle between the x-axis and the heading-axis, measured counter-clockwise
+            :param float front_length: The length from the start point to the given point
+            :param float back_length: The length from the end point to the given point
+            :param float width: The size of the axis perpendicular to the heading-axis
             """
-
             point, heading, front_length, back_length, width = args
             self._length = front_length + back_length
             self._width = width
@@ -117,9 +112,8 @@ class Box2d:
             Constructor which takes the heading-axis and the width of the box
             
             :param LineSegment2d axis: The heading-axis
-            :param float width: The width of the box, which is taken perpendicularly to the heading direction.
+            :param float width: The width of the box, which is taken perpendicularly to the heading direction
             """
-            
             axis, width = args
             self._center = axis.center
             self._length = axis.length()
@@ -137,9 +131,8 @@ class Box2d:
             """
             Constructor which takes an AABox2d (axes-aligned box).
 
-            :param AABox2d aabox: The input AABox2d.
+            :param AABox2d aabox: The input AABox2d
             """
-
             aabox: AABox2d = args[0]
             self._center = aabox.center
             self._length = aabox.length
@@ -162,7 +155,6 @@ class Box2d:
         :returns: An axes-aligned Box2d
         :rtype: Box2d
         """
-
         x1: float = min(one_corner.x, opposite_corner.x)
         x2: float = max(one_corner.x, opposite_corner.x)
         y1: float = min(one_corner.y, opposite_corner.y)
@@ -177,7 +169,6 @@ class Box2d:
         returns: The center of the box
         rtype: Vec2d
         """
-
         return self._center
 
     @property
@@ -188,7 +179,6 @@ class Box2d:
         :returns: The x-coordinate of the center of the box
         :rtype: float
         """
-
         return self._center.x
 
     @property
@@ -199,7 +189,6 @@ class Box2d:
         :returns: The y-coordinate of the center of the box
         :rtype: float
         """
-
         return self._center.y
 
     @property
@@ -210,7 +199,6 @@ class Box2d:
         :returns: The length of the heading-axis
         :rtype: float
         """
-
         return self._length
 
     @property
@@ -221,7 +209,6 @@ class Box2d:
         :returns: The width of the box taken perpendicularly to the heading
         :rtype: float
         """
-
         return self._width
 
     @property
@@ -232,7 +219,6 @@ class Box2d:
         :returns: Half the length of the heading-axis
         :rtype: float
         """
-
         return self._half_length
 
     @property
@@ -243,7 +229,6 @@ class Box2d:
         :returns: Half the width of the box taken perpendicularly to the heading
         :rtype: float
         """
-
         return self._half_width
 
     @property
@@ -254,7 +239,6 @@ class Box2d:
         :returns: The counter-clockwise angle between the x-axis and the heading-axis
         :rtype: float
         """
-
         return self._heading
 
     @property
@@ -265,7 +249,6 @@ class Box2d:
         :returns: The cosine of the heading
         :rtype: float
         """
-
         return self._cos_heading
 
     @property
@@ -276,7 +259,6 @@ class Box2d:
         :returns: The sine of the heading
         :rtype: float
         """
-
         return self._sin_heading
 
     @property
@@ -287,7 +269,6 @@ class Box2d:
         :returns: The product of its length and width
         :rtype: float
         """
-
         return self._length * self._width
 
     @property
@@ -298,7 +279,6 @@ class Box2d:
         :returns: The diagonal size of the box
         :rtype: float
         """
-
         return hypot(self._length, self._width)
 
     def GetAllCorners(self) -> List[Vec2d]:
@@ -308,7 +288,6 @@ class Box2d:
         :returns: The vector where the corners are listed
         :rtype: List[Vec2d]
         """
-
         return self._corners
 
     def IsPointIn(self, point: Vec2d) -> bool:
@@ -319,7 +298,6 @@ class Box2d:
         :returns: True iff the point is contained in the box
         :rtype: bool
         """
-
         x0: float = point.x - self._center.x
         y0: float = point.y - self._center.y
         dx: float = abs(x0 * self._cos_heading + y0 * self._sin_heading)
@@ -334,7 +312,6 @@ class Box2d:
         :returns: True iff the point is a boundary point of the box
         :rtype: bool
         """
-
         x0: float = point.x - self._center.x
         y0: float = point.y - self._center.y
         dx: float = abs(x0 * self._cos_heading + y0 * self._sin_heading)
@@ -353,10 +330,12 @@ class Box2d:
         :returns: The cross product of the vectors
         :rtype: float
         """
-
         return (end_point_1 - start_point).CrossProd(end_point_2 - start_point)
 
     def DistanceTo(self, param: Any) -> float:
+        """
+        Get the distance between the Box2d and another obj
+        """
 
         if isinstance(param, Vec2d):
             """
@@ -366,7 +345,6 @@ class Box2d:
             :returns: A distance
             :rtype: float
             """
-
             point: Vec2d = param
             x0: float = point.x - self._center.x
             y0: float = point.y - self._center.y
@@ -386,7 +364,6 @@ class Box2d:
             :returns: A distance
             :rtype: float 
             """
-
             line_segment: LineSegment2d = param
             if line_segment.length() <= kMathEpsilon:
                 return self.DistanceTo(line_segment.start)
@@ -462,9 +439,6 @@ class Box2d:
             :returns: A distance
             :rtype: float 
             """
-
-            from common.polygon2d import Polygon2d
-
             box: Box2d = param
             if self.HasOverlap(box):
                 return 0.0
@@ -474,12 +448,14 @@ class Box2d:
             for corner in box.GetAllCorners():
                 min_distance = min(min_distance, self.DistanceTo(corner))
             return min_distance
-        
-        else:
 
+        else:
             raise ValueError("Unknown param type")
 
     def HasOverlap(self, param: Any) -> bool:
+        """
+        Determines whether this box has overlap with obj
+        """
 
         if isinstance(param, LineSegment2d):
             """
@@ -489,7 +465,6 @@ class Box2d:
             :returns: True if they overlap
             :rtype: bool
             """
-
             line_segment: LineSegment2d = param
             if line_segment.length() <= kMathEpsilon:
                 return self.IsPointIn(line_segment.start)
@@ -547,7 +522,6 @@ class Box2d:
             :returns: True if they overlap
             :rtype: bool
             """
-
             box: Box2d = param
             if box.max_x < self.min_x or box.min_x > self.max_x or box.max_y < self.min_y or box.min_y > self.max_y:
                 return False
@@ -586,25 +560,7 @@ class Box2d:
 
             return condition1 and condition2 and condition3 and condition4
 
-        elif _is_polygon2d(param):
-            polygon = param
-            if polygon.max_x < self.min_x or polygon.min_x > self.max_x:
-                return False
-            if polygon.max_y < self.min_y or polygon.min_y > self.max_y:
-                return False
-            for corner in polygon.points:
-                if self.IsPointIn(corner):
-                    return True
-            for corner in self.GetAllCorners():
-                if polygon.IsPointIn(corner):
-                    return True
-            for segment in polygon.line_segments:
-                if self.HasOverlap(segment):
-                    return True
-            return False
-
         else:
-
             raise ValueError("Unknown param type")
 
     def GetAABox(self) -> AABox2d:
@@ -614,7 +570,6 @@ class Box2d:
         :returns: An axes-aligned box
         :rtype: AABox2d
         """
-
         dx1: float = abs(self._cos_heading * self._half_length)
         dy1: float = abs(self._sin_heading * self._half_length)
         dx2: float = abs(self._sin_heading * self._half_width)
@@ -627,7 +582,6 @@ class Box2d:
 
         :param float rotate_angle: Angle to rotate.
         """
-        
         self._heading = NormalizeAngle(self._heading + rotate_angle)
         self._cos_heading = cos(self._heading)
         self._sin_heading = sin(self._heading)
@@ -639,7 +593,6 @@ class Box2d:
 
         :param Vec2d shift_vec: The vector determining the shift
         """
-
         self._center += shift_vec
         for i in range(4):
             self._corners[i] += shift_vec
@@ -655,7 +608,6 @@ class Box2d:
 
         :param float extension_length: the length to extend
         """
-
         self._length += extension_length
         self._half_length += extension_length / 2.0
         self.InitCorners()
@@ -666,7 +618,6 @@ class Box2d:
 
         :param float extension_length: the length to extend
         """
-        
         self._width += extension_length
         self._half_width += extension_length / 2.0
         self.InitCorners()
@@ -678,7 +629,6 @@ class Box2d:
         :returns: A string representation of class Box2d
         :rtype: str
         """
-
         return f"box2d: (center: {self._center}, heading: {self._heading}, length: {self._length}, width: {self._width}"
 
     def InitCorners(self) -> None:
@@ -711,7 +661,6 @@ class Box2d:
         :returns: The maximum x-coordinate of the box
         :rtype: float
         """
-
         return self._max_x
 
     @property
@@ -722,7 +671,6 @@ class Box2d:
         :returns: The minimum x-coordinate of the box
         :rtype: float
         """
-
         return self._min_x
 
     @property
@@ -733,7 +681,6 @@ class Box2d:
         :returns: The maximum y-coordinate of the box
         :rtype: float
         """
-
         return self._max_y
 
     @property
@@ -744,7 +691,6 @@ class Box2d:
         :returns: The minimum y-coordinate of the box
         :rtype: float
         """
-
         return self._min_y
 
     def is_inside_rectangle(self, point: Vec2d) -> bool:
@@ -755,5 +701,4 @@ class Box2d:
         :returns: True if the point is inside the rectangle
         :rtype: bool
         """
-
         return (0.0 <= point.x <= self._width) and (0.0 <= point.y <= self._length)

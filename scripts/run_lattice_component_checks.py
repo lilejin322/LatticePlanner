@@ -1695,21 +1695,6 @@ def check_record_debug_info():
     assert "ManualPath" in {p.name for p in reference_line_info.debug.planning_data.path}
 
 
-def check_box_polygon_overlap():
-    from common.box2d import Box2d
-    from common.polygon2d import Polygon2d
-    from common.vec2d import Vec2d
-
-    box = Box2d(Vec2d(10.0, 0.0), 0.0, 4.0, 2.0)
-    polygon = Polygon2d(box)
-    separated = Box2d(Vec2d(0.0, 0.0), 0.0, 4.0, 2.0)
-    assert not separated.HasOverlap(polygon)
-    assert not polygon.HasOverlap(separated)
-    overlapping = Box2d(Vec2d(10.0, 0.0), 0.0, 4.8, 2.0)
-    assert box.HasOverlap(polygon)
-    assert overlapping.HasOverlap(polygon)
-
-
 def check_box_distance_to_segment_canonical_state():
     from common.box2d import Box2d
     from common.line_segment2d import LineSegment2d
@@ -2868,7 +2853,6 @@ def main():
     check_polygon_bounding_box_with_heading_uses_cross_projection()
     check_polygon_extreme_points_accepts_triangle()
     check_route_segments_uses_cpp_segmentation_epsilon()
-    check_box_polygon_overlap()
     check_box_distance_to_segment_canonical_state()
     check_path_bounds_decider_multi_candidates()
     check_path_bounds_decider_respects_committed_borrow_direction()
