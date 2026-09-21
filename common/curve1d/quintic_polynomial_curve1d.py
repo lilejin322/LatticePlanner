@@ -1,6 +1,9 @@
+"""
+Quintic polynomial curve1D submodule
+"""
+from copy import deepcopy
 from typing import List, override
 from common.curve1d.polynomial_curve1d import PolynomialCurve1d
-from copy import deepcopy
 
 class QuinticPolynomialCurve1d(PolynomialCurve1d):
     """
@@ -8,13 +11,20 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
     1D quintic polynomial curve:
     (x0, dx0, ddx0) -- [0, param] --> (x1, dx1, ddx1)
     """
+    _param: float
+    start_condition: List[float]
+    end_condition: List[float]
+    _coef: List[float]
 
     def __init__(self, *args):
         """
         Constructor
         """
-
         if len(args) == 3:
+            """
+            :param float start: 
+            :param float end: 
+            """
             start, end, param = args
             self.__init__(start[0], start[1], start[2], end[0], end[1], end[2], param)
         elif len(args) == 7:

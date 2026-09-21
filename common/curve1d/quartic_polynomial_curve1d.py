@@ -1,12 +1,19 @@
+"""
+Quartic polynomial curve1D submodule
+"""
+from copy import deepcopy
 from typing import List, override
 from common.curve1d.polynomial_curve1d import PolynomialCurve1d
-from copy import deepcopy
 
 class QuarticPolynomialCurve1d(PolynomialCurve1d):
     """
     QuarticPolynomialCurve1d class
     1D quartic polynomial curve: (x0, dx0, ddx0) -- [0, param] --> (dx1, ddx1)
     """
+    _param: float
+    start_condition: List[float]
+    end_condition: List[float]
+    _coef: List[float]
 
     def __init__(self, *args):
         """
@@ -14,9 +21,23 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         """
 
         if len(args) == 3:
+            """
+            :param List[float] start: the start
+            :param List[float] end: the end
+            :param float param: the param
+            """
             start, end, param = args
             self.__init__(start[0], start[1], start[2], end[0], end[1], param)
+
         elif len(args) == 6:
+            """
+            :param float x0: the x0
+            :param float dx0: the dx0
+            :param float ddx0: the ddx0
+            :param float dx1: the dx1
+            :param float ddx1: the ddx1
+            :param float param: the param
+            """
             super().__init__()
             x0, dx0, ddx0, dx1, ddx1, param = args
             self._param = param
@@ -24,9 +45,16 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
             self.end_condition: List[float] = [dx1, ddx1]
             self._coef: List[float] = [0.0] * 5
             self.ComputeCoefficients(x0, dx0, ddx0, dx1, ddx1, param)
+
         elif len(args) == 1 and isinstance(args[0], QuarticPolynomialCurve1d):
+            """
+            Copy from other, using deepcopy
+
+            :param QuarticPolynomialCurve1d other: the other one
+            """
             other: QuarticPolynomialCurve1d = args[0]
             self.__dict__ = deepcopy(other.__dict__)
+
         else:
             raise ValueError("Invalid number of arguments")
 
@@ -40,7 +68,6 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Value of the curve at p
         :rtype: float
         """
-
         if order == 0:
             return (((self._coef[4] * p + self._coef[3]) * p + self._coef[2]) * p + self._coef[1]) * p + self._coef[0]
         elif order == 1:
@@ -63,7 +90,6 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Order of the curve
         :rtype: int
         """
-
         return 4
 
     @override
@@ -75,7 +101,6 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Coefficient for the given order
         :rtype: float
         """
-
         assert order < 5 and order >= 0, "Order must be in [0, 4]"
         return self._coef[order]
 
@@ -87,7 +112,6 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :returns: String representation of the curve
         :rtype: str
         """
-
         return f"{'\t'.join(map(str, self._coef))}\t{self._param}\n"
 
     def ComputeCoefficients(self, x0: float, dx0: float, ddx0: float, dx1: float, ddx1: float, p: float) -> None:
@@ -101,7 +125,6 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :param float ddx1: param ddx1
         :param float p: param p
         """
-
         assert p > 0.0, "Param must be positive"
 
         self._coef[0] = x0
@@ -126,5 +149,4 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Param
         :rtype: float
         """
-
         return self._param

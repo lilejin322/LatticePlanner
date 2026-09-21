@@ -16,7 +16,7 @@ class Curve1d(ABC):
         super().__init__()
 
     @abstractmethod
-    def Evaluate(order: int, param: float) -> float:
+    def Evaluate(self, order: int, param: float) -> float:
         """
         Evaluate the curve at the given order and parameter
         Note that this is an abstract method and must be implemented in the derived class
@@ -29,7 +29,7 @@ class Curve1d(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def ParamLength() -> float:
+    def ParamLength(self) -> float:
         """
         Get the length of the parameter
         Note that this is an abstract method and must be implemented in the derived class
@@ -40,7 +40,7 @@ class Curve1d(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def __str__() -> str:
+    def __str__(self) -> str:
         """
         Convert the curve to a string
         Note that this is an abstract method and must be implemented in the derived class

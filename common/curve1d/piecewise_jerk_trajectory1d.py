@@ -1,15 +1,23 @@
-from common.curve1d.curve1d import Curve1d
-from common.curve1d.constant_jerk_trajectory1d import ConstantJerkTrajectory1d
+"""
+Piecewise jerk trajectory1D submodule
+"""
+from bisect import bisect_left
 from typing import override, List
 import config as config_module
-from bisect import bisect_left
+from common.curve1d.curve1d import Curve1d
+from common.curve1d.constant_jerk_trajectory1d import ConstantJerkTrajectory1d
 
 class PiecewiseJerkTrajectory1d(Curve1d):
     """
     PiecewiseJerkTrajectory1d class
     """
+    _segments: List[ConstantJerkTrajectory1d] = []
+    _last_p: float
+    _last_v: float
+    _last_a: float
+    _param: List[float] = [0.0]
 
-    def __init__(self, p: float, v: float, a: float):
+    def __init__(self, p: float, v: float, a: float) -> None:
         """
         Constructor
 
@@ -17,7 +25,6 @@ class PiecewiseJerkTrajectory1d(Curve1d):
         :param float v: v
         :param float a: a
         """
-
         super().__init__()
         self._segments: List[ConstantJerkTrajectory1d] = []
         self._last_p: float = p
@@ -35,7 +42,6 @@ class PiecewiseJerkTrajectory1d(Curve1d):
         :returns: The evaluated value
         :rtype: float
         """
-
         index = bisect_left(self._param, param)
 
         if index == 0:
@@ -54,7 +60,6 @@ class PiecewiseJerkTrajectory1d(Curve1d):
         :returns: the param
         :rtype: float
         """
-
         return self._param[-1]
 
     @override
@@ -65,8 +70,7 @@ class PiecewiseJerkTrajectory1d(Curve1d):
         :returns: The string representation of the trajectory
         :rtype: str
         """
-
-        return ""
+        return "".join(map(str, self._segments))
 
     def AppendSegment(self, jerk: float, param: float) -> None:
         """
@@ -75,7 +79,6 @@ class PiecewiseJerkTrajectory1d(Curve1d):
         :param float jerk: The jerk
         :param float param: The parameter
         """
-
         assert param > config_module.FLAGS_numerical_epsilon
 
         self._param.append(self._param[-1] + param)

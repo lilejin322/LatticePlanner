@@ -16,8 +16,8 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
     """
     _s: float
     _v: float
-    _a: float
-    _t: float
+    _a: float = [0.0]
+    _t: float = [0.0]
     logger: Logger
 
     def __init__(self, start_s: float, start_v: float) -> None:
