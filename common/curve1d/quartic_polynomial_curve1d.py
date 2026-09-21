@@ -40,7 +40,7 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
             """
             super().__init__()
             x0, dx0, ddx0, dx1, ddx1, param = args
-            self._param = param
+            self._param: float = param
             self.start_condition: List[float] = [x0, dx0, ddx0]
             self.end_condition: List[float] = [dx1, ddx1]
             self._coef: List[float] = [0.0] * 5
@@ -143,8 +143,7 @@ class QuarticPolynomialCurve1d(PolynomialCurve1d):
     @override
     def ParamLength(self) -> float:
         """
-        Get the param
-        It is weird that this method is called 'Length' but it returns the param
+        Get the param length
 
         :returns: Param
         :rtype: float

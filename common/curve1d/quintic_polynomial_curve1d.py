@@ -22,12 +22,23 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
         """
         if len(args) == 3:
             """
-            :param float start: 
-            :param float end: 
+            :param List[float] start: the start
+            :param List[float] end: the end
+            :param float param: the param
             """
             start, end, param = args
             self.__init__(start[0], start[1], start[2], end[0], end[1], end[2], param)
+
         elif len(args) == 7:
+            """
+            :param float x0: the x0
+            :param float dx0: the dx0
+            :param float ddx0: the ddx0
+            :param float x1: the x1
+            :param float dx1: the dx1
+            :param float ddx1: the ddx1
+            :param float param: the param
+            """
             super().__init__()
             x0, dx0, ddx0, x1, dx1, ddx1, param = args
             self._param = param
@@ -35,12 +46,19 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
             self.end_condition: List[float] = [x1, dx1, ddx1]
             self._coef = [0.0] * 6
             self.ComputeCoefficients(x0, dx0, ddx0, x1, dx1, ddx1, param)
+
         elif len(args) == 1 and isinstance(args[0], QuinticPolynomialCurve1d):
+            """
+            Copy from other, using deepcopy
+
+            :param QuinticPolynomialCurve1d other: the other one
+            """
             other: QuinticPolynomialCurve1d = args[0]
             self.__dict__ = deepcopy(other.__dict__)
+
         else:
             raise ValueError("Invalid number of arguments")
-    
+
     @override
     def Evaluate(self, order: int, p: float) -> float:
         """
@@ -51,7 +69,6 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Value of the curve at p
         :rtype: float
         """
-
         if order == 0:
             return ((((self._coef[5] * p + self._coef[4]) * p + self._coef[3]) * p + self._coef[2]) * p + self._coef[1]) * p + self._coef[0]
         elif order == 1:
@@ -76,9 +93,8 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Order of the curve
         :rtype: int
         """
-
         return 5
-    
+
     @override
     def Coef(self, order: int) -> float:
         """
@@ -88,10 +104,9 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
         :returns: Coefficient for the given order
         :rtype: float
         """
-
         assert order < 6 and order >= 0, "Order must be in [0, 5]"
         return self._coef[order]
-    
+
     @override
     def __str__(self) -> str:
         """
@@ -100,9 +115,8 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
         :returns: String representation of the curve
         :rtype: str
         """
-
         return f"{'\t'.join(map(str, self._coef))}\t{self._param}\n"
-    
+
     def ComputeCoefficients(self, x0: float, dx0: float, ddx0: float, x1: float, dx1: float, ddx1: float, p: float) -> None:
         """
         Compute the coefficients of the curve
@@ -115,7 +129,6 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
         :param float ddx1: param ddx1
         :param float p: param p
         """
-
         assert p > 0.0, "Param must be positive"
 
         self._coef[0] = x0
@@ -138,11 +151,9 @@ class QuinticPolynomialCurve1d(PolynomialCurve1d):
     @override
     def ParamLength(self) -> float:
         """
-        Get the param
-        It is weird that this method is called 'Length' but it returns the param
+        Get the param length
 
         :returns: Param
         :rtype: float
         """
-
         return self._param

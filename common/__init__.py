@@ -1,3 +1,3 @@
 """
-common utilities module
+the common module
 """

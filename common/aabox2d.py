@@ -1,11 +1,11 @@
 """
 AABox2d submodule
 """
-from common.vec2d import Vec2d
-from typing import List
-from common.polygon2d import kMathEpsilon
 import math
+from typing import List
 from logging import Logger
+from common.vec2d import Vec2d
+from common.polygon2d import kMathEpsilon
 
 logger = Logger("AABox2d")
 
@@ -13,6 +13,11 @@ class AABox2d:
     """
     Implements a class of (undirected) axes-aligned bounding boxes in 2-D.
     """
+    _center: Vec2d
+    _length: float
+    _width: float
+    _half_length: float
+    _half_width: float
 
     def __init__(self, *args):
         """
@@ -61,7 +66,7 @@ class AABox2d:
             """
             Creates an axes-aligned box containing all points in a given vector.
 
-            :param List[Vec2d] points: Vector of points to be included inside the box.
+            :param List[Vec2d] points: Vector of points to be included inside the box
             """
 
             points = args[0]
@@ -90,7 +95,6 @@ class AABox2d:
         :returns: Center of the box
         :rtype: Vec2d
         """
-
         return self._center
 
     @property
@@ -101,7 +105,6 @@ class AABox2d:
         :returns: x-component of the center of the box
         :rtype: float
         """
-
         return self._center.x
 
     @property
@@ -112,7 +115,6 @@ class AABox2d:
         :returns: y-component of the center of the box
         :rtype: float
         """
-
         return self._center.y
 
     @property
@@ -123,7 +125,6 @@ class AABox2d:
         :returns: The length of the box
         :rtype: float
         """
-
         return self._length
 
     @property
@@ -134,7 +135,6 @@ class AABox2d:
         :returns: The width of the box
         :rtype: float
         """
-
         return self._width
 
     @property
@@ -145,7 +145,6 @@ class AABox2d:
         :returns: Half of the length of the box
         :rtype: float
         """
-
         return self._half_length
 
     @property
@@ -156,7 +155,6 @@ class AABox2d:
         :returns: Half of the width of the box
         :rtype: float
         """
-
         return self._half_width
 
     @property
@@ -167,7 +165,6 @@ class AABox2d:
         :returns: The area of the box
         :rtype: float
         """
-
         return self._length * self._width
 
     @property
@@ -178,7 +175,6 @@ class AABox2d:
         :returns: x-coordinate
         :rtype: float
         """
-
         return self._center.x - self._half_length
 
     @property
@@ -189,7 +185,6 @@ class AABox2d:
         :returns: x-coordinate
         :rtype: float
         """
-
         return self._center.x + self._half_length
 
     @property
@@ -200,7 +195,6 @@ class AABox2d:
         :returns: y-coordinate
         :rtype: float
         """
-
         return self._center.y - self._half_width
 
     @property
@@ -211,7 +205,6 @@ class AABox2d:
         :returns: y-coordinate
         :rtype: float
         """
-
         return self._center.y + self._half_width
 
     def GetAllCorners(self) -> List[Vec2d]:
@@ -221,7 +214,6 @@ class AABox2d:
         :returns: List of all corners
         :rtype: List[Vec2d]
         """
-
         corners: List[Vec2d] = []
         corners.append(Vec2d(self._center.x + self._half_length, self._center.y - self._half_width))
         corners.append(Vec2d(self._center.x + self._half_length, self._center.y + self._half_width))
@@ -237,7 +229,6 @@ class AABox2d:
         :returns: True if the point is inside the box, False otherwise
         :rtype: bool
         """
-
         return abs(point.x - self._center.x) <= self._half_length + kMathEpsilon and \
                abs(point.y - self._center.y) <= self._half_width + kMathEpsilon
 
@@ -249,7 +240,6 @@ class AABox2d:
         :returns: True if the point is on the boundary of the box, False otherwise
         :rtype: bool
         """
-
         dx: float = abs(point.x - self._center.x)
         dy: float = abs(point.y - self._center.y)
         tag1 = abs(dx - self._half_length) <= kMathEpsilon and dy <= self._half_width + kMathEpsilon
@@ -262,11 +252,10 @@ class AABox2d:
             """
             Determines the distance between a point and the box.
 
-            :param Vec2d point: The point whose distance to the box we wish to determine.
+            :param Vec2d point: The point whose distance to the box we wish to determine
             :returns: The distance between the point and the box
             :rtype: float
             """
-
             point: Vec2d = args[0]
             dx: float = abs(point.x - self._center.x) - self._half_length
             dy: float = abs(point.y - self._center.y) - self._half_width
@@ -280,11 +269,10 @@ class AABox2d:
             """
             Determines the distance between two boxes.
 
-            :param AABox2d box: Another box.
+            :param AABox2d box: Another box
             :returns: The distance between the two boxes
             :rtype: float
             """
-
             box: AABox2d = args[0]
             dx: float = abs(box.center_x - self._center.x) - box.half_length - self._half_length
             dy: float = abs(box.center_y - self._center.y) - box.half_width - self._half_width
@@ -305,17 +293,15 @@ class AABox2d:
         :returns: True if the two boxes overlap, False otherwise
         :rtype: bool
         """
-
         return abs(box.center_x - self._center.x) <= box.half_length + self._half_length and \
                abs(box.center_y - self._center.y) <= box.half_width + self._half_width
 
-    def Shift(self, shift_vec: Vec2d):
+    def Shift(self, shift_vec: Vec2d) -> None:
         """
         Shift the center of AABox by the input vector.
 
         :param Vec2d shift_vec: The vector by which we wish to shift the box
         """
-
         self._center += shift_vec
 
     def MergeFrom(self, *args) -> None:
@@ -324,7 +310,7 @@ class AABox2d:
             """
             Changes box to include another given box, as well as the current one.
 
-            :param AABox2d other_box: Another box.
+            :param AABox2d other_box: Another box
             """
 
             other_box: AABox2d = args[0]
@@ -342,7 +328,7 @@ class AABox2d:
             """
             Changes box to include a given point, as well as the current box.
 
-            :param Vec2d other_point: Another point.
+            :param Vec2d other_point: Another point
             """
 
             other_point: Vec2d = args[0]
@@ -363,5 +349,4 @@ class AABox2d:
         :returns: String representation of the AABox2d
         :rtype: str
         """
-
         return f"AABox2d(center = {self._center}, length = {self._length}, width = {self._width})"
