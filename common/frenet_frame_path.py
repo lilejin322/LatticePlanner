@@ -3,29 +3,10 @@ from typing import List, Optional
 from protoclass.sl_boundary import SLBoundary
 from bisect import bisect_left, bisect_right
 from collections import UserList
+from common.geometry_utils import lerp
 from logging import Logger
 
 logger: Logger = Logger("FrenetFramePath")
-
-def lerp(x0: float, t0: float, x1: float, t1: float, t: float) -> float:
-    """
-    Linear interpolation.
-
-    :param float x0: the x0 value.
-    :param float t0: the t0 value.
-    :param float x1: the x1 value.
-    :param float t1: the t1 value.
-    :param float t: the t value.
-    :returns: the interpolated value.
-    :rtype: float
-    """
-
-    if abs(t1 - t0) <= 1.0e-6:
-        logger.error("Input time difference is too small")
-        return x0
-    r = (t - t0) / (t1 - t0)
-    x = x0 + r * (x1 - x0)
-    return x
 
 class FrenetFramePath(UserList):
     """

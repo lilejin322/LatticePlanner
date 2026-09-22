@@ -8,6 +8,7 @@ from common.box2d import Box2d
 from common.vec2d import Vec2d
 from common.st_boundary import STBoundary
 from common.st_point import STPoint
+from common.geometry_utils import lerp
 from reference_line.reference_line_info import ReferenceLineInfo
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
@@ -225,32 +226,12 @@ class PathTimeGraph:
         for pt_obstacle in self.path_time_obstacles:
             if t > pt_obstacle.max_t or t < pt_obstacle.min_t:
                 continue
-            s_upper: float = self.lerp(pt_obstacle.upper_left_point.s, pt_obstacle.upper_left_point.t,
+            s_upper: float = lerp(pt_obstacle.upper_left_point.s, pt_obstacle.upper_left_point.t,
                                        pt_obstacle.upper_right_point.s, pt_obstacle.upper_right_point.t, t)
-            s_lower: float = self.lerp(pt_obstacle.bottom_left_point.s, pt_obstacle.bottom_left_point.t,
+            s_lower: float = lerp(pt_obstacle.bottom_left_point.s, pt_obstacle.bottom_left_point.t,
                                        pt_obstacle.bottom_right_point.s, pt_obstacle.bottom_right_point.t, t)
             intervals.append((s_lower, s_upper))
         return intervals
-
-    def lerp(self, x0: float, t0: float, x1: float, t1: float, t: float) -> float:
-        """
-        Linear interpolation.
-
-        TODO: Need merge into a common place, too manny lerp()
-        :param float x0: the x0 value
-        :param float t0: the t0 value
-        :param float x1: the x1 value
-        :param float t1: the t1 value
-        :param float t: the t value
-        :returns: the interpolated value
-        :rtype: float
-        """
-        if abs(t1 - t0) <= 1.0e-6:
-            self.logger.error("Input time difference is too small")
-            return x0
-        r = (t - t0) / (t1 - t0)
-        x = x0 + r * (x1 - x0)
-        return x
 
     def GetPathBlockingIntervals(self, t_start: float, t_end: float,
                                  t_resolution: float) -> List[List[Tuple[float, float]]]:
@@ -334,7 +315,7 @@ class PathTimeGraph:
 
         for i in range(num_sections + 1):
             t = t_interval * i + t0
-            s = self.lerp(s0, t0, s1, t1, t) + s_dist
+            s = lerp(s0, t0, s1, t1, t) + s_dist
 
             ptt = STPoint(s, t)
             pt_pairs.append(ptt)

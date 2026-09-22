@@ -8,6 +8,7 @@ from logging import Logger
 from bisect import bisect_left
 from typing import override, Any, List
 from common.curve1d.curve1d import Curve1d
+from common.geometry_utils import lerp
 
 logger = Logger("PiecewiseAccelerationTrajectory1d")
 
@@ -97,25 +98,6 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
                "\t".join(map(str, self._v)) + "\n" + \
                "\t".join(map(str, self._a)) + "\n"
 
-    def lerp(self, x0: float, t0: float, x1: float, t1: float, t: float) -> float:
-        """
-        Linear interpolation.
-
-        :param float x0: the x0 value.
-        :param float t0: the t0 value.
-        :param float x1: the x1 value.
-        :param float t1: the t1 value.
-        :param float t: the t value.
-        :returns: the interpolated value.
-        :rtype: float
-        """
-        if abs(t1 - t0) <= 1.0e-6:
-            self.logger.error("Input time difference is too small")
-            return x0
-        r = (t - t0) / (t1 - t0)
-        x = x0 + r * (x1 - x0)
-        return x
-
     @override
     def Evaluate(self, *args) -> Any:
         """
@@ -164,7 +146,7 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
             v1: float = self._v[index]
             t1: float = self._t[index]
 
-            v: float = self.lerp(v0, t0, v1, t1, t)
+            v: float = lerp(v0, t0, v1, t1, t)
             s: float = (v0 + v) * (t - t0) * 0.5 + s0
 
             a: float = self._a[index - 1]
@@ -189,7 +171,7 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         v1: float = self._v[index]
         t1: float = self._t[index]
 
-        v: float = self.lerp(v0, t0, v1, t1, t)
+        v: float = lerp(v0, t0, v1, t1, t)
         s: float = (v0 + v) * (t - t0) * 0.5 + s0
         return s
 
@@ -209,7 +191,7 @@ class PiecewiseAccelerationTrajectory1d(Curve1d):
         v1: float = self._v[index]
         t1: float = self._t[index]
 
-        v: float = self.lerp(v0, t0, v1, t1, t)
+        v: float = lerp(v0, t0, v1, t1, t)
         return v
 
     def Evaluate_a(self, t: float) -> float:

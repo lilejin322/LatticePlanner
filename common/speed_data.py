@@ -2,6 +2,7 @@ from protoclass.speed_point import SpeedPoint
 from typing import List, Optional, Tuple
 from bisect import bisect_left
 from collections import UserList
+from common.geometry_utils import lerp
 from logging import Logger
 from copy import deepcopy
 import config as config_module
@@ -29,26 +30,6 @@ class SpeedData(UserList):
             assert self[-1].t < time, "Time must be monotonous"
         self.append(speed_point)
 
-    def lerp(self, x0: float, t0: float, x1: float, t1: float, t: float) -> float:
-        """
-        Linear interpolation.
-
-        :param float x0: the x0 value.
-        :param float t0: the t0 value.
-        :param float x1: the x1 value.
-        :param float t1: the t1 value.
-        :param float t: the t value.
-        :returns: the interpolated value.
-        :rtype: float
-        """
-
-        if abs(t1 - t0) <= 1.0e-6:
-            self.logger.error("Input time difference is too small")
-            return x0
-        r = (t - t0) / (t1 - t0)
-        x = x0 + r * (x1 - x0)
-        return x
-
     def EvaluateByTime(self, t: float) -> Tuple[bool, SpeedPoint]:
         """
         Evaluate the SpeedData by time
@@ -75,17 +56,17 @@ class SpeedData(UserList):
             t0: float = p0.t
             t1: float = p1.t
 
-            s = self.lerp(p0.s, t0, p1.s, t1, t)
+            s = lerp(p0.s, t0, p1.s, t1, t)
             if p0.v is not None and p1.v is not None:
-                v = self.lerp(p0.v, t0, p1.v, t1, t)
+                v = lerp(p0.v, t0, p1.v, t1, t)
             else:
                 v = None
             if p0.a is not None and p1.a is not None:
-                a = self.lerp(p0.a, t0, p1.a, t1, t)
+                a = lerp(p0.a, t0, p1.a, t1, t)
             else:
                 a = None
             if p0.da is not None and p1.da is not None:
-                da = self.lerp(p0.da, t0, p1.da, t1, t)
+                da = lerp(p0.da, t0, p1.da, t1, t)
             else:
                 da = None
 
@@ -122,17 +103,17 @@ class SpeedData(UserList):
             s0: float = p0.s
             s1: float = p1.s
 
-            t = self.lerp(p0.t, s0, p1.t, s1, s)
+            t = lerp(p0.t, s0, p1.t, s1, s)
             if p0.v is not None and p1.v is not None:
-                v = self.lerp(p0.v, s0, p1.v, s1, s)
+                v = lerp(p0.v, s0, p1.v, s1, s)
             else:
                 v = None
             if p0.a is not None and p1.a is not None:
-                a = self.lerp(p0.a, s0, p1.a, s1, s)
+                a = lerp(p0.a, s0, p1.a, s1, s)
             else:
                 a = None
             if p0.da is not None and p1.da is not None:
-                da = self.lerp(p0.da, s0, p1.da, s1, s)
+                da = lerp(p0.da, s0, p1.da, s1, s)
             else:
                 da = None
 

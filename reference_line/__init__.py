@@ -11,7 +11,7 @@ from common.box2d import Box2d
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.frenet_frame_point import FrenetFramePoint
 from protoclass.sl_boundary import SLBoundary
-from common.geometry_utils import NormalizeAngle
+from common.geometry_utils import NormalizeAngle, lerp
 from common.polygon2d import Polygon2d
 from logging import Logger
 from bisect import bisect_left, bisect_right
@@ -1237,27 +1237,6 @@ class ReferenceLine:
         return self._map_path
 
     @staticmethod
-    def lerp(x0: float, t0: float, x1: float, t1: float, t: float) -> float:
-        """
-        Linear interpolation.
-
-        :param float x0: the x0 value.
-        :param float t0: the t0 value.
-        :param float x1: the x1 value.
-        :param float t1: the t1 value.
-        :param float t: the t value.
-        :returns: the interpolated value.
-        :rtype: float
-        """
-
-        if abs(t1 - t0) <= 1.0e-6:
-            logger.error("Input time difference is too small")
-            return x0
-        r = (t - t0) / (t1 - t0)
-        x = x0 + r * (x1 - x0)
-        return x
-
-    @staticmethod
     def slerp(a0: float, t0: float, a1: float, t1: float, t: float) -> float:
         """
         Slerp function
@@ -1312,11 +1291,11 @@ class ReferenceLine:
         assert s0 - 1.0e-6 <= s, f"s: {s} is less than s0: {s0}"
         assert s <= s1 + 1.0e-6, f"s: {s} is larger than s1: {s1}"
 
-        x: float = ReferenceLine.lerp(p0.x, s0, p1.x, s1, s)
-        y: float = ReferenceLine.lerp(p0.y, s0, p1.y, s1, s)
+        x: float = lerp(p0.x, s0, p1.x, s1, s)
+        y: float = lerp(p0.y, s0, p1.y, s1, s)
         heading: float = ReferenceLine.slerp(p0.heading, s0, p1.heading, s1, s)
-        kappa: float = ReferenceLine.lerp(p0.kappa, s0, p1.kappa, s1, s)
-        dkappa: float = ReferenceLine.lerp(p0.dkappa, s0, p1.dkappa, s1, s)
+        kappa: float = lerp(p0.kappa, s0, p1.kappa, s1, s)
+        dkappa: float = lerp(p0.dkappa, s0, p1.dkappa, s1, s)
         waypoints: List[LaneWaypoint] = []
         if p0.lane_waypoints and p1.lane_waypoints:
             p0_waypoint = p0.lane_waypoints[0]
@@ -1352,8 +1331,8 @@ class ReferenceLine:
         assert s <= s1 + 1.0e-6, f"s: {s} is greater than s1: {s1}"
 
         map_path_point = self._map_path.GetSmoothPoint(index)
-        kappa: float = ReferenceLine.lerp(p0.kappa, s0, p1.kappa, s1, s)
-        dkappa: float = ReferenceLine.lerp(p0.dkappa, s0, p1.dkappa, s1, s)
+        kappa: float = lerp(p0.kappa, s0, p1.kappa, s1, s)
+        dkappa: float = lerp(p0.dkappa, s0, p1.dkappa, s1, s)
 
         return ReferencePoint(map_path_point, kappa, dkappa)
 

@@ -6,7 +6,7 @@ from logging import Logger
 from bisect import bisect_left
 from collections import UserList
 from common.vec2d import Vec2d
-from common.geometry_utils import NormalizeAngle, value_or_zero
+from common.geometry_utils import NormalizeAngle, value_or_zero, lerp
 from protoclass.path_point import PathPoint
 from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.trajectory_point import TrajectoryPoint
@@ -92,25 +92,6 @@ class DiscretizedTrajectory(UserList):
         else:
             return self.InterpolateUsingLinearApproximation(self[idx - 1], self[idx], relative_time)
 
-    def lerp(self, x0: float, t0: float, x1: float, t1: float, t: float) -> float:
-        """
-        Linear interpolation.
-
-        :param float x0: the x0 value.
-        :param float t0: the t0 value.
-        :param float x1: the x1 value.
-        :param float t1: the t1 value.
-        :param float t: the t value.
-        :returns: the interpolated value.
-        :rtype: float
-        """
-        if abs(t1 - t0) <= 1.0e-6:
-            self.logger.error("Input time difference is too small")
-            return x0
-        r = (t - t0) / (t1 - t0)
-        x = x0 + r * (x1 - x0)
-        return x
-
     def slerp(self, a0: float, t0: float, a1:float, t1: float, t: float, epsilon:float=1e-10) -> float:
         """
         Slerp function
@@ -158,19 +139,19 @@ class DiscretizedTrajectory(UserList):
         t1: float = tp1.relative_time
 
         tp: TrajectoryPoint = TrajectoryPoint()
-        tp.v = self.lerp(value_or_zero(tp0.v), t0, value_or_zero(tp1.v), t1, t)
-        tp.a = self.lerp(value_or_zero(tp0.a), t0, value_or_zero(tp1.a), t1, t)
+        tp.v = lerp(value_or_zero(tp0.v), t0, value_or_zero(tp1.v), t1, t)
+        tp.a = lerp(value_or_zero(tp0.a), t0, value_or_zero(tp1.a), t1, t)
         tp.relative_time = t
         tp.steer = self.slerp(value_or_zero(tp0.steer), t0, value_or_zero(tp1.steer), t1, t)
 
         path_point: PathPoint = tp.path_point
-        path_point.x = self.lerp(value_or_zero(pp0.x), t0, value_or_zero(pp1.x), t1, t)
-        path_point.y = self.lerp(value_or_zero(pp0.y), t0, value_or_zero(pp1.y), t1, t)
+        path_point.x = lerp(value_or_zero(pp0.x), t0, value_or_zero(pp1.x), t1, t)
+        path_point.y = lerp(value_or_zero(pp0.y), t0, value_or_zero(pp1.y), t1, t)
         path_point.theta = self.slerp(value_or_zero(pp0.theta), t0, value_or_zero(pp1.theta), t1, t)
-        path_point.kappa = self.lerp(value_or_zero(pp0.kappa), t0, value_or_zero(pp1.kappa), t1, t)
-        path_point.dkappa = self.lerp(value_or_zero(pp0.dkappa), t0, value_or_zero(pp1.dkappa), t1, t)
-        path_point.ddkappa = self.lerp(value_or_zero(pp0.ddkappa), t0, value_or_zero(pp1.ddkappa), t1, t)
-        path_point.s = self.lerp(value_or_zero(pp0.s), t0, value_or_zero(pp1.s), t1, t)
+        path_point.kappa = lerp(value_or_zero(pp0.kappa), t0, value_or_zero(pp1.kappa), t1, t)
+        path_point.dkappa = lerp(value_or_zero(pp0.dkappa), t0, value_or_zero(pp1.dkappa), t1, t)
+        path_point.ddkappa = lerp(value_or_zero(pp0.ddkappa), t0, value_or_zero(pp1.ddkappa), t1, t)
+        path_point.s = lerp(value_or_zero(pp0.s), t0, value_or_zero(pp1.s), t1, t)
 
         return tp
 
