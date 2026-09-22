@@ -6,7 +6,6 @@ import numpy as np
 from logging import Logger
 import scipy.sparse as sparse
 from typing import List, Sequence, Tuple
-from __future__ import annotations
 
 logger = Logger("FemPosDeviationSmoother")
 
@@ -61,10 +60,17 @@ class FemPosDeviationSmoother:
         rows, cols, data = [], [], []
         for col in range(num_vars):
             point_index = col // 2
-            is_x = col % 2 == 0
-            ref = raw_point2d[point_index][0 if is_x else 1]
 
-            def add_entry(row, value):
+            def add_entry(row: int, value: float) -> None:
+                """
+                Record one upper-triangle entry of the kernel at (row, col),
+                where col comes from the enclosing loop. Values arrive already
+                multiplied by 2.0, because OSQP's objective is (1/2) * x' * P * x,
+                the same rescaling FemPosDeviationOsqpInterface::CalculateKernel does
+
+                :param int row: the row index of the entry, never greater than col
+                :param float value: the entry value, already scaled by 2.0
+                """
                 rows.append(row)
                 cols.append(col)
                 data.append(value)
@@ -73,7 +79,10 @@ class FemPosDeviationSmoother:
                 add_entry(col, (x_weight + y_weight + z_weight) * 2.0)
             elif point_index == 1:
                 add_entry(col - 2, (-2.0 * x_weight - y_weight) * 2.0)
-                add_entry(col, (5.0 * x_weight + 2.0 * y_weight + z_weight) * 2.0)
+                # For three points the only second difference is p0 - 2*p1 + p2,
+                # so p1 contributes 4 to the FEM diagonal instead of 4 + 1.
+                fem_diagonal = 4.0 if n == 3 else 5.0
+                add_entry(col, (fem_diagonal * x_weight + 2.0 * y_weight + z_weight) * 2.0)
             elif point_index == n - 2:
                 add_entry(col - 4, x_weight * 2.0)
                 add_entry(col - 2, (-4.0 * x_weight - y_weight) * 2.0)
