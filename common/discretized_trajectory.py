@@ -1,45 +1,42 @@
 """
 Discretized trajectory submodule
 """
+import math
+from logging import Logger
 from bisect import bisect_left
 from collections import UserList
-import math
 from common.vec2d import Vec2d
+from common.geometry_utils import NormalizeAngle, value_or_zero
 from protoclass.path_point import PathPoint
 from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.trajectory_point import TrajectoryPoint
-from common.geometry_utils import NormalizeAngle
-from logging import Logger
 
 logger = Logger("DiscretizedTrajectory")
 
-
-def _value_or_zero(value):
-    """Return the protobuf default for an unset numeric scalar."""
-
-    return 0.0 if value is None else value
-
-
 class DiscretizedTrajectory(UserList):
     """
-    A class to represent a series of discretized trajectory points
-    List[TrajectoryPoint]
+    A class to represent a series of discretized trajectory points, i.e., List[TrajectoryPoint]
     """
 
     def __init__(self, *args):
         """
         Constructor
         """
-
         super().__init__()
         self._is_reversed = False
         self.logger = Logger("DiscretizedTrajectory")
         assert 0 <= len(args) <= 1, "Invalid input"
         if len(args) == 1:
             if isinstance(args[0], ADCTrajectory):
+                """
+                param ADCTrajectory args[0]: the obj to be append()
+                """
                 # Create a DiscretizedTrajectory based on protobuf message
                 self.extend(args[0].trajectory_point)
             elif isinstance(args[0], (list, UserList)):
+                """
+                param list | UserList args[0]: the list to be extend()
+                """
                 assert args[0], "Input list is empty"
                 assert all(isinstance(p, TrajectoryPoint) for p in args[0]), "Input list contains non-TrajectoryPoint object"
                 self.extend(args[0])
@@ -51,7 +48,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The start point of the trajectory
         :rtype: TrajectoryPoint
         """
-
         assert self, "Trajectory is empty"
         return self[0]
     
@@ -62,7 +58,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The temporal length of the trajectory
         :rtype: float
         """
-
         if not self:
             return 0.0
         return self[-1].relative_time - self[0].relative_time
@@ -74,7 +69,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The spatial length of the trajectory
         :rtype: float
         """
-
         if not self:
             return 0.0
         return self[-1].path_point.s - self[0].path_point.s
@@ -87,7 +81,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The trajectory point at the given relative time
         :rtype: TrajectoryPoint
         """
-        
         times = [p.relative_time for p in self]
         idx = bisect_left(times, relative_time)
 
@@ -111,7 +104,6 @@ class DiscretizedTrajectory(UserList):
         :returns: the interpolated value.
         :rtype: float
         """
-
         if abs(t1 - t0) <= 1.0e-6:
             self.logger.error("Input time difference is too small")
             return x0
@@ -132,7 +124,6 @@ class DiscretizedTrajectory(UserList):
         :returns: slerp result
         :rtype: float
         """
-
         if abs(t1 - t0) <= epsilon:
             self.logger.warning("The time difference is too small")
             return NormalizeAngle(a0)
@@ -157,7 +148,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The interpolated trajectory point
         :rtype: TrajectoryPoint
         """
-
         if tp0.path_point is None or tp1.path_point is None:
             p: TrajectoryPoint = TrajectoryPoint()
             p.path_point = PathPoint()
@@ -168,19 +158,19 @@ class DiscretizedTrajectory(UserList):
         t1: float = tp1.relative_time
 
         tp: TrajectoryPoint = TrajectoryPoint()
-        tp.v = self.lerp(_value_or_zero(tp0.v), t0, _value_or_zero(tp1.v), t1, t)
-        tp.a = self.lerp(_value_or_zero(tp0.a), t0, _value_or_zero(tp1.a), t1, t)
+        tp.v = self.lerp(value_or_zero(tp0.v), t0, value_or_zero(tp1.v), t1, t)
+        tp.a = self.lerp(value_or_zero(tp0.a), t0, value_or_zero(tp1.a), t1, t)
         tp.relative_time = t
-        tp.steer = self.slerp(_value_or_zero(tp0.steer), t0, _value_or_zero(tp1.steer), t1, t)
+        tp.steer = self.slerp(value_or_zero(tp0.steer), t0, value_or_zero(tp1.steer), t1, t)
 
         path_point: PathPoint = tp.path_point
-        path_point.x = self.lerp(_value_or_zero(pp0.x), t0, _value_or_zero(pp1.x), t1, t)
-        path_point.y = self.lerp(_value_or_zero(pp0.y), t0, _value_or_zero(pp1.y), t1, t)
-        path_point.theta = self.slerp(_value_or_zero(pp0.theta), t0, _value_or_zero(pp1.theta), t1, t)
-        path_point.kappa = self.lerp(_value_or_zero(pp0.kappa), t0, _value_or_zero(pp1.kappa), t1, t)
-        path_point.dkappa = self.lerp(_value_or_zero(pp0.dkappa), t0, _value_or_zero(pp1.dkappa), t1, t)
-        path_point.ddkappa = self.lerp(_value_or_zero(pp0.ddkappa), t0, _value_or_zero(pp1.ddkappa), t1, t)
-        path_point.s = self.lerp(_value_or_zero(pp0.s), t0, _value_or_zero(pp1.s), t1, t)
+        path_point.x = self.lerp(value_or_zero(pp0.x), t0, value_or_zero(pp1.x), t1, t)
+        path_point.y = self.lerp(value_or_zero(pp0.y), t0, value_or_zero(pp1.y), t1, t)
+        path_point.theta = self.slerp(value_or_zero(pp0.theta), t0, value_or_zero(pp1.theta), t1, t)
+        path_point.kappa = self.lerp(value_or_zero(pp0.kappa), t0, value_or_zero(pp1.kappa), t1, t)
+        path_point.dkappa = self.lerp(value_or_zero(pp0.dkappa), t0, value_or_zero(pp1.dkappa), t1, t)
+        path_point.ddkappa = self.lerp(value_or_zero(pp0.ddkappa), t0, value_or_zero(pp1.ddkappa), t1, t)
+        path_point.s = self.lerp(value_or_zero(pp0.s), t0, value_or_zero(pp1.s), t1, t)
 
         return tp
 
@@ -193,7 +183,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The index of the lower bound point
         :rtype: int
         """
-
         assert self, "Trajectory points list is empty"
 
         if relative_time >= self[-1].relative_time:
@@ -210,7 +199,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The index of the nearest point
         :rtype: int
         """
-
         dist_sqr_min: float = float('inf')
         index_min: int = 0
         for i, tp in enumerate(self):
@@ -230,7 +218,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The index of the nearest point with buffer
         :rtype: int
         """
-
         dist_sqr_min: float = float('inf')
         index_min: int = 0
         for i, tp in enumerate(self):
@@ -259,7 +246,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The trajectory point at the given index
         :rtype: TrajectoryPoint
         """
-
         assert 0 <= index < self.NumOfPoints(), "Index out of range"
         return self[index]
     
@@ -270,7 +256,6 @@ class DiscretizedTrajectory(UserList):
         :returns: The number of trajectory points
         :rtype: int
         """
-
         return len(self)
 
     def IsReversed(self) -> bool:
@@ -280,7 +265,6 @@ class DiscretizedTrajectory(UserList):
         :returns: True if the trajectory is reversed, False otherwise
         :rtype: bool
         """
-
         return self._is_reversed
 
     def SetIsReversed(self, flag: bool) -> None:
@@ -289,5 +273,4 @@ class DiscretizedTrajectory(UserList):
 
         :param bool flag: The flag
         """
-
         self._is_reversed = flag

@@ -12,7 +12,7 @@ logger = Logger("DiscretizedPath")
 
 class DiscretizedPath(UserList):
     """
-    DiscretizedPath is a list of PathPoint objects can be iterated
+    DiscretizedPath is a list of PathPoint objects can be iterated, i.e., List[Pathpoint]
     Bug fix: inherit from UserList rather than list
     """
 
