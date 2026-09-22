@@ -50,7 +50,7 @@ class DiscretizedTrajectory(UserList):
         """
         assert self, "Trajectory is empty"
         return self[0]
-    
+
     def GetTemporalLength(self) -> float:
         """
         Get the temporal length of the trajectory
@@ -61,7 +61,7 @@ class DiscretizedTrajectory(UserList):
         if not self:
             return 0.0
         return self[-1].relative_time - self[0].relative_time
-    
+
     def GetSpatialLength(self) -> float:
         """
         Get the spatial length of the trajectory
@@ -72,7 +72,7 @@ class DiscretizedTrajectory(UserList):
         if not self:
             return 0.0
         return self[-1].path_point.s - self[0].path_point.s
-    
+
     def Evaluate(self, relative_time: float) -> TrajectoryPoint:
         """
         Evaluate the trajectory at a given relative time
@@ -229,7 +229,7 @@ class DiscretizedTrajectory(UserList):
         """
         assert 0 <= index < self.NumOfPoints(), "Index out of range"
         return self[index]
-    
+
     def NumOfPoints(self) -> int:
         """
         Get the number of trajectory points

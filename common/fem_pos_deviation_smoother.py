@@ -1,46 +1,57 @@
 """
 FEM-POS deviation smoother for reference line (OSQP)
 """
-from __future__ import annotations
-
 import osqp
 import numpy as np
+from logging import Logger
 import scipy.sparse as sparse
 from typing import List, Sequence, Tuple
+from __future__ import annotations
+
+logger = Logger("FemPosDeviationSmoother")
 
 class FemPosDeviationSmoother:
     """
     Port of Apollo FemPosDeviationOsqpInterface without curvature constraints.
+    This section has been significantly streamlined, as the lattice optimization relies solely on OSQP.
     """
+    weight_fem_pos_deviation: float
+    weight_ref_deviation: float
+    weight_path_length: float
+    max_iter: int
 
-    def __init__(
-        self,
-        weight_fem_pos_deviation: float = 1e10,
-        weight_ref_deviation: float = 1.0,
-        weight_path_length: float = 1.0,
-        max_iter: int = 500,
-    ):
+    def __init__(self, weight_fem_pos_deviation: float = 1e10, weight_ref_deviation: float = 1.0,
+                 weight_path_length: float = 1.0, max_iter: int = 500) -> None:
+        """
+        Constructor
+
+        :param float weight_fem_pos_deviation: weight of the FEM positional deviation term
+        :param float weight_ref_deviation: weight of the reference-path deviation term
+        :param float weight_path_length: weight of the path-length penalty term
+        :param int max_iter: maximum number of optimization iterations
+        """
         self.weight_fem_pos_deviation = weight_fem_pos_deviation
         self.weight_ref_deviation = weight_ref_deviation
         self.weight_path_length = weight_path_length
         self.max_iter = max_iter
 
-    def Solve(
-        self,
-        raw_point2d: Sequence[Tuple[float, float]],
-        bounds: Sequence[float],
-    ) -> Tuple[bool, List[float], List[float]]:
+    def Solve(self, raw_point2d: Sequence[Tuple[float, float]],
+              bounds: Sequence[float]
+              ) -> Tuple[bool, List[float], List[float]]:
         """
         Mirrors FemPosDeviationOsqpInterface::Solve() (fem_pos_deviation_osqp_interface.cc),
         which aborts (returns false) rather than substituting the raw, unsmoothed
         points -- callers must check the returned success flag instead of assuming
         opt_x/opt_y are always a valid smoothed result.
+
+        :param Sequence[Tuple[float, float]]: the original raw points 2D
+        :param Sequence[float] bounds: 
+        :returns: 
+        :rtype: Tuple[bool, List[float], List[float]]
         """
         n = len(raw_point2d)
         if n < 3 or len(bounds) != n:
             return False, [], []
-
-
 
         num_vars = n * 2
         x_weight = self.weight_fem_pos_deviation

@@ -41,7 +41,6 @@ class AABox2d:
             :param float length: The size of the box along the x-axis
             :param float width: The size of the box along the y-axis
             """
-
             center, length, width = args
             self._center: Vec2d = center
             self._length: float = length
@@ -57,7 +56,6 @@ class AABox2d:
             :param Vec2d one_corner: One corner of the box
             :param Vec2d opposite_corner: The opposite corner to the first one
             """
-
             one_corner, opposite_corner = args
             self.__init__(Vec2d((one_corner.x + opposite_corner.x) / 2.0, (one_corner.y + opposite_corner.y) / 2.0), abs(one_corner.x - opposite_corner.x),
                           abs(one_corner.y - opposite_corner.y))
@@ -68,7 +66,6 @@ class AABox2d:
 
             :param List[Vec2d] points: Vector of points to be included inside the box
             """
-
             points = args[0]
             assert points, f"List points should not be empty!"
             min_x = points[0].x
@@ -312,7 +309,6 @@ class AABox2d:
 
             :param AABox2d other_box: Another box
             """
-
             other_box: AABox2d = args[0]
             x1: float = min(self.min_x, other_box.min_x)
             x2: float = max(self.max_x, other_box.max_x)
@@ -330,7 +326,6 @@ class AABox2d:
 
             :param Vec2d other_point: Another point
             """
-
             other_point: Vec2d = args[0]
             x1: float = min(self.min_x, other_point.x)
             x2: float = max(self.max_x, other_point.x)
