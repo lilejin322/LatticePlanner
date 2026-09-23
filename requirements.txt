@@ -5,3 +5,4 @@ osqp
 matplotlib
 pillow
 z3-solver
+commonroad-io==2026.1
