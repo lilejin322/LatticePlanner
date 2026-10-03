@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Lattice full scenario test suite (34 cases): run Lattice / Decider / OnLane / Stress / Overtake by category.
+Lattice scenario suite: one-shot Lattice / Decider / OnLane / Stress / Overtake,
+plus closed-loop replanning cases (--tag sim).
 
 Usage:
   .venv/bin/python scripts/run_lattice_scenario_cases.py --list
@@ -149,8 +150,8 @@ def execute(scenario: Scenario) -> RunOutcome:
         if extra == "decider_skip":
             return RunOutcome(
                 scenario=scenario,
-                got_ok=True,
-                detail="decider skipped (no path produced)",
+                got_ok=False,
+                detail="decider produced no path",
             )
 
         if scenario.skip_lattice:
@@ -263,7 +264,7 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="List the cases")
     parser.add_argument(
         "--tag",
-        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "all"],
+        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "sim", "all"],
         default="all",
         help="Filter by category",
     )
@@ -320,7 +321,7 @@ def main() -> int:
         if args.cases:
             print(f"Filter: cases={', '.join(args.cases)}")
         print()
-        categories = ("lattice", "decider", "on_lane", "stress", "overtake", "lane_change")
+        categories = ("lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "sim")
         for cat in categories:
             items = [s for s in selected if s.category == cat]
             if not items:

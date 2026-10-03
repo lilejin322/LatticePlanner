@@ -33,7 +33,7 @@ BuilderResult = Tuple
 class Scenario:
     name: str
     description: str
-    category: str  # lattice | decider | on_lane | stress | overtake
+    category: str  # lattice | decider | on_lane | stress | overtake | lane_change | sim
     builder: Callable[[], BuilderResult]
     expect_ok: bool = True
     backup: Optional[bool] = None
@@ -527,6 +527,33 @@ def s_lane_change_overtake_slow_npc() -> BuilderResult:
     return frame, rli, start, True, None, None
 
 
+# --- closed-loop simulation ---
+# These cases replan every cycle. The builders above are one-shot (or they
+# skip LatticePlanner and stamp a synthetic S-curve onto the trajectory).
+
+
+def _sim_outcome(result) -> BuilderResult:
+    return None, None, None, result.ok, None, result.summary()
+
+
+def s_sim_open_road() -> BuilderResult:
+    from scripts.run_closed_loop_sim import open_road
+
+    return _sim_outcome(open_road())
+
+
+def s_sim_follow_leader() -> BuilderResult:
+    from scripts.run_closed_loop_sim import follow_leader
+
+    return _sim_outcome(follow_leader())
+
+
+def s_sim_stopped_leader() -> BuilderResult:
+    from scripts.run_closed_loop_sim import stopped_leader
+
+    return _sim_outcome(stopped_leader())
+
+
 SCENARIOS: List[Scenario] = [
     # lattice
     Scenario("open_road", "Open straight road", "lattice", s_open_road),
@@ -691,6 +718,25 @@ SCENARIOS: List[Scenario] = [
         "Slow dynamic NPC blocking the ego lane, ego vehicle changes lanes to overtake",
         "lane_change",
         s_lane_change_overtake_slow_npc,
+    ),
+    # closed-loop
+    Scenario(
+        "sim_open_road_replan",
+        "Closed loop: empty road, replan every cycle",
+        "sim",
+        s_sim_open_road,
+    ),
+    Scenario(
+        "sim_follow_moving_leader",
+        "Closed loop: faster ego follows a slower leader",
+        "sim",
+        s_sim_follow_leader,
+    ),
+    Scenario(
+        "sim_stopped_leader",
+        "Closed loop: stopped leader, executed path must not overlap",
+        "sim",
+        s_sim_stopped_leader,
     ),
 ]
 
