@@ -50,9 +50,7 @@ tested=4000 checker_said_valid=38 counterexamples=1
 [quartic] start=[0.0, 30.93, 2.39] end=[30.57, -3.38] T=1.8694 -> checker says VALID, but at t=1.843750: v=30.6592 a=-3.2740 j=-4.0280
 ```
 
-This already found a real, structural bug: the checker's `while t < ParamLength(): ... t += 0.1` loop never evaluates the trajectory at its true end time, so a jerk violation confined to the last (<0.1s) sliver before the end can slip through undetected. Since a trajectory's duration is essentially never an exact multiple of the 0.1s sampling step, this isn't a rare edge case.
-
-This is intentionally a minimal demo of the technique — extending the same continuous-vs-sampled approach to `IsValidLateralTrajectory` (which composes two polynomials and is higher-degree) is a natural next step.
+This found a real structural bug: the checker's `while t < ParamLength(): ... t += 0.1` loop never evaluated the trajectory at its true end time, so a jerk violation in the last (<0.1s) sliver could pass. `IsValidLongitudinalTrajectory` now evaluates that endpoint and the critical points of velocity, acceleration, and jerk for polynomial curves. The script is still the continuous check; a new `sat` result means a gap remains. Lateral checking (`IsValidLateralTrajectory`) now includes its endpoint, but not the critical points of the composed lateral derivatives.
 
 ### Notice
 Notably, the goal of this project is not to build a functional planner in a distinct simulator to do experiments, but to learn the algorithms and data structures within it. Therefore, we are translating the C++ functions in the Lattice algorithm into their corresponding Python frameworks as much as possible. Due to the introduction of CyberRT, the analysis of the program has also caused confusion. We are consolidating the protobuf message objects used by this planner into Python dataclasses to clearly demonstrate how the planner manipulates data.

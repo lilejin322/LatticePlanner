@@ -328,6 +328,25 @@ def check_constraint_checker_matches_cpp_non_increasing_time():
     assert ConstraintChecker.ValidTrajectory(decreasing_time) == ConstraintChecker.Result.VALID
 
 
+def check_constraint_checker1d_rejects_end_sliver_jerk():
+    """The fixed 0.1s loop used to skip the true end time.
+
+    This quartic is inside the bounds at every 0.1s sample and outside the
+    jerk bound on the last partial step (jerk at t=T is about -4.05).
+    """
+    from common.curve1d.quartic_polynomial_curve1d import QuarticPolynomialCurve1d
+
+    curve = QuarticPolynomialCurve1d(
+        0.0,
+        30.934168729614417,
+        2.3872543413955984,
+        30.573814340164922,
+        -3.3777223172691198,
+        1.8694,
+    )
+    assert not ConstraintChecker1d.IsValidLongitudinalTrajectory(curve)
+
+
 def check_constraint_checker1d_dynamic_speed_bound():
     import config as config_module
 
@@ -2804,6 +2823,7 @@ def main():
     check_path_time_graph_lane_width_fallback()
     check_constraint_checker_dynamic_speed_bound()
     check_constraint_checker_matches_cpp_non_increasing_time()
+    check_constraint_checker1d_rejects_end_sliver_jerk()
     check_constraint_checker1d_dynamic_speed_bound()
     check_dynamic_obstacle_sampling()
     check_cruise_sampler_matches_cpp_negative_range_cast()
