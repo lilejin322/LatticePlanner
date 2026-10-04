@@ -41,7 +41,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--tag",
-        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "all"],
+        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "sim", "all"],
         default="all",
         help="Only process one category of scenarios (default: all)",
     )
@@ -88,6 +88,9 @@ def main() -> int:
     )
     if not args.include_stress and args.tag == "all":
         scenarios = [s for s in scenarios if s.category != "stress"]
+    # Closed-loop cases replan in the builder and do not publish a drawable trajectory.
+    if args.tag == "all":
+        scenarios = [s for s in scenarios if s.category != "sim"]
 
     if args.list:
         print(f"{len(scenarios)} scenarios total (tag={args.tag}):\n")

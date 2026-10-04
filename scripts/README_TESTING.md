@@ -8,9 +8,10 @@
 |------|------|
 | `run_lattice_component_checks.py` | 主回归：Lattice、参考线、交通规则、PathAssessment、PathBounds、OnLanePlanning 等 |
 | `run_extended_planner_checks.py` | 扩展回归：Frenet 导数、障碍 scope、大横向 PathData、借道边界、阻塞+backup、legacy 开关 |
-| `run_lattice_scenario_cases.py` | **全场景测试（34 项）**：lattice / decider / on_lane / stress / overtake |
+| `run_lattice_scenario_cases.py` | 场景测试：lattice / decider / on_lane / stress / overtake / lane_change，外加闭环 `sim`。数量以 `--list` 为准 |
 | `run_lattice_demo_cases.py` | 精简演示（6 项，全场景的子集） |
 | `run_minimal_lattice_plan.py` | 最小端到端 smoke（单参考线 + LatticePlanner.Plan） |
+| `run_closed_loop_sim.py` | **闭环仿真**：每个规划周期重规划，并推进自车和动态障碍 |
 | `run_overtake_animations.py` | **超车场景** 测试 + 动画（`--tag overtake --animate` 的快捷入口） |
 | `run_all_scenario_animations.py` | 全部场景（含 overtake）动画 GIF |
 | `run_all_planner_checks.py` | 依次执行回归脚本（不含动画） |
@@ -18,8 +19,12 @@
 ## 快速体验（推荐先看这个）
 
 ```bash
-# 全场景列表（34 项，分 lattice / decider / on_lane / stress / overtake）
+# 全场景列表（含闭环 sim）
 python scripts/run_lattice_scenario_cases.py --list
+
+# 闭环：空路巡航、跟慢车、跟停
+python scripts/run_closed_loop_sim.py
+python scripts/run_lattice_scenario_cases.py --tag sim
 
 # 跑全部场景
 python scripts/run_lattice_scenario_cases.py
@@ -55,7 +60,10 @@ python scripts/run_all_scenario_animations.py --list    # 预览哪些会出 GIF
 | `lattice` | 纯 LatticePlanner：空旷、障碍、backup、初态变化等 |
 | `decider` | PathBounds / Assessment / Combine / 巡航速度 |
 | `on_lane` | OnLanePlanning.RunOnce 端到端，含 PathBounds 借道超车分支 |
-| `overtake` | **超车**：PathBounds 借道 S 形（推荐）、Cartesian 参考、Lattice 跟停对照 |
+| `stress` | 障碍距离、初速扫描（信息性，不作为失败门禁） |
+| `overtake` | **超车**：多数用例不跑 Lattice，而是预绘 S 形或借道边界后 Combine（`skip_lattice`） |
+| `lane_change` | 双参考线；目标线被画成变道曲线，方便横向采样落到邻道 |
+| `sim` | **闭环**：按 `FLAGS_planning_loop_rate` 重规划，只执行一个周期，再更新自车和障碍 |
 
 **超车动画（推荐先看 `overtake_path_bounds_left`）**：
 

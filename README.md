@@ -23,6 +23,7 @@ python scripts/verify_imports.py            # every module imports cleanly
 python scripts/run_all_planner_checks.py    # component + extended unit checks
 python scripts/run_lattice_demo_cases.py    # smoke scenarios (open road, stop, backup fallback, ...)
 python scripts/run_lattice_scenario_cases.py  # broader scenario coverage, incl. lane-borrow overtakes
+python scripts/run_closed_loop_sim.py         # replan every cycle; step ego and actors
 ```
 
 ## Formal Verification via SMT (demo)
