@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Z3 check for sampling blind spots in ConstraintChecker1d.
 
-ConstraintChecker1d.IsValidLongitudinalTrajectory evaluates a Curve1d at
-fixed time steps, at the true end time, and at polynomial critical points of
-velocity, acceleration, and jerk. A genuine bound violation can still sit
-off those times if the critical-point solve misses a root. This script asks
-Z3 about the whole continuous interval.
+ConstraintChecker1d.IsValidLongitudinalTrajectory only samples a Curve1d at
+fixed time steps (FLAGS_trajectory_time_resolution). The underlying curves
+(QuinticPolynomialCurve1d, QuarticPolynomialCurve1d) are closed-form
+polynomials, so a genuine velocity/acceleration/jerk bound violation can sit
+strictly between two samples and never get checked.
 
 For every random candidate curve the real checker calls valid, this script
 asks Z3 whether a violation exists ANYWHERE on the continuous interval
