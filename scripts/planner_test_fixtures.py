@@ -19,15 +19,28 @@ from protoclass.vehicle_state import VehicleState
 from protoclass.decision_result import ChangeLaneType
 
 
-def build_straight_lane(lane_id: str = "lane_0", length: float = 100.0) -> Lane:
+def build_straight_lane(
+    lane_id: str = "lane_0",
+    length: float = 100.0,
+    *,
+    sample_step: float | None = None,
+) -> Lane:
+    if sample_step is None or sample_step <= 0.0:
+        points = [PointENU(x=0.0, y=0.0), PointENU(x=length, y=0.0)]
+    else:
+        points = []
+        x = 0.0
+        while x <= length + 1e-6:
+            points.append(PointENU(x=x, y=0.0))
+            x += sample_step
+        if not points or points[-1].x < length - 1e-6:
+            points.append(PointENU(x=length, y=0.0))
     return Lane(
         id=Lane.Id(lane_id),
         central_curve=Curve(
             segment=[
                 CurveSegment(
-                    curve_type=LineSegment(
-                        point=[PointENU(x=0.0, y=0.0), PointENU(x=length, y=0.0)]
-                    )
+                    curve_type=LineSegment(point=points)
                 )
             ]
         ),
@@ -88,9 +101,10 @@ def build_reference_line(
     start_y: float = 0.0,
     start_heading: float = 0.0,
     init_v: float = 1.0,
+    sample_step: float | None = None,
 ):
     hdmap = HDMap()
-    lane_info = hdmap.AddLane(build_straight_lane(length=length))
+    lane_info = hdmap.AddLane(build_straight_lane(length=length, sample_step=sample_step))
     HDMapUtil.SetBaseMap(hdmap)
 
     route_segments = RouteSegments()
@@ -132,6 +146,9 @@ def build_curved_reference_line(
     radius: float = 60.0,
     arc_length: float = 80.0,
     init_v: float = 2.0,
+    start_x: float | None = None,
+    start_y: float | None = None,
+    start_heading: float | None = None,
 ):
     hdmap = HDMap()
     lane_info = hdmap.AddLane(build_curved_lane(radius=radius, arc_length=arc_length))
@@ -143,7 +160,13 @@ def build_curved_reference_line(
     route_segments.append(LaneSegment(lane_info, 0.0, arc_length - 1.0))
 
     reference_line = ReferenceLine(MapPath(route_segments))
-    start_x, start_y, start_heading = curved_arc_pose(0.0, radius=radius)
+    origin_x, origin_y, origin_heading = curved_arc_pose(0.0, radius=radius)
+    if start_x is None:
+        start_x = origin_x
+    if start_y is None:
+        start_y = origin_y
+    if start_heading is None:
+        start_heading = origin_heading
     start_point = TrajectoryPoint(
         path_point=PathPoint(
             x=start_x,
@@ -228,6 +251,7 @@ def build_dynamic_obstacle(
     vx: float = 2.0,
     *,
     steps: int = 6,
+    dt: float = 1.0,
 ):
     from common.obstacle import Obstacle
     from protoclass.adc_trajectory import Point3D
@@ -244,8 +268,10 @@ def build_dynamic_obstacle(
         height=1.5,
         theta=0.0,
     )
-    trajectory = Trajectory(
-        trajectory_point=[
+    points = []
+    for i in range(steps):
+        t = i * dt
+        points.append(
             TrajectoryPoint(
                 path_point=PathPoint(
                     x=start_x + vx * t,
@@ -261,9 +287,8 @@ def build_dynamic_obstacle(
                 a=0.0,
                 relative_time=float(t),
             )
-            for t in range(steps)
-        ]
-    )
+        )
+    trajectory = Trajectory(trajectory_point=points)
     return Obstacle(obs_id, perception, is_static=False, trajectory=trajectory)
 
 
@@ -309,6 +334,9 @@ def build_curved_lattice_plan_frame(
     arc_length: float = 80.0,
     init_v: float = 2.0,
     blocking_obstacle_id: str | None = None,
+    start_x: float | None = None,
+    start_y: float | None = None,
+    start_heading: float | None = None,
 ):
     from common.frame import Frame
 
@@ -316,6 +344,9 @@ def build_curved_lattice_plan_frame(
         radius=radius,
         arc_length=arc_length,
         init_v=init_v,
+        start_x=start_x,
+        start_y=start_y,
+        start_heading=start_heading,
     )
     obstacle_list = list(obstacles or [])
     frame = Frame(0)
@@ -385,20 +416,18 @@ def build_left_lane_reference_line(length: float = 100.0, init_v: float = 1.0):
     return reference_line, rli
 
 
-def build_center_lane_reference_line(length: float = 100.0, init_v: float = 1.0):
+def build_center_lane_reference_line(
+    length: float = 100.0,
+    init_v: float = 1.0,
+    *,
+    sample_step: float | None = None,
+):
     """Build a center-lane reference line with real forward neighbors on both sides."""
 
     def offset_lane(lane_id: str, y: float) -> Lane:
-        lane = build_straight_lane(lane_id, length=length)
-        lane.central_curve = Curve(
-            segment=[
-                CurveSegment(
-                    curve_type=LineSegment(
-                        point=[PointENU(x=0.0, y=y), PointENU(x=length, y=y)]
-                    )
-                )
-            ]
-        )
+        lane = build_straight_lane(lane_id, length=length, sample_step=sample_step)
+        for point in lane.central_curve.segment[0].curve_type.point:
+            point.y = y
         return lane
 
     center = offset_lane("lane_center", 0.0)
@@ -932,9 +961,15 @@ def build_lane_change_frame(
     *,
     length: float = 100.0,
     ego_v: float = 10.0,
+    ego_x: float = 0.0,
+    ego_y: float = 0.0,
+    ego_heading: float = 0.0,
     npc_start_x: float = 20.0,
+    npc_x: float | None = None,
+    npc_y: float = 0.0,
     npc_v: float = 3.0,
-    npc_steps: int = 16,
+    npc_steps: int = 81,
+    npc_dt: float = 0.1,
     transition_length: float = 30.0,
 ):
     """
@@ -994,16 +1029,23 @@ def build_lane_change_frame(
         reference_line = ReferenceLine(MapPath(route_segments))
         start_point = TrajectoryPoint(
             path_point=PathPoint(
-                x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0
+                x=ego_x,
+                y=ego_y,
+                z=0.0,
+                theta=ego_heading,
+                kappa=0.0,
+                s=0.0,
+                dkappa=0.0,
+                ddkappa=0.0,
             ),
             v=ego_v,
             a=0.0,
             relative_time=0.0,
         )
         vehicle_state = VehicleState()
-        vehicle_state.x = 0.0
-        vehicle_state.y = 0.0
-        vehicle_state.heading = 0.0
+        vehicle_state.x = ego_x
+        vehicle_state.y = ego_y
+        vehicle_state.heading = ego_heading
         rli = ReferenceLineInfo(vehicle_state, start_point, reference_line, route_segments)
         return rli, start_point
 
@@ -1011,7 +1053,12 @@ def build_lane_change_frame(
     target_rli, _ = _build_rli(right_info, "lane_right", False, ChangeLaneType.RIGHT)
 
     npc = build_dynamic_obstacle(
-        "npc_slow", start_x=npc_start_x, start_y=0.0, vx=npc_v, steps=npc_steps
+        "npc_slow",
+        start_x=npc_start_x if npc_x is None else npc_x,
+        start_y=npc_y,
+        vx=npc_v,
+        steps=npc_steps,
+        dt=npc_dt,
     )
     obstacle_list = [npc]
 
