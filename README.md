@@ -60,7 +60,7 @@ python3 verification/verify_lateral_constraint1d.py 200 1
 
 ```
 tested=400 checker_said_valid=43 counterexamples=3
-[quartic] ... T=0.5536 ... -> checker says VALID, but at t=0.531250: a=-4.3781 j=0.2919
+[quartic] T=0.5536 S=40 -> checker says VALID, but at t=0.531250: a=-4.3781 j=0.2919
 ```
 
 `t=0.53125` sits between the samples at 0.5s and the unchecked end at 0.5536s. Lateral acceleration there is past the ±4 m/s² bound. The sampled checker never looks at that point.
