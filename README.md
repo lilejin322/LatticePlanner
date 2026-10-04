@@ -52,7 +52,18 @@ tested=4000 checker_said_valid=38 counterexamples=1
 
 This already found a real, structural bug: the checker's `while t < ParamLength(): ... t += 0.1` loop never evaluates the trajectory at its true end time, so a jerk violation confined to the last (<0.1s) sliver before the end can slip through undetected. Since a trajectory's duration is essentially never an exact multiple of the 0.1s sampling step, this isn't a rare edge case.
 
-This is intentionally a minimal demo of the technique — extending the same continuous-vs-sampled approach to `IsValidLateralTrajectory` (which composes two polynomials and is higher-degree) is a natural next step.
+`verification/verify_lateral_constraint1d.py` applies the same continuous-vs-sampled query to `IsValidLateralTrajectory`. That checker uses the identical `while t < ParamLength()` loop on the composed lateral acceleration `l''(s) s'(t)^2 + l'(s) s''(t)` and its own jerk approximation `l'''(s) s'''(t)`. Pairs the sampled checker already calls valid are handed to Z3. A `sat` result is again a real miss, not a different formula. With the lattice end-condition ranges and durations that leave a short tail after the last 0.1s sample:
+
+```bash
+python3 verification/verify_lateral_constraint1d.py 200 1
+```
+
+```
+tested=400 checker_said_valid=43 counterexamples=3
+[quartic] T=0.5536 S=40 -> checker says VALID, but at t=0.531250: a=-4.3781 j=0.2919
+```
+
+`t=0.53125` sits between the samples at 0.5s and the unchecked end at 0.5536s. Lateral acceleration there is past the ±4 m/s² bound. The sampled checker never looks at that point.
 
 ### Notice
 Notably, the goal of this project is not to build a functional planner in a distinct simulator to do experiments, but to learn the algorithms and data structures within it. Therefore, we are translating the C++ functions in the Lattice algorithm into their corresponding Python frameworks as much as possible. Due to the introduction of CyberRT, the analysis of the program has also caused confusion. We are consolidating the protobuf message objects used by this planner into Python dataclasses to clearly demonstrate how the planner manipulates data.
