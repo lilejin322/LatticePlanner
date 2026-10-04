@@ -1,32 +1,34 @@
 """
 Lattice / OnLane scenario definitions (shared by run_lattice_scenario_cases.py and the demo).
+
+Driving scenarios run closed-loop: replan every cycle from the executed state.
+Decider cases stay single-call checks of the path stack; they do not publish a
+driven trajectory.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
-import config
-from lattice_planner import LatticePlanner
-from protoclass.adc_trajectory import ADCTrajectory
+from scripts.closed_loop_sim import (
+    Actor,
+    SimResult,
+    run_curved_road,
+    run_lane_change_road,
+    run_on_lane_road,
+    run_path_bounds_road,
+    run_straight_road,
+)
 from scripts.planner_test_fixtures import (
-    apply_borrow_path_trajectory,
-    build_curved_lattice_plan_frame,
-    build_curved_static_obstacle,
     build_center_lane_reference_line,
     build_lattice_plan_frame,
-    build_lane_change_frame,
-    build_overtake_lattice_frame,
-    build_path_bounds_overtake_frame,
-    build_synthetic_overtake_frame,
-    build_lattice_overtake_combined_frame,
-    build_slow_leader_obstacle,
     build_static_obstacle,
+    curved_arc_pose,
 )
 
-# builder returns: frame, rli, start, expect_ok, backup_flag, extra
-BuilderResult = Tuple
+# Component checks still return this tuple. Driving cases return SimResult.
+BuilderResult = Union[SimResult, Tuple]
 
 
 @dataclass
@@ -38,121 +40,207 @@ class Scenario:
     expect_ok: bool = True
     backup: Optional[bool] = None
     informational: bool = False
-    skip_lattice: bool = False  # trajectory already prebuilt (e.g. lane-borrow overtaking)
 
 
-def _lattice(
-    obstacles=None,
+def _static(actor_id: str, x: float, y: float = 0.0) -> Actor:
+    return Actor(actor_id, x=x, y=y, is_static=True)
+
+
+def _finish(
+    result: SimResult,
     *,
-    expect_ok: bool = True,
+    min_travel: Optional[float] = None,
+    min_abs_y: Optional[float] = None,
+    max_abs_y: Optional[float] = None,
+    forbid_fallback: bool = False,
+) -> SimResult:
+    if not result.ok:
+        return result
+    if forbid_fallback and result.fallback_cycles:
+        result.ok = False
+        result.reason = "used backup trajectory"
+        return result
+    traveled = result.ego_x1 - result.ego_x0
+    if min_travel is not None and traveled < min_travel:
+        result.ok = False
+        result.reason = f"only traveled {traveled:.1f}m"
+        return result
+    if min_abs_y is not None and result.max_abs_y < min_abs_y:
+        result.ok = False
+        result.reason = f"lateral offset {result.max_abs_y:.2f}m stayed below {min_abs_y:.2f}m"
+        return result
+    if max_abs_y is not None and result.max_abs_y > max_abs_y:
+        result.ok = False
+        result.reason = f"lateral offset {result.max_abs_y:.2f}m exceeded {max_abs_y:.2f}m"
+        return result
+    return result
+
+
+def _straight(
+    name: str,
+    *,
+    ego_v: float = 1.0,
+    ego_x: float = 0.0,
+    ego_y: float = 0.0,
+    actors: Optional[Sequence[Actor]] = None,
+    blocking: Optional[str] = None,
     backup: Optional[bool] = None,
-    length: float = 100.0,
-    init_v: float = 1.0,
-    start_x: float = 0.0,
-    start_y: float = 0.0,
-    blocking_obstacle_id: str | None = None,
-    extra: str | None = None,
-) -> BuilderResult:
-    frame, rli, start = build_lattice_plan_frame(
-        obstacles,
-        length=length,
-        init_v=init_v,
-        start_x=start_x,
-        start_y=start_y,
-        blocking_obstacle_id=blocking_obstacle_id,
+    horizon_s: float = 3.0,
+    road_length: float = 200.0,
+    min_travel: Optional[float] = None,
+    max_abs_y: Optional[float] = None,
+    forbid_fallback: bool = False,
+) -> SimResult:
+    result = run_straight_road(
+        name,
+        Actor("ego", x=ego_x, y=ego_y, v=ego_v),
+        list(actors or []),
+        horizon_s=horizon_s,
+        road_length=road_length,
+        backup=backup,
+        blocking_actor_id=blocking,
     )
-    return frame, rli, start, expect_ok, backup, extra
-
-
-# --- lattice core ---
-
-
-def s_open_road() -> BuilderResult:
-    return _lattice()
-
-
-def s_far_obstacle_stop() -> BuilderResult:
-    obs = build_static_obstacle("far_car", 35.0)
-    return _lattice([obs], blocking_obstacle_id="far_car")
-
-
-def s_close_obstacle_no_backup() -> BuilderResult:
-    obs = build_static_obstacle("close_car", 8.0)
-    return _lattice([obs], expect_ok=False, backup=False, blocking_obstacle_id="close_car")
-
-
-def s_close_obstacle_with_backup() -> BuilderResult:
-    obs = build_static_obstacle("close_car", 8.0)
-    return _lattice([obs], backup=True, blocking_obstacle_id="close_car")
-
-
-def s_higher_speed_cruise() -> BuilderResult:
-    return _lattice(init_v=5.0)
-
-
-def s_stopped_start() -> BuilderResult:
-    return _lattice(init_v=0.1)
-
-
-def s_mid_lane_start() -> BuilderResult:
-    return _lattice(init_v=3.0, start_x=20.0)
-
-
-def s_lateral_offset_start() -> BuilderResult:
-    return _lattice(init_v=2.0, start_y=0.6)
-
-
-def s_two_obstacles_queue() -> BuilderResult:
-    obs1 = build_static_obstacle("q1", 22.0)
-    obs2 = build_static_obstacle("q2", 45.0)
-    return _lattice([obs1, obs2], blocking_obstacle_id="q1")
-
-
-def s_obstacle_no_blocking_flag() -> BuilderResult:
-    obs = build_static_obstacle("silent_car", 30.0)
-    return _lattice([obs])
-
-
-def s_side_obstacle_adjacent_lane() -> BuilderResult:
-    obs = build_static_obstacle("side_car", 28.0, y=2.8)
-    return _lattice([obs])
-
-
-def s_medium_obstacle_18m() -> BuilderResult:
-    obs = build_static_obstacle("med_car", 18.0)
-    return _lattice([obs], blocking_obstacle_id="med_car")
-
-
-def s_long_road_150m() -> BuilderResult:
-    return _lattice(length=150.0, init_v=2.0)
-
-
-def s_low_speed_creep() -> BuilderResult:
-    return _lattice(init_v=0.3)
-
-
-def s_obstacle_60m_pass() -> BuilderResult:
-    obs = build_static_obstacle("far_ahead", 60.0)
-    return _lattice([obs])
-
-
-def s_backup_off_open_road() -> BuilderResult:
-    return _lattice(backup=False)
-
-
-def s_curved_open_road() -> BuilderResult:
-    frame, rli, start = build_curved_lattice_plan_frame(init_v=2.0)
-    return frame, rli, start, True, None, "left_arc radius=60m"
-
-
-def s_curved_obstacle_stop() -> BuilderResult:
-    obs = build_curved_static_obstacle("curve_car", 35.0)
-    frame, rli, start = build_curved_lattice_plan_frame(
-        [obs],
-        init_v=2.0,
-        blocking_obstacle_id="curve_car",
+    return _finish(
+        result,
+        min_travel=min_travel,
+        max_abs_y=max_abs_y,
+        forbid_fallback=forbid_fallback,
     )
-    return frame, rli, start, True, None, "left_arc obstacle_s=35m"
+
+
+# --- lattice core (closed loop) ---
+
+
+def s_open_road() -> SimResult:
+    return _straight("open_road", min_travel=6.0, forbid_fallback=True)
+
+
+def s_far_obstacle_stop() -> SimResult:
+    return _straight(
+        "far_obstacle_stop",
+        actors=[_static("far_car", 35.0)],
+        blocking="far_car",
+        min_travel=2.0,
+    )
+
+
+def s_close_obstacle_no_backup() -> SimResult:
+    return _straight(
+        "close_obstacle_no_backup",
+        actors=[_static("close_car", 8.0)],
+        blocking="close_car",
+        backup=False,
+    )
+
+
+def s_close_obstacle_with_backup() -> SimResult:
+    return _straight(
+        "close_obstacle_with_backup",
+        actors=[_static("close_car", 8.0)],
+        blocking="close_car",
+        backup=True,
+    )
+
+
+def s_higher_speed_cruise() -> SimResult:
+    return _straight("higher_speed_cruise", ego_v=5.0, min_travel=12.0, forbid_fallback=True)
+
+
+def s_stopped_start() -> SimResult:
+    return _straight("stopped_start", ego_v=0.1, min_travel=2.0, forbid_fallback=True)
+
+
+def s_mid_lane_start() -> SimResult:
+    return _straight("mid_lane_start", ego_v=3.0, ego_x=20.0, min_travel=6.0, forbid_fallback=True)
+
+
+def s_lateral_offset_start() -> SimResult:
+    return _straight(
+        "lateral_offset_start",
+        ego_v=2.0,
+        ego_y=0.6,
+        min_travel=4.0,
+        forbid_fallback=True,
+    )
+
+
+def s_two_obstacles_queue() -> SimResult:
+    return _straight(
+        "two_obstacles_queue",
+        actors=[_static("q1", 22.0), _static("q2", 45.0)],
+        blocking="q1",
+    )
+
+
+def s_obstacle_no_blocking_flag() -> SimResult:
+    return _straight(
+        "obstacle_no_blocking_flag",
+        actors=[_static("silent_car", 30.0)],
+        min_travel=2.0,
+    )
+
+
+def s_side_obstacle_adjacent_lane() -> SimResult:
+    return _straight(
+        "side_obstacle_adjacent_lane",
+        actors=[_static("side_car", 28.0, y=2.8)],
+        min_travel=6.0,
+        max_abs_y=1.5,
+        forbid_fallback=True,
+    )
+
+
+def s_medium_obstacle_18m() -> SimResult:
+    return _straight(
+        "medium_obstacle_18m",
+        actors=[_static("med_car", 18.0)],
+        blocking="med_car",
+    )
+
+
+def s_long_road_150m() -> SimResult:
+    return _straight("long_road_150m", ego_v=2.0, road_length=150.0, min_travel=6.0, forbid_fallback=True)
+
+
+def s_low_speed_creep() -> SimResult:
+    return _straight("low_speed_creep", ego_v=0.3, min_travel=2.0, forbid_fallback=True)
+
+
+def s_obstacle_60m_pass() -> SimResult:
+    return _straight(
+        "obstacle_60m_pass",
+        actors=[_static("far_ahead", 60.0)],
+        min_travel=6.0,
+        forbid_fallback=True,
+    )
+
+
+def s_backup_off_open_road() -> SimResult:
+    return _straight("backup_off_open_road", backup=False, min_travel=6.0, forbid_fallback=True)
+
+
+def s_curved_open_road() -> SimResult:
+    x, y, theta = curved_arc_pose(0.0, radius=60.0)
+    result = run_curved_road(
+        "curved_open_road",
+        Actor("ego", x=x, y=y, theta=theta, v=2.0, kappa=1.0 / 60.0),
+        [],
+        horizon_s=3.0,
+    )
+    return _finish(result, min_travel=4.0, forbid_fallback=True)
+
+
+def s_curved_obstacle_stop() -> SimResult:
+    x, y, theta = curved_arc_pose(0.0, radius=60.0)
+    ox, oy, otheta = curved_arc_pose(35.0, radius=60.0)
+    result = run_curved_road(
+        "curved_obstacle_stop",
+        Actor("ego", x=x, y=y, theta=theta, v=2.0, kappa=1.0 / 60.0),
+        [Actor("curve_car", x=ox, y=oy, theta=otheta, is_static=True)],
+        blocking_actor_id="curve_car",
+        horizon_s=3.0,
+    )
+    return result
 
 
 # --- decider layer ---
@@ -167,13 +255,13 @@ def s_decider_bounds_assessment() -> BuilderResult:
 
     frame, rli, start = build_lattice_plan_frame()
     if not PathBoundsDecider().Process(None, rli, None).ok():
-        return frame, rli, start, True, None, "decider_skip"
+        return None, None, None, False, None, "decider produced no path"
     candidates = BuildCandidatePathsFromBoundaries(rli)
     rli.SetCandidatePathData(candidates)
     if not PathAssessmentDecider().Process(None, rli, None).ok() or rli.path_data is None:
-        return frame, rli, start, True, None, "decider_skip"
+        return None, None, None, False, None, "decider produced no path"
     extra = f"path_label={rli.path_data.path_label!r} n_candidates={len(candidates)}"
-    return frame, rli, start, True, None, extra
+    return None, None, None, True, None, extra
 
 
 def s_decider_lane_borrow_bounds() -> BuilderResult:
@@ -192,7 +280,7 @@ def s_decider_lane_borrow_bounds() -> BuilderResult:
     labels = [b.label for b in rli.GetCandidatePathBoundaries()]
     ok = ok and "regular/left/forward" in labels and "regular/right/forward" in labels
     extra = f"bounds_ok={ok} labels={labels}"
-    return None, rli, None, ok, None, extra
+    return None, None, None, ok, None, extra
 
 
 def s_decider_boundary_combine() -> BuilderResult:
@@ -214,7 +302,7 @@ def s_decider_boundary_combine() -> BuilderResult:
     traj = DiscretizedTrajectory()
     combined = rli.CombinePathAndSpeedProfile(0.0, start.path_point.s, traj)
     extra = f"combine_ok={combined} traj_pts={len(traj)} label={rli.path_data.path_label!r}"
-    return None, rli, None, combined, None, extra
+    return None, None, None, combined, None, extra
 
 
 def s_decider_cruise_speed_data() -> BuilderResult:
@@ -225,507 +313,364 @@ def s_decider_cruise_speed_data() -> BuilderResult:
     speed = BuildCruiseSpeedData(rli)
     ok = len(speed) >= 2 and all(pt.v == 6.0 for pt in speed)
     extra = f"speed_pts={len(speed)} v0={speed[0].v} s_end={speed[-1].s:.1f}"
-    return None, rli, None, ok, None, extra
+    return None, None, None, ok, None, extra
 
 
-# --- OnLane ---
+
+# --- OnLane (closed loop) ---
 
 
-def s_on_lane_open_road() -> BuilderResult:
-    import config as config_module
-    from on_lane_planning import OnLanePlanning
-    from common.frame import LocalView
-    from reference_line.reference_line_provider import ReferenceLineProvider
-    from protoclass.chassis import Chassis
-    from protoclass.header import Header
-    from protoclass.localization_estimate import LocalizationEstimate
-    from protoclass.pose import Pose
-    from protoclass.prediction_obstacles import PredictionObstacles
-    from protoclass.point_enu import PointENU
-    from scripts.planner_test_fixtures import build_reference_line
-
-    reference_line, _, reference_line_info = build_reference_line()
-    provider = ReferenceLineProvider()
-    provider._reference_lines = [reference_line]
-    provider._route_segments = [reference_line_info.Lanes()]
-
-    local_view = LocalView(
-        localization_estimate=LocalizationEstimate(
-            pose=Pose(position=PointENU(x=0.0, y=0.0, z=0.0), heading=0.0),
-            measurement_time=0.0,
-        ),
-        chassis=Chassis(speed_mps=1.0, header=Header(timestamp_sec=0.0)),
-        prediction_obstacles=PredictionObstacles(),
+def s_on_lane_open_road() -> SimResult:
+    result = run_on_lane_road(
+        "on_lane_open_road",
+        Actor("ego", x=0.0, v=1.0),
+        [],
+        horizon_s=3.0,
     )
-    old_thread = config_module.FLAGS_enable_reference_line_provider_thread
-    try:
-        config_module.FLAGS_enable_reference_line_provider_thread = True
-        planner = OnLanePlanning(provider)
-        adc = ADCTrajectory()
-        status = planner.RunOnce(local_view, adc)
-        extra = f"status={status.code.name} out_pts={len(adc.trajectory_point)}"
-        return None, None, None, status.ok(), None, extra, adc
-    finally:
-        config_module.FLAGS_enable_reference_line_provider_thread = old_thread
+    return _finish(result, min_travel=2.0, forbid_fallback=True)
 
 
-def s_on_lane_overtake_path_bounds() -> BuilderResult:
-    import config as config_module
-    from on_lane_planning import OnLanePlanning
-    from common.frame import LocalView
-    from common.planning_context import PlanningContext
-    from reference_line.reference_line_provider import ReferenceLineProvider
-    from protoclass.adc_trajectory import Point3D
-    from protoclass.chassis import Chassis
-    from protoclass.header import Header
-    from protoclass.localization_estimate import LocalizationEstimate
-    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
-    from protoclass.pose import Pose
-    from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles
-    from protoclass.point_enu import PointENU
-    from scripts.planner_test_fixtures import build_left_lane_reference_line
-
-    # Needs a reference line with a real neighbor lane (unlike the generic
-    # single-lane build_reference_line fixture): PathBoundsDecider now looks
-    # up the actual neighbor lane width via ReferenceLineInfo.GetNeighborLaneInfo
-    # instead of assuming a flat default lane width, so a borrow boundary can
-    # only be non-trivial where a real adjacent lane exists.
-    reference_line, reference_line_info = build_left_lane_reference_line(length=100.0, init_v=5.0)
-    provider = ReferenceLineProvider()
-    provider._reference_lines = [reference_line]
-    provider._route_segments = [reference_line_info.Lanes()]
-
-    local_view = LocalView(
-        localization_estimate=LocalizationEstimate(
-            pose=Pose(position=PointENU(x=0.0, y=0.0, z=0.0), heading=0.0),
-            measurement_time=0.0,
-        ),
-        chassis=Chassis(speed_mps=5.0, header=Header(timestamp_sec=0.0)),
-        prediction_obstacles=PredictionObstacles(
-            prediction_obstacle=[
-                PredictionObstacle(
-                    perception_obstacle=PerceptionObstacle(
-                        id=1,
-                        type=PerceptionObstacleType.VEHICLE,
-                        position=Point3D(x=30.0, y=0.0, z=0.0),
-                        velocity=Point3D(x=0.0, y=0.0, z=0.0),
-                        length=4.0,
-                        width=2.0,
-                        height=1.5,
-                        theta=0.0,
-                    ),
-                    is_static=True,
-                )
-            ]
-        ),
+def s_on_lane_overtake_path_bounds() -> SimResult:
+    # Same borrow stack OnLanePlanning runs before lattice, stepped in closed loop.
+    # Full RunOnce each cycle also rebuilds the reference-line window and is too
+    # heavy to repeat for the whole horizon; the open-road OnLane case covers RunOnce.
+    result = run_path_bounds_road(
+        "on_lane_overtake_path_bounds",
+        Actor("ego", x=0.0, v=5.0),
+        [_static("lead_1", 30.0)],
+        horizon_s=5.0,
+        path_label="regular/left/forward",
+        blocking_actor_id="lead_1",
     )
-    ctx = PlanningContext()
-    ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
-    # Only lane_right (this fixture's right neighbor) actually exists as a
-    # real neighbor lane, so only RIGHT_BORROW can produce a non-trivial
-    # boundary; a left-borrow attempt would legitimately fall back to
-    # neighbor_width=0.0 with no real left neighbor to borrow.
-    ctx.planning_status.path_decider.decided_side_pass_direction = [2]
+    return _finish(result, min_abs_y=1.0)
 
-    old_values = (
-        config_module.FLAGS_enable_reference_line_provider_thread,
-        config_module.FLAGS_enable_path_bounds_decider,
-        config_module.FLAGS_enable_on_lane_combine_path_and_speed,
-        config_module.FLAGS_enable_path_decider_after_lateral,
+
+# --- stress: short closed-loop probes, informational ---
+
+
+def _sweep_summary(rows: List[str], collided: bool) -> SimResult:
+    reason = "sweep [" + "; ".join(rows) + "]"
+    return SimResult(
+        name="stress",
+        ok=not collided,
+        reason=reason,
+        horizon_s=1.0,
     )
-    try:
-        config_module.FLAGS_enable_reference_line_provider_thread = True
-        config_module.FLAGS_enable_path_bounds_decider = True
-        config_module.FLAGS_enable_on_lane_combine_path_and_speed = True
-        config_module.FLAGS_enable_path_decider_after_lateral = True
-        planner = OnLanePlanning(provider)
-        adc = ADCTrajectory()
-        status = planner.RunOnce(local_view, adc, planning_context=ctx)
-    finally:
-        (
-            config_module.FLAGS_enable_reference_line_provider_thread,
-            config_module.FLAGS_enable_path_bounds_decider,
-            config_module.FLAGS_enable_on_lane_combine_path_and_speed,
-            config_module.FLAGS_enable_path_decider_after_lateral,
-        ) = old_values
-
-    traj = adc.trajectory_point or []
-    max_y = max((abs(p.path_point.y) for p in traj), default=0.0)
-    near = [
-        abs(p.path_point.y)
-        for p in traj
-        if p.path_point is not None and abs(p.path_point.x - 30.0) < 8.0
-    ]
-    near_peak = max(near) if near else 0.0
-    label = ""
-    if planner._last_publishable_trajectory is not None:
-        label = "published"
-    frame = getattr(planner, "_last_frame", None)
-    viz_rli = frame.FindDriveReferenceLineInfo() if frame is not None else None
-    obstacle_count = (
-        len(viz_rli.path_decision.obstacles)
-        if viz_rli is not None and viz_rli.path_decision is not None
-        else 0
-    )
-    extra = (
-        f"status={status.code.name} pts={len(traj)} max|y|={max_y:.2f} "
-        f"near_obstacle|y|={near_peak:.2f} obstacles={obstacle_count} {label}"
-    )
-    ok = status.ok() and len(traj) > 0 and max_y > 1.0 and near_peak > 1.0
-    return None, viz_rli, None, ok, None, extra, adc
 
 
-# --- stress / probing ---
-
-
-def s_stress_obstacle_distance_sweep() -> BuilderResult:
-    """Probe whether lattice succeeds across several obstacle distances from 10-40m (informational case)."""
-    results = []
+def s_stress_obstacle_distance_sweep() -> SimResult:
+    rows = []
+    collided = False
     for x in (10, 15, 18, 22, 30, 40):
-        obs = build_static_obstacle(f"car_{x}", float(x))
-        frame, rli, start = build_lattice_plan_frame(
-            [obs], blocking_obstacle_id=f"car_{x}"
+        result = run_straight_road(
+            f"stress_x_{x}",
+            Actor("ego", x=0.0, v=1.0),
+            [_static(f"car_{x}", float(x))],
+            horizon_s=1.0,
+            blocking_actor_id=f"car_{x}",
+            backup=True,
         )
-        old = config.FLAGS_enable_backup_trajectory
-        config.FLAGS_enable_backup_trajectory = True
-        try:
-            ok = LatticePlanner().Plan(start, frame, ADCTrajectory())
-        finally:
-            config.FLAGS_enable_backup_trajectory = old
-        end_x = (
-            rli.trajectory[-1].path_point.x
-            if ok and rli.trajectory
-            else None
-        )
-        results.append(f"x={x}:{'ok' if ok else 'fail'} end={end_x}")
-    extra = "sweep [" + "; ".join(results) + "]"
-    return None, None, None, True, None, extra
+        end_x = result.ego_x1 if result.cycles else None
+        rows.append(f"x={x}:{'ok' if result.ok else 'fail'} end={end_x}")
+        collided = collided or result.collided
+    return _sweep_summary(rows, collided)
 
 
-def s_stress_init_speed_sweep() -> BuilderResult:
-    results = []
+def s_stress_init_speed_sweep() -> SimResult:
+    rows = []
+    collided = False
     for v in (0.1, 1.0, 3.0, 6.0, 8.0):
-        frame, rli, start = build_lattice_plan_frame(init_v=v)
-        ok = LatticePlanner().Plan(start, frame, ADCTrajectory())
-        end_v = rli.trajectory[-1].v if ok and rli.trajectory else None
-        results.append(f"v0={v}:{'ok' if ok else 'fail'} vend={end_v}")
-    extra = "sweep [" + "; ".join(results) + "]"
-    return None, None, None, True, None, extra
+        result = run_straight_road(
+            f"stress_v_{v}",
+            Actor("ego", x=0.0, v=v),
+            [],
+            horizon_s=1.0,
+        )
+        rows.append(f"v0={v}:{'ok' if result.ok else 'fail'} vend={result.ego_v1:.2f}")
+        collided = collided or result.collided
+    return _sweep_summary(rows, collided)
 
 
-# --- Overtaking: PathBounds S-curve (recommended) / synthetic reference / Lattice follow-and-stop control ---
+# --- Overtake: closed-loop PathBounds or lattice, no hand-drawn S-curve ---
 
 
-def s_overtake_path_bounds_left() -> BuilderResult:
-    """Recommended: PathBounds left-borrow + S-curve l(s) + Combine (matches the C++ lane-borrow overtaking stack)."""
-    frame, rli, start, ok, backup, detail = build_path_bounds_overtake_frame(
-        30.0, path_label="regular/left/forward", init_v=5.0
+def _borrow(
+    name: str,
+    leader_x: float,
+    path_label: str,
+    *,
+    ego_v: float = 5.0,
+    s_curve: bool = True,
+    actors=None,
+    horizon_s: float = 5.0,
+) -> SimResult:
+    if actors is None:
+        actors = [_static("lead_1", leader_x)]
+    result = run_path_bounds_road(
+        name,
+        Actor("ego", x=0.0, v=ego_v),
+        list(actors),
+        horizon_s=horizon_s,
+        path_label=path_label,
+        blocking_actor_id=actors[0].actor_id,
+        s_curve=s_curve,
     )
-    return frame, rli, start, ok, backup, detail
+    return result
 
 
-def s_overtake_path_bounds_right() -> BuilderResult:
-    """PathBounds right-borrow + S-curve profile."""
-    frame, rli, start, ok, backup, detail = build_path_bounds_overtake_frame(
-        30.0, path_label="regular/right/forward", init_v=5.0
-    )
-    return frame, rli, start, ok, backup, detail
-
-
-def s_overtake_s_curve_pass() -> BuilderResult:
-    """Reference animation: Cartesian S-curve (matches the PathBounds profile shape, for comparison)."""
-    frame, rli, start, ok, backup, detail = build_synthetic_overtake_frame(
-        30.0, init_v=5.0, peak_y=3.2
-    )
-    return frame, rli, start, ok, backup, detail
-
-
-def s_overtake_lattice_follow_no_pass() -> BuilderResult:
-    """Pure Lattice: single lane can only follow-and-stop, no lateral overtaking (control group)."""
-    frame, rli, start = build_overtake_lattice_frame(30.0, init_v=5.0)
-    return frame, rli, start, True, None, "lattice_follow_not_pass"
-
-
-def s_overtake_borrow_offset_not_s_curve() -> BuilderResult:
-    """
-    PathBounds left-borrow: a constant lateral offset for the whole path
-    (the old, incorrect "overtake").
-    For comparison: this is not a bypass-and-return maneuver, but driving
-    a fixed offset line while borrowing the lane.
-    """
-    from common.path_bounds_decider import PathBoundsDecider, BuildCandidatePathsFromBoundaries
-    from common.planning_context import PlanningContext
-    from common.planning_util import BuildCruiseSpeedData
-    from common.discretized_trajectory import DiscretizedTrajectory
-
-    frame, rli, start = build_overtake_lattice_frame(30.0, init_v=5.0)
-    ctx = PlanningContext()
-    ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
-    ctx.planning_status.path_decider.decided_side_pass_direction = [1]
-    rli.set_is_path_lane_borrow(True)
-    PathBoundsDecider().Process(None, rli, ctx)
-    cands = BuildCandidatePathsFromBoundaries(rli)
-    left = next(c for c in cands if c.path_label == "regular/left/forward")
-    rli.SetPathData(left)
-    rli.SetSpeedData(BuildCruiseSpeedData(rli))
-    traj = DiscretizedTrajectory()
-    ok = rli.CombinePathAndSpeedProfile(0.0, start.path_point.s, traj)
-    if ok:
-        rli.SetTrajectory(traj)
-    ys = [p.path_point.y for p in traj] if traj else [0]
-    detail = f"constant_offset y≈{ys[len(ys)//2]:.2f} (NOT S-curve)"
-    return frame, rli, start, ok, None, detail
-
-
-def s_overtake_two_leaders_s_curve() -> BuilderResult:
-    """Two leading vehicles: S-curve bypass past the first one (the second is still far ahead)."""
-    from scripts.planner_test_fixtures import (
-        apply_cartesian_overtake_trajectory,
-        build_cartesian_overtake_path_points,
-        build_lattice_plan_frame,
+def s_overtake_path_bounds_left() -> SimResult:
+    return _finish(
+        _borrow("overtake_path_bounds_left", 30.0, "regular/left/forward"),
+        min_abs_y=1.0,
     )
 
-    frame, rli, start = build_lattice_plan_frame(
-        [
-            build_slow_leader_obstacle("lead1", 22.0),
-            build_slow_leader_obstacle("lead2", 55.0),
-        ],
-        init_v=5.0,
-        blocking_obstacle_id="lead1",
+
+def s_overtake_path_bounds_right() -> SimResult:
+    return _finish(
+        _borrow("overtake_path_bounds_right", 30.0, "regular/right/forward"),
+        min_abs_y=1.0,
     )
-    pts = build_cartesian_overtake_path_points(
-        obstacle_x=22.0,
-        peak_y=3.0,
-        pass_length=8.0,
-        length_x=85.0,
+
+
+def s_overtake_s_curve_pass() -> SimResult:
+    """Same borrow stack as the left overtake; the trace is whatever the replanner executes."""
+    return _finish(
+        _borrow("overtake_s_curve_pass", 30.0, "regular/left/forward", ego_v=6.0),
+        min_abs_y=1.0,
     )
-    ok, detail = apply_cartesian_overtake_trajectory(rli, start, pts, cruise_v=6.0)
-    return frame, rli, start, ok, None, detail
 
 
-def s_overtake_far_leader_s_curve() -> BuilderResult:
-    """Leading vehicle farther away at 45m: easier to complete the bypass."""
-    frame, rli, start, ok, backup, detail = build_synthetic_overtake_frame(
-        45.0, init_v=6.0, peak_y=2.8
+def s_overtake_lattice_follow_no_pass() -> SimResult:
+    return _finish(
+        _straight(
+            "overtake_lattice_follow_no_pass",
+            ego_v=5.0,
+            actors=[_static("slow_leader", 30.0)],
+            blocking="slow_leader",
+            horizon_s=4.0,
+        ),
+        max_abs_y=1.0,
     )
-    return frame, rli, start, ok, backup, detail
 
 
-def s_overtake_stack_combine() -> BuilderResult:
-    """Generate an S-curve overtaking trajectory via the PathData + Combine stack."""
-    frame, rli, start, ok, backup, detail = build_lattice_overtake_combined_frame(
-        30.0, init_v=5.0, peak_y=3.2
+def s_overtake_borrow_offset_not_s_curve() -> SimResult:
+    """Constant-offset borrow candidate, replanned every cycle (not an S-curve)."""
+    return _borrow(
+        "overtake_borrow_constant_offset",
+        30.0,
+        "regular/left/forward",
+        s_curve=False,
     )
-    return frame, rli, start, ok, backup, detail
 
 
-# --- lane_change ---
+def s_overtake_two_leaders_s_curve() -> SimResult:
+    return _finish(
+        _borrow(
+            "overtake_two_leaders",
+            22.0,
+            "regular/left/forward",
+            ego_v=6.0,
+            actors=[_static("lead_1", 22.0), _static("lead_2", 55.0)],
+        ),
+        min_abs_y=1.0,
+    )
 
 
-def s_lane_change_overtake_slow_npc() -> BuilderResult:
-    frame, rli, start = build_lane_change_frame()
-    return frame, rli, start, True, None, None
+def s_overtake_far_leader_s_curve() -> SimResult:
+    # The nudge starts about 10m before the leader, so the horizon has to
+    # reach that station before a lateral offset shows up.
+    return _finish(
+        _borrow(
+            "overtake_far_leader",
+            45.0,
+            "regular/left/forward",
+            ego_v=6.0,
+            horizon_s=8.0,
+        ),
+        min_abs_y=1.0,
+    )
 
 
-# --- closed-loop simulation ---
-# These cases replan every cycle. The builders above are one-shot (or they
-# skip LatticePlanner and stamp a synthetic S-curve onto the trajectory).
+def s_overtake_stack_combine() -> SimResult:
+    return _finish(
+        _borrow("overtake_stack_combine", 30.0, "regular/left/forward", ego_v=5.0),
+        min_abs_y=1.0,
+    )
 
 
-def _sim_outcome(result) -> BuilderResult:
-    return None, None, None, result.ok, None, result.summary()
+# --- lane change (closed loop on both reference lines) ---
 
 
-def s_sim_open_road() -> BuilderResult:
-    from scripts.run_closed_loop_sim import open_road
-
-    return _sim_outcome(open_road())
-
-
-def s_sim_follow_leader() -> BuilderResult:
-    from scripts.run_closed_loop_sim import follow_leader
-
-    return _sim_outcome(follow_leader())
+def s_lane_change_overtake_slow_npc() -> SimResult:
+    result = run_lane_change_road(
+        "lane_change_overtake_slow_npc",
+        Actor("ego", x=0.0, v=10.0),
+        [Actor("npc_slow", x=20.0, v=3.0)],
+        horizon_s=2.0,
+    )
+    return _finish(result, min_abs_y=1.0)
 
 
-def s_sim_stopped_leader() -> BuilderResult:
-    from scripts.run_closed_loop_sim import stopped_leader
+# --- explicit closed-loop regressions ---
 
-    return _sim_outcome(stopped_leader())
+
+def s_sim_open_road() -> SimResult:
+    return _straight("sim_open_road_replan", ego_v=5.0, min_travel=12.0, forbid_fallback=True)
+
+
+def s_sim_follow_leader() -> SimResult:
+    return run_straight_road(
+        "sim_follow_moving_leader",
+        Actor("ego", x=0.0, v=8.0),
+        [Actor("lead_1", x=28.0, v=4.0)],
+        horizon_s=3.0,
+    )
+
+
+def s_sim_stopped_leader() -> SimResult:
+    return run_straight_road(
+        "sim_stopped_leader",
+        Actor("ego", x=0.0, v=6.0),
+        [_static("lead_1", 22.0)],
+        horizon_s=3.0,
+        blocking_actor_id="lead_1",
+        backup=True,
+    )
 
 
 SCENARIOS: List[Scenario] = [
-    # lattice
-    Scenario("open_road", "Open straight road", "lattice", s_open_road),
-    Scenario("far_obstacle_stop", "35m stationary car + blocking", "lattice", s_far_obstacle_stop),
+    Scenario("open_road", "Closed loop: open straight road", "lattice", s_open_road),
+    Scenario("far_obstacle_stop", "Closed loop: 35m stationary car", "lattice", s_far_obstacle_stop),
     Scenario(
         "close_obstacle_no_backup",
-        "8m stationary car, backup off, should fail",
+        "Closed loop: 8m stationary car, backup off, planning should fail",
         "lattice",
         s_close_obstacle_no_backup,
         expect_ok=False,
     ),
     Scenario(
         "close_obstacle_with_backup",
-        "8m stationary car, backup on, fallback succeeds",
+        "Closed loop: 8m stationary car, backup on, no overlap",
         "lattice",
         s_close_obstacle_with_backup,
         backup=True,
     ),
-    Scenario("higher_speed_cruise", "Initial speed 5 m/s", "lattice", s_higher_speed_cruise),
-    Scenario("stopped_start", "Near-zero-speed start v=0.1", "lattice", s_stopped_start),
-    Scenario("mid_lane_start", "Continue planning from x=20m", "lattice", s_mid_lane_start),
-    Scenario("lateral_offset_start", "Lateral offset y=0.6m start", "lattice", s_lateral_offset_start),
-    Scenario("two_obstacles_queue", "22m + 45m two-car queue", "lattice", s_two_obstacles_queue),
+    Scenario("higher_speed_cruise", "Closed loop: initial speed 5 m/s", "lattice", s_higher_speed_cruise),
+    Scenario("stopped_start", "Closed loop: near-zero-speed start v=0.1", "lattice", s_stopped_start),
+    Scenario("mid_lane_start", "Closed loop: continue from x=20m", "lattice", s_mid_lane_start),
+    Scenario("lateral_offset_start", "Closed loop: lateral offset y=0.6m", "lattice", s_lateral_offset_start),
+    Scenario("two_obstacles_queue", "Closed loop: 22m + 45m queue", "lattice", s_two_obstacles_queue),
     Scenario(
         "obstacle_no_blocking_flag",
-        "30m obstacle but not flagged as blocking",
+        "Closed loop: 30m obstacle, not flagged blocking",
         "lattice",
         s_obstacle_no_blocking_flag,
     ),
     Scenario(
         "side_obstacle_adjacent_lane",
-        "Stationary car in adjacent lane y=2.8m",
+        "Closed loop: stationary car in the adjacent lane",
         "lattice",
         s_side_obstacle_adjacent_lane,
     ),
-    Scenario("medium_obstacle_18m", "18m blocking stopped car", "lattice", s_medium_obstacle_18m),
-    Scenario("long_road_150m", "150m long reference line", "lattice", s_long_road_150m),
-    Scenario("low_speed_creep", "Creeping v=0.3", "lattice", s_low_speed_creep),
-    Scenario("obstacle_60m_pass", "Obstacle 60m ahead", "lattice", s_obstacle_60m_pass),
+    Scenario("medium_obstacle_18m", "Closed loop: 18m blocking stopped car", "lattice", s_medium_obstacle_18m),
+    Scenario("long_road_150m", "Closed loop: 150m reference line", "lattice", s_long_road_150m),
+    Scenario("low_speed_creep", "Closed loop: creeping v=0.3", "lattice", s_low_speed_creep),
+    Scenario("obstacle_60m_pass", "Closed loop: obstacle 60m ahead", "lattice", s_obstacle_60m_pass),
     Scenario(
         "backup_off_open_road",
-        "Backup off, open road should still succeed",
+        "Closed loop: backup off, open road still drives",
         "lattice",
         s_backup_off_open_road,
         backup=False,
     ),
-    Scenario("curved_open_road", "Curved lane, open cruising", "lattice", s_curved_open_road),
-    Scenario("curved_obstacle_stop", "Curved lane, leading car stopped", "lattice", s_curved_obstacle_stop),
-    # decider
-    Scenario(
-        "decider_bounds_assessment",
-        "PathBounds + PathAssessment",
-        "decider",
-        s_decider_bounds_assessment,
-    ),
+    Scenario("curved_open_road", "Closed loop: curved lane", "lattice", s_curved_open_road),
+    Scenario("curved_obstacle_stop", "Closed loop: curved lane, stopped leader", "lattice", s_curved_obstacle_stop),
+    Scenario("decider_bounds_assessment", "PathBounds + PathAssessment", "decider", s_decider_bounds_assessment),
     Scenario(
         "decider_lane_borrow_bounds",
-        "Lane-borrow scenario, PathBounds multiple boundaries",
+        "Lane-borrow PathBounds boundaries",
         "decider",
         s_decider_lane_borrow_bounds,
     ),
-    Scenario(
-        "decider_boundary_combine",
-        "Path + cruise speed Combine",
-        "decider",
-        s_decider_boundary_combine,
-    ),
-    Scenario(
-        "decider_cruise_speed_data",
-        "BuildCruiseSpeedData",
-        "decider",
-        s_decider_cruise_speed_data,
-    ),
-    # on_lane
-    Scenario(
-        "on_lane_open_road",
-        "OnLanePlanning.RunOnce, open road",
-        "on_lane",
-        s_on_lane_open_road,
-        informational=True,
-    ),
+    Scenario("decider_boundary_combine", "Path + cruise speed Combine", "decider", s_decider_boundary_combine),
+    Scenario("decider_cruise_speed_data", "BuildCruiseSpeedData", "decider", s_decider_cruise_speed_data),
+    Scenario("on_lane_open_road", "Closed loop: OnLanePlanning every cycle", "on_lane", s_on_lane_open_road),
     Scenario(
         "on_lane_overtake_path_bounds",
-        "OnLanePlanning PathBounds lane-borrow overtaking",
+        "Closed loop: OnLane PathBounds borrow",
         "on_lane",
         s_on_lane_overtake_path_bounds,
     ),
-    # stress
     Scenario(
         "stress_obstacle_distance_sweep",
-        "Obstacle distance 10-40m sweep",
+        "Closed-loop obstacle distance sweep",
         "stress",
         s_stress_obstacle_distance_sweep,
         informational=True,
     ),
     Scenario(
         "stress_init_speed_sweep",
-        "Initial speed 0.1-8 m/s sweep",
+        "Closed-loop initial speed sweep",
         "stress",
         s_stress_init_speed_sweep,
         informational=True,
     ),
-    # overtake
     Scenario(
         "overtake_path_bounds_left",
-        "[Recommended] PathBounds left-borrow S-curve overtaking",
+        "Closed loop: PathBounds left borrow",
         "overtake",
         s_overtake_path_bounds_left,
-        skip_lattice=True,
     ),
     Scenario(
         "overtake_path_bounds_right",
-        "PathBounds right-borrow S-curve overtaking",
+        "Closed loop: PathBounds right borrow",
         "overtake",
         s_overtake_path_bounds_right,
-        skip_lattice=True,
     ),
     Scenario(
         "overtake_s_curve_pass",
-        "Cartesian S-curve reference trajectory (animation comparison)",
+        "Closed loop: left borrow replanned every cycle",
         "overtake",
         s_overtake_s_curve_pass,
-        skip_lattice=True,
     ),
     Scenario(
         "overtake_lattice_follow_no_pass",
-        "Pure Lattice: single lane follow-and-stop, no lateral overtaking (control)",
+        "Closed loop: lattice follows, does not swerve around",
         "overtake",
         s_overtake_lattice_follow_no_pass,
     ),
     Scenario(
         "overtake_borrow_constant_offset",
-        "PathBounds left-borrow: constant lateral offset for the whole path (not S-curve, old misconception)",
+        "Closed loop: constant-offset borrow candidate",
         "overtake",
         s_overtake_borrow_offset_not_s_curve,
-        skip_lattice=True,
         informational=True,
     ),
     Scenario(
         "overtake_two_leaders_s_curve",
-        "Two leading vehicles: S-curve bypass around the first one",
+        "Closed loop: left borrow around the first of two leaders",
         "overtake",
         s_overtake_two_leaders_s_curve,
-        skip_lattice=True,
     ),
     Scenario(
         "overtake_far_leader_s_curve",
-        "Leading vehicle at 45m: S-curve bypass",
+        "Closed loop: left borrow around a leader at 45m",
         "overtake",
         s_overtake_far_leader_s_curve,
-        skip_lattice=True,
     ),
     Scenario(
         "overtake_stack_combine",
-        "PathData + Combine stack generates S-curve overtaking",
+        "Closed loop: PathBounds + Combine, replanned every cycle",
         "overtake",
         s_overtake_stack_combine,
-        skip_lattice=True,
     ),
     Scenario(
         "lane_change_overtake_slow_npc",
-        "Slow dynamic NPC blocking the ego lane, ego vehicle changes lanes to overtake",
+        "Closed loop: lattice chooses between the current lane and the lane-change reference",
         "lane_change",
         s_lane_change_overtake_slow_npc,
     ),
-    # closed-loop
-    Scenario(
-        "sim_open_road_replan",
-        "Closed loop: empty road, replan every cycle",
-        "sim",
-        s_sim_open_road,
-    ),
+    Scenario("sim_open_road_replan", "Closed loop: empty road, replan every cycle", "sim", s_sim_open_road),
     Scenario(
         "sim_follow_moving_leader",
         "Closed loop: faster ego follows a slower leader",

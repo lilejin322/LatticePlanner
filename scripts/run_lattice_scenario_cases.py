@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Lattice scenario suite: one-shot Lattice / Decider / OnLane / Stress / Overtake,
-plus closed-loop replanning cases (--tag sim).
+Lattice scenario suite. Driving cases replan every cycle and the animation
+plays that executed trace. Decider cases are single-call checks.
 
 Usage:
   .venv/bin/python scripts/run_lattice_scenario_cases.py --list
@@ -26,8 +26,7 @@ _MPL_CACHE_DIR.mkdir(parents=True, exist_ok=True)
 os.environ.setdefault("MPLCONFIGDIR", str(_MPL_CACHE_DIR))
 
 import config
-from lattice_planner import LatticePlanner
-from protoclass.adc_trajectory import ADCTrajectory
+from scripts.closed_loop_sim import SimResult, to_plot_context
 from scripts.lattice_scenarios import SCENARIOS, SCENARIOS_BY_NAME, Scenario
 
 DEFAULT_ANIM_DIR = PROJECT_ROOT / "scripts" / "output" / "animations"
@@ -50,144 +49,23 @@ class RunOutcome:
         return self.got_ok == self.scenario.expect_ok and self.error is None
 
 
-def trajectory_summary(reference_line_info) -> str:
-    traj = reference_line_info.trajectory
-    if not traj or len(traj) == 0:
-        return "Trajectory: none"
-    first, last = traj[0], traj[-1]
-    max_v = max(pt.v for pt in traj)
-    max_a = max(abs(pt.a) for pt in traj)
-    max_y = max(abs(pt.path_point.y) for pt in traj)
-    tname = reference_line_info.trajectory_type.name
-    return (
-        f"Trajectory {len(traj)} pts | {tname} | "
-        f"({first.path_point.x:.1f},{first.path_point.y:.2f},v={first.v:.2f})→"
-        f"({last.path_point.x:.1f},{last.path_point.y:.2f},v={last.v:.2f}) | "
-        f"max|v|={max_v:.2f} max|a|={max_a:.2f} max|y|={max_y:.2f}"
-    )
-
-
-def run_lattice_plan(
-    frame,
-    reference_line_info,
-    start_point,
-    backup: Optional[bool],
-) -> bool:
-    old = config.FLAGS_enable_backup_trajectory
-    if backup is not None:
-        config.FLAGS_enable_backup_trajectory = backup
-    try:
-        return LatticePlanner().Plan(start_point, frame, ADCTrajectory())
-    finally:
-        config.FLAGS_enable_backup_trajectory = old
-
-
-def _build_scene_context(
-    scenario: Scenario,
-    passed: bool,
-    *,
-    reference_line_info=None,
-    adc_trajectory=None,
-    other_reference_line=None,
-    note: str = "",
-):
-    from scripts.lattice_visualization import (
-        context_from_adc_trajectory,
-        context_from_reference_line_info,
-    )
-
-    title = f"{scenario.description} | {note}" if note else scenario.description
-    if reference_line_info is not None:
-        return context_from_reference_line_info(
-            reference_line_info,
-            scenario_name=scenario.name,
-            title=title,
-            passed=passed,
-            note=note,
-            other_reference_line=other_reference_line,
-        )
-    if adc_trajectory is not None:
-        return context_from_adc_trajectory(
-            adc_trajectory,
-            scenario_name=scenario.name,
-            title=title,
-            passed=passed,
-            note=note,
-        )
-    return None
-
-
 def execute(scenario: Scenario) -> RunOutcome:
     try:
         built = scenario.builder()
+        if isinstance(built, SimResult):
+            return RunOutcome(
+                scenario=scenario,
+                got_ok=built.ok,
+                detail=built.summary(),
+                scene_context=to_plot_context(built, scenario.name, scenario.description),
+            )
+
         extra = built[5] if len(built) > 5 else None
-        adc = built[6] if len(built) > 6 else None
-
-        # OnLane / decider-only / stress (no complete trajectory)
-        if built[0] is None:
-            rli = built[1]
-            got_ok = bool(built[3])
-            detail = extra or ""
-            scene_ctx = None
-            if rli is not None or adc is not None:
-                scene_ctx = _build_scene_context(
-                    scenario,
-                    got_ok == scenario.expect_ok if not scenario.informational else True,
-                    reference_line_info=rli,
-                    adc_trajectory=adc,
-                    note=detail,
-                )
-            return RunOutcome(
-                scenario=scenario,
-                got_ok=got_ok,
-                detail=detail,
-                scene_context=scene_ctx,
-            )
-
-        frame, rli, start, expect_ok, backup = built[:5]
-        del expect_ok
-
-        if extra == "decider_skip":
-            return RunOutcome(
-                scenario=scenario,
-                got_ok=False,
-                detail="decider produced no path",
-            )
-
-        if scenario.skip_lattice:
-            got_ok = bool(built[3])
-        else:
-            got_ok = run_lattice_plan(
-                frame, rli, start, scenario.backup if scenario.backup is not None else backup
-            )
-
-        other_rli = None
-        if len(frame.mutable_reference_line_info) > 1:
-            driven = frame.FindDriveReferenceLineInfo()
-            if driven is not None:
-                other_rli = next(
-                    (r for r in frame.mutable_reference_line_info if r is not driven), None
-                )
-                rli = driven
-
-        detail = trajectory_summary(rli)
-        if extra:
-            detail = f"{extra} | {detail}"
-
-        passed = got_ok == scenario.expect_ok
-        scene_ctx = _build_scene_context(
-            scenario,
-            passed,
-            reference_line_info=rli,
-            other_reference_line=other_rli,
-            note=detail,
-        )
-
+        got_ok = bool(built[3])
         return RunOutcome(
             scenario=scenario,
             got_ok=got_ok,
-            detail=detail,
-            scene_context=scene_ctx,
+            detail=extra or "",
         )
     except Exception as exc:
         return RunOutcome(

@@ -61,9 +61,9 @@ python scripts/run_all_scenario_animations.py --list    # 预览哪些会出 GIF
 | `decider` | PathBounds / Assessment / Combine / 巡航速度 |
 | `on_lane` | OnLanePlanning.RunOnce 端到端，含 PathBounds 借道超车分支 |
 | `stress` | 障碍距离、初速扫描（信息性，不作为失败门禁） |
-| `overtake` | **超车**：多数用例不跑 Lattice，而是预绘 S 形或借道边界后 Combine（`skip_lattice`） |
-| `lane_change` | 双参考线；目标线被画成变道曲线，方便横向采样落到邻道 |
-| `sim` | **闭环**：按 `FLAGS_planning_loop_rate` 重规划，只执行一个周期，再更新自车和障碍 |
+| `overtake` | **闭环超车**：每个周期重算 PathBounds 借道（或纯 Lattice 跟车），动画播的是执行轨迹 |
+| `lane_change` | **闭环**：当前车道和变道参考线每个周期都重新规划 |
+| `sim` | 空路、跟慢车、跟停这三条闭环回归 |
 
 **超车动画（推荐先看 `overtake_path_bounds_left`）**：
 
