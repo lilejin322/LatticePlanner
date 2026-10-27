@@ -195,57 +195,6 @@ def run_curved_road(
     return result
 
 
-def run_lane_change_road(
-    name: str,
-    ego: Actor,
-    actors: List[Actor],
-    *,
-    horizon_s: float = 4.0,
-    road_length: float = 160.0,
-    backup: Optional[bool] = None,
-) -> SimResult:
-    """Replan on the current lane plus the lane-change reference, every cycle."""
-    from scripts.planner_test_fixtures import build_lane_change_curve, build_lane_change_frame
-
-    npc = actors[0] if actors else None
-
-    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        leader = actors_now[0] if actors_now else None
-        frame, _target, start = build_lane_change_frame(
-            length=road_length,
-            ego_v=max(0.0, ego_now.v),
-            ego_x=ego_now.x,
-            ego_y=ego_now.y,
-            ego_heading=ego_now.theta,
-            npc_x=leader.x if leader is not None else 20.0,
-            npc_y=leader.y if leader is not None else 0.0,
-            npc_v=leader.v if leader is not None else 0.0,
-        )
-        start.a = ego_now.a
-        start.path_point.kappa = ego_now.kappa
-        driven = frame.mutable_reference_line_info[0]
-        ok = LatticePlanner().Plan(start, frame, ADCTrajectory())
-        driven = frame.FindDriveReferenceLineInfo() or driven
-        obstacles = list(frame.obstacles)
-        return ok, driven.trajectory, _trajectory_type_name(driven), obstacles
-
-    result = _run_loop(
-        name,
-        ego,
-        actors,
-        plan_fn,
-        horizon_s=horizon_s,
-        backup=backup,
-    )
-    result.ref_x = [0.0, road_length]
-    result.ref_y = [0.0, 0.0]
-    curve = build_lane_change_curve(road_length, -3.5, 30.0, step=2.0)
-    result.other_ref_x = [point.x for point in curve]
-    result.other_ref_y = [point.y for point in curve]
-    del npc
-    return result
-
-
 def run_path_bounds_road(
     name: str,
     ego: Actor,
