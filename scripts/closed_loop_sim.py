@@ -110,22 +110,16 @@ def run_straight_road(
     blocking_actor_id: Optional[str] = None,
 ) -> SimResult:
     """Replan along a straight reference line until ``horizon_s``."""
-    from scripts.planner_test_fixtures import build_lattice_plan_frame
+    from scripts.planner_test_fixtures import build_reference_line
+
+    reference_line, _, template = build_reference_line(length=road_length)
+    lanes = template.Lanes()
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
         obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        _frame, reference_line_info, start = build_lattice_plan_frame(
-            obstacles,
-            length=road_length,
-            init_v=max(0.0, ego_now.v),
-            start_x=ego_now.x,
-            start_y=ego_now.y,
-            start_heading=ego_now.theta,
-            blocking_obstacle_id=blocking_actor_id,
-        )
-        start.a = ego_now.a
-        start.path_point.kappa = ego_now.kappa
-        ok = LatticePlanner().Plan(start, _frame, ADCTrajectory())
+        reference_line_info, start = _reference_line_info_at(reference_line, lanes, ego_now)
+        _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
+        ok = LatticePlanner().Plan(start, reference_line_info._frame, ADCTrajectory())
         return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
 
     result = _run_loop(
@@ -154,23 +148,16 @@ def run_curved_road(
     blocking_actor_id: Optional[str] = None,
 ) -> SimResult:
     """Replan along a fixed circular arc."""
-    from scripts.planner_test_fixtures import build_curved_lattice_plan_frame, curved_arc_pose
+    from scripts.planner_test_fixtures import build_curved_reference_line, curved_arc_pose
+
+    _reference_line, _, template = build_curved_reference_line(radius=radius, arc_length=arc_length)
+    lanes = template.Lanes()
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
         obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        _frame, reference_line_info, start = build_curved_lattice_plan_frame(
-            obstacles,
-            radius=radius,
-            arc_length=arc_length,
-            init_v=max(0.0, ego_now.v),
-            blocking_obstacle_id=blocking_actor_id,
-            start_x=ego_now.x,
-            start_y=ego_now.y,
-            start_heading=ego_now.theta,
-        )
-        start.a = ego_now.a
-        start.path_point.kappa = ego_now.kappa
-        ok = LatticePlanner().Plan(start, _frame, ADCTrajectory())
+        reference_line_info, start = _reference_line_info_at(_reference_line, lanes, ego_now)
+        _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
+        ok = LatticePlanner().Plan(start, reference_line_info._frame, ADCTrajectory())
         return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
 
     result = _run_loop(
@@ -207,43 +194,26 @@ def run_path_bounds_road(
     s_curve: bool = True,
 ) -> SimResult:
     """Replan a PathBounds borrow path every cycle and execute one cycle of it."""
-    from common.frame import Frame
     from scripts.planner_test_fixtures import (
         apply_borrow_path_trajectory,
         apply_path_bounds_overtake_trajectory,
         build_center_lane_reference_line,
     )
 
+    reference_line, template = build_center_lane_reference_line(length=road_length)
+    lanes = template.Lanes()
+
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        _reference_line, reference_line_info = build_center_lane_reference_line(
-            length=road_length,
-            init_v=max(ego_now.v, 0.0),
-        )
-        start = reference_line_info._adc_planning_point
-        start.path_point.x = ego_now.x
-        start.path_point.y = ego_now.y
-        start.path_point.theta = ego_now.theta
-        start.path_point.kappa = ego_now.kappa
-        start.v = max(0.0, ego_now.v)
-        start.a = ego_now.a
-        reference_line_info._vehicle_state.x = ego_now.x
-        reference_line_info._vehicle_state.y = ego_now.y
-        reference_line_info._vehicle_state.heading = ego_now.theta
         obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        reference_line_info.Init(obstacles, 10.0)
-        if blocking_actor_id is not None:
-            reference_line_info.SetBlockingObstacle(blocking_actor_id)
-        frame = Frame(0)
-        frame._obstacles = {obstacle.Id(): obstacle for obstacle in obstacles}
-        frame._reference_line_info = [reference_line_info]
-        cruise_v = max(ego_now.v, 6.0)
+        reference_line_info, start = _reference_line_info_at(reference_line, lanes, ego_now)
+        _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
+        obstacle_x = actors_now[0].x if actors_now else ego_now.x + 30.0
         if s_curve:
             ok, _detail = apply_path_bounds_overtake_trajectory(
                 reference_line_info,
                 start,
                 path_label,
-                cruise_v=cruise_v,
-                obstacle_x=actors_now[0].x if actors_now else ego_now.x + 30.0,
+                obstacle_x=obstacle_x,
             )
         else:
             ok, _detail = apply_borrow_path_trajectory(
@@ -282,14 +252,6 @@ def run_on_lane_road(
     import config as config_module
     from common.planning_context import PlanningContext
     from on_lane_planning import OnLanePlanning
-    from protoclass.adc_trajectory import Point3D
-    from protoclass.chassis import Chassis
-    from protoclass.header import Header
-    from protoclass.localization_estimate import LocalizationEstimate
-    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
-    from protoclass.point_enu import PointENU
-    from protoclass.pose import Pose
-    from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles
     from reference_line.reference_line_provider import ReferenceLineProvider
     from scripts.planner_test_fixtures import (
         build_center_lane_reference_line,
@@ -320,7 +282,7 @@ def run_on_lane_road(
         provider = ReferenceLineProvider()
         provider._reference_lines = [deepcopy(reference_line)]
         provider._route_segments = [deepcopy(lanes)]
-        local_view = _local_view(ego_now, actors_now, Chassis, Header, LocalizationEstimate, PointENU, Pose, Point3D, PerceptionObstacle, PerceptionObstacleType, PredictionObstacle, PredictionObstacles)
+        local_view = _local_view(ego_now, actors_now)
         planner = OnLanePlanning(provider)
         adc = ADCTrajectory()
         status = planner.RunOnce(local_view, adc, planning_context=context)
@@ -485,6 +447,22 @@ def _run_loop(
                     else min(min_clearance, cycle_clearance)
                 )
             executed_point = trajectory.Evaluate(min(cycle_dt, trajectory.GetTemporalLength()))
+            if not _executed_state_is_usable(ego, executed_point, cycle_dt):
+                plan_failures += 1
+                reason = f"executed state left the road at t={t:.2f}"
+                records.append(
+                    CycleRecord(
+                        t=t,
+                        plan_ok=False,
+                        trajectory_type=type_name,
+                        ego_x=ego.x,
+                        ego_y=ego.y,
+                        ego_v=ego.v,
+                        min_clearance=cycle_clearance,
+                        collided=False,
+                    )
+                )
+                break
             _apply_executed_state(ego, executed_point)
             for actor in actors:
                 _advance_actor(actor, cycle_dt)
@@ -536,29 +514,27 @@ def _run_loop(
     )
 
 
-def _local_view(ego, actors, Chassis, Header, LocalizationEstimate, PointENU, Pose, Point3D, PerceptionObstacle, PerceptionObstacleType, PredictionObstacle, PredictionObstacles):
+def _local_view(ego, actors):
     from common.frame import LocalView
+    from protoclass.chassis import Chassis
+    from protoclass.header import Header
+    from protoclass.localization_estimate import LocalizationEstimate
+    from protoclass.point_enu import PointENU
+    from protoclass.pose import Pose
+    from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles
 
     predictions = []
     for actor in actors:
-        speed = 0.0 if actor.is_static else actor.v
+        obstacle = _obstacle_from_actor(actor)
+        trajectories = []
+        predicted = obstacle.Trajectory()
+        if predicted is not None and predicted.trajectory_point:
+            trajectories.append(predicted)
         predictions.append(
             PredictionObstacle(
-                perception_obstacle=PerceptionObstacle(
-                    id=_perception_id(actor.actor_id),
-                    type=PerceptionObstacleType.VEHICLE,
-                    position=Point3D(x=actor.x, y=actor.y, z=0.0),
-                    velocity=Point3D(
-                        x=speed * math.cos(actor.theta),
-                        y=speed * math.sin(actor.theta),
-                        z=0.0,
-                    ),
-                    length=actor.length,
-                    width=actor.width,
-                    height=1.5,
-                    theta=actor.theta,
-                ),
-                is_static=actor.is_static or abs(speed) < 1e-3,
+                perception_obstacle=obstacle.Perception(),
+                trajectory=trajectories,
+                is_static=obstacle.IsStatic(),
             )
         )
     return LocalView(
@@ -572,6 +548,55 @@ def _local_view(ego, actors, Chassis, Header, LocalizationEstimate, PointENU, Po
         chassis=Chassis(speed_mps=max(0.0, ego.v), header=Header(timestamp_sec=0.0)),
         prediction_obstacles=PredictionObstacles(prediction_obstacle=predictions),
     )
+
+
+def _reference_line_info_at(reference_line, lanes, ego_now: Actor):
+    """Place a fresh ReferenceLineInfo on a cached road, and the frame that owns it."""
+    from common.frame import Frame
+    from protoclass.vehicle_state import VehicleState
+    from reference_line.reference_line_info import ReferenceLineInfo
+
+    start = TrajectoryPoint(
+        path_point=PathPoint(
+            x=ego_now.x,
+            y=ego_now.y,
+            z=0.0,
+            theta=ego_now.theta,
+            kappa=ego_now.kappa,
+            s=0.0,
+            dkappa=0.0,
+            ddkappa=0.0,
+        ),
+        v=max(0.0, ego_now.v),
+        a=ego_now.a,
+        relative_time=0.0,
+    )
+    vehicle_state = VehicleState(x=ego_now.x, y=ego_now.y, heading=ego_now.theta)
+    reference_line_info = ReferenceLineInfo(vehicle_state, start, reference_line, lanes)
+    frame = Frame(0)
+    frame._reference_line_info = [reference_line_info]
+    reference_line_info._frame = frame
+    return reference_line_info, reference_line_info._adc_planning_point
+
+
+def _bind_obstacles(reference_line_info, obstacles, blocking_actor_id: Optional[str]) -> None:
+    reference_line_info.Init(obstacles, 10.0)
+    if blocking_actor_id is not None:
+        reference_line_info.SetBlockingObstacle(blocking_actor_id)
+    frame = reference_line_info._frame
+    frame._obstacles = {obstacle.Id(): obstacle for obstacle in obstacles}
+
+
+def _executed_state_is_usable(ego: Actor, point: TrajectoryPoint, dt: float) -> bool:
+    path_point = point.path_point
+    if path_point is None:
+        return False
+    values = (path_point.x, path_point.y, path_point.theta, point.v)
+    if any(value is None or value != value or abs(value) > 1.0e5 for value in values):
+        return False
+    jump = math.hypot((path_point.x or 0.0) - ego.x, (path_point.y or 0.0) - ego.y)
+    limit = max(2.0, (abs(ego.v) + 8.0) * max(dt, 0.1) * 5.0)
+    return jump <= limit
 
 
 def _pose(t: float, actor: Actor) -> PoseSample:
