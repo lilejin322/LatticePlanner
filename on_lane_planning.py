@@ -190,7 +190,7 @@ class OnLanePlanning:
         from common.path_bounds_decider import PathBoundsDecider
         from common.path_lane_borrow_decider import PathLaneBorrowDecider
         from common.planning_util import (
-            BuildCruiseSpeedData,
+            BuildLatticeLongitudinalSpeedData,
             BuildOvertakePathDataFromPathBoundary,
             BuildPathDataFromPathBoundary,
         )
@@ -247,7 +247,10 @@ class OnLanePlanning:
                 frame.ApplyPathDecider(planning_context=planning_context)
 
             reference_line_info.SetSpeedData(
-                BuildCruiseSpeedData(reference_line_info)
+                BuildLatticeLongitudinalSpeedData(
+                    reference_line_info,
+                    planning_start_point,
+                )
             )
             trajectory = DiscretizedTrajectory()
             if not reference_line_info.CombinePathAndSpeedProfile(

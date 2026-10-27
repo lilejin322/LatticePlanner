@@ -385,6 +385,7 @@ def to_plot_context(result: SimResult, scenario_name: str, title: str):
         ctx.traj_y.append(sample.y)
         ctx.traj_v.append(sample.v)
         ctx.traj_a.append(0.0)
+        ctx.traj_theta.append(sample.theta)
     if result.ego_trace:
         ctx.ego_x = result.ego_trace[0].x
         ctx.ego_y = result.ego_trace[0].y
