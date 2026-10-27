@@ -461,9 +461,14 @@ def BuildLatticeLongitudinalSpeedData(
 def _path_clears_obstacle(path_data, sl) -> bool:
     if path_data is None or path_data.Empty() or not path_data.frenet_frame_path:
         return False
-    if len(path_data.frenet_frame_path) < 2 or sl.start_s is None:
+    frenet_path = path_data.frenet_frame_path
+    if len(frenet_path) < 2 or sl.start_s is None:
         return False
-    point = path_data.frenet_frame_path.EvaluateByS(sl.start_s)
+    # EvaluateByS past the last knot returns that knot. A short lookahead
+    # must not be treated as having already passed an obstacle it never reaches.
+    if frenet_path[-1].s < sl.start_s - 1.0:
+        return False
+    point = frenet_path.EvaluateByS(sl.start_s)
     margin = config_module.EGO_VEHICLE_WIDTH * 0.5
     return point.l > (sl.end_l or 0.0) + margin or point.l < (sl.start_l or 0.0) - margin
 
