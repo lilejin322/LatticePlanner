@@ -20,7 +20,13 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
         super().__init__()
 
     @override
-    def Optimize(self, d_state: List[float], delta_s: float, d_bounds: List[Tuple[float, float]]) -> bool:
+    def Optimize(
+        self,
+        d_state: List[float],
+        delta_s: float,
+        d_bounds: List[Tuple[float, float]],
+        ref_d: List[float] | None = None,
+    ) -> bool:
         self._delta_s = delta_s
         P_data: List[float] = []
         P_indices: List[int] = []
@@ -107,9 +113,18 @@ class LateralOSQPOptimizer(LateralQPOptimizer):
         A_indptr.append(ind_p)
 
         q: List[float] = [0.0] * kNumParam
+        lateral_weight = (
+            config_module.FLAGS_weight_lateral_offset
+            + config_module.FLAGS_weight_lateral_obstacle_distance
+        )
         for i in range(kNumParam):
             if i < num_var:
-                q[i] = -2.0 * config_module.FLAGS_weight_lateral_obstacle_distance * (d_bounds[i][0] + d_bounds[i][1])
+                if ref_d is not None:
+                    q[i] = -2.0 * lateral_weight * ref_d[i]
+                else:
+                    q[i] = -2.0 * config_module.FLAGS_weight_lateral_obstacle_distance * (
+                        d_bounds[i][0] + d_bounds[i][1]
+                    )
 
         optimizer = OSQP()
         matrix_p = sparse.csc_matrix((P_data, P_indices, P_indptr), shape=(kNumParam, kNumParam))

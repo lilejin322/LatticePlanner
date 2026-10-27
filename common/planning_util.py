@@ -460,17 +460,6 @@ def BuildSpeedDataFromDiscretizedTrajectory(trajectory: DiscretizedTrajectory) -
 K_PATH_BOUNDS_DECIDER_RESOLUTION = 0.5
 
 
-def _smoothstep01(r: float) -> float:
-    """Quintic smoothstep (6r^5-15r^4+10r^3): unlike the classic cubic
-    smoothstep, both its first AND second derivatives vanish at r=0/r=1, so
-    splicing it onto a flat (constant) region on either side introduces no
-    curvature discontinuity -- the ramp-into-plateau transition used by
-    BuildOvertakePathDataFromPathBoundary stays visually smooth instead of
-    kinking at the splice points."""
-    r = max(0.0, min(1.0, r))
-    return r * r * r * (10.0 + r * (-15.0 + 6.0 * r))
-
-
 def _pass_l_from_boundary_point(pt, label: str) -> float:
     """Recommended lateral passing position within the borrow-lane corridor
     (biased toward the upper bound when borrowing left, lower bound when
@@ -490,94 +479,113 @@ def _target_l_from_path_boundary(boundary: PathBoundary) -> float:
     return sum(l_values) / len(l_values) if l_values else 0.0
 
 
-def _blocking_s_range_for_overtake(
-    reference_line_info: ReferenceLineInfo,
-    boundary: PathBoundary,
-    *,
-    nudge_before: float = 10.0,
-    return_after: float = 8.0,
-) -> tuple[float, float]:
-    """Infer the bypass s-range from the leading obstacle's SL boundary,
-    or from the corridor's narrowest segment."""
-    obs = reference_line_info.GetBlockingObstacle()
-    if obs is not None:
-        sl = obs.PerceptionSLBoundary()
-        if sl is not None and sl.start_s is not None and sl.end_s is not None:
-            return sl.start_s - nudge_before, sl.end_s + return_after
-
-    adc_end_s = reference_line_info.AdcSlBoundary().end_s
-    nearest_sl = None
-    for obstacle in reference_line_info.path_decision.obstacles.values():
-        if obstacle.IsVirtual() or not obstacle.IsStatic():
-            continue
-        sl = obstacle.PerceptionSLBoundary()
-        if sl is None or sl.end_s < adc_end_s:
-            continue
-        if sl.end_l < -config_module.FLAGS_half_vehicle_width or sl.start_l > config_module.FLAGS_half_vehicle_width:
-            continue
-        if nearest_sl is None or sl.start_s < nearest_sl.start_s:
-            nearest_sl = sl
-    if nearest_sl is not None:
-        return nearest_sl.start_s - nudge_before, nearest_sl.end_s + return_after
-
-    label = boundary.label or ""
-    adc_s = boundary.start_s() if boundary else 0.0
-    best_s = adc_s + 25.0
-    min_width = float("inf")
-    for pt in boundary:
-        if pt.s < adc_s + 5.0:
-            continue
-        width = pt.l_upper.l - pt.l_lower.l
-        if width < min_width:
-            min_width = width
-            best_s = pt.s
-    return best_s - nudge_before, best_s + return_after
+def _lateral_solution_inside_bounds(opt_d, d_bounds, slack: float = 0.05) -> bool:
+    if len(opt_d) != len(d_bounds):
+        return False
+    for value, (lo, hi) in zip(opt_d, d_bounds):
+        if value != value or value < lo - slack or value > hi + slack:
+            return False
+    return True
 
 
 def BuildOvertakePathDataFromPathBoundary(
     reference_line_info: ReferenceLineInfo,
     boundary: PathBoundary,
-    *,
-    nudge_ramp: float = 9.0,
-    return_ramp: float = 7.0,
 ) -> Optional[PathData]:
+    """Solve a lateral QP inside the borrow corridor.
+
+    Hard bounds are the PathBounds tube. The objective tracks the pass side
+    of that tube over a short lookahead, and the last knot is pinned there
+    so a 0.1s execution step cannot stay on a flat start. Replanning from
+    the executed heading continues the maneuver. This replaces the previous
+    hand-drawn smoothstep S-curve.
     """
-    Generate an S-shaped Frenet path from the borrow-lane PathBounds corridor:
-    ego lane -> bypass the blocking obstacle -> return.
-    Corresponds to the overtaking shape that PathBounds + the path optimizer
-    would produce in the C++ stack (approximated here in Python with a
-    lateral-offset profile).
-    """
-    if not boundary:
+    points = list(boundary)
+    if len(points) < 2:
         return None
 
+    delta_s = points[1].s - points[0].s
+    if delta_s <= 1e-3:
+        return None
     label = boundary.label or "regular/self"
-    s_out, s_return_done = _blocking_s_range_for_overtake(reference_line_info, boundary)
-    s_nudge_done = s_out + nudge_ramp
-    s_return_begin = s_return_done - return_ramp
+    d_bounds = []
+    ref_d = []
+    for pt in points:
+        lo = float(pt.l_lower.l)
+        hi = float(pt.l_upper.l)
+        if lo > hi:
+            lo, hi = hi, lo
+        if hi - lo < 0.05:
+            mid = 0.5 * (lo + hi)
+            lo, hi = mid - 0.025, mid + 0.025
+        d_bounds.append((lo, hi))
+        preferred = _pass_l_from_boundary_point(pt, label)
+        ref_d.append(min(max(preferred, lo), hi))
 
-    frenet_points: List[FrenetFramePoint] = []
-    for pt in boundary:
-        s = pt.s
-        pass_l = _pass_l_from_boundary_point(pt, label)
-        if s < s_out:
-            l = 0.0
-        elif s < s_nudge_done:
-            l = pass_l * _smoothstep01((s - s_out) / max(nudge_ramp, 1e-3))
-        elif s < s_return_begin:
-            l = pass_l
-        elif s < s_return_done:
-            l = pass_l * (1.0 - _smoothstep01((s - s_return_begin) / max(return_ramp, 1e-3)))
-        else:
-            l = 0.0
-        frenet_points.append(FrenetFramePoint(s=s, l=l, dl=0.0, ddl=0.0))
+    # A full-corridor QP postpones the borrow, so a 0.1s execution step never
+    # leaves the flat start. Keep a short lookahead and pin the last knot to
+    # the corridor's pass side so the immediate path has to move.
+    lookahead = max(delta_s * 2.0, 6.0)
+    keep = 1
+    for index, pt in enumerate(points):
+        if pt.s - points[0].s <= lookahead + 1e-6:
+            keep = index + 1
+    d_bounds = d_bounds[:keep]
+    ref_d = ref_d[:keep]
+    points = points[:keep]
+    end_l = ref_d[-1]
+    d_bounds[-1] = (end_l, end_l)
 
-    if not frenet_points:
+    adc = reference_line_info.AdcSlBoundary()
+    if adc is not None and adc.start_l is not None and adc.end_l is not None:
+        d0 = 0.5 * (adc.start_l + adc.end_l)
+    else:
+        d0 = 0.0
+    d0 = min(max(d0, d_bounds[0][0]), d_bounds[0][1])
+    planning_point = reference_line_info._adc_planning_point
+    heading = 0.0
+    if planning_point is not None and planning_point.path_point is not None:
+        heading = planning_point.path_point.theta or 0.0
+    ref_heading = reference_line_info.reference_line.GetReferencePoint(points[0].s).heading or 0.0
+    dl0 = math.tan(max(-1.0, min(1.0, heading - ref_heading)))
+    dl0 = max(-2.0, min(2.0, dl0))
+
+    from trajectory_generation.lateral_osqp_optimizer import LateralOSQPOptimizer
+
+    optimizer = LateralOSQPOptimizer()
+    old_weight = config_module.FLAGS_weight_lateral_obstacle_distance
+    old_jerk = config_module.FLAGS_lateral_third_order_derivative_max
+    # Offset weight 1 loses the race against a 0.1s execution step: each replan
+    # spreads the borrow over the whole corridor, so the vehicle only climbs a
+    # few centimeters per cycle and hits the obstacle-side wall. A stronger
+    # tracking weight makes the QP commit to the pass side early.
+    config_module.FLAGS_weight_lateral_obstacle_distance = max(old_weight, 100.0)
+    solved = False
+    try:
+        # The default jerk limit can make a sudden borrow corridor infeasible.
+        # OSQP then returns a finite but wildly infeasible primal; reject that
+        # and retry with a looser jerk limit until the path stays in the tube.
+        for jerk_limit in (old_jerk, 0.5, 1.0, 2.0, 10.0):
+            config_module.FLAGS_lateral_third_order_derivative_max = jerk_limit
+            if not optimizer.Optimize([d0, dl0, 0.0], delta_s, d_bounds, ref_d):
+                continue
+            if _lateral_solution_inside_bounds(optimizer._opt_d, d_bounds):
+                solved = True
+                break
+    finally:
+        config_module.FLAGS_weight_lateral_obstacle_distance = old_weight
+        config_module.FLAGS_lateral_third_order_derivative_max = old_jerk
+    if not solved or not optimizer._opt_d:
         return None
+
+    frenet_points = optimizer.GetFrenetFramePath()
+    start_s = points[0].s
+    for index, frenet_point in enumerate(frenet_points):
+        frenet_point.s = start_s + index * delta_s
 
     path_data = PathData()
     path_data.SetReferenceLine(reference_line_info.reference_line)
-    path_data.set_path_label(label)
+    path_data.set_path_label(boundary.label or "regular/self")
     blocking_id = boundary.blocking_obstacle_id
     if blocking_id:
         path_data.set_blocking_obstacle_id(blocking_id)

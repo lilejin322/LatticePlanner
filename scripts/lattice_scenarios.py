@@ -15,7 +15,6 @@ from scripts.closed_loop_sim import (
     Actor,
     SimResult,
     run_curved_road,
-    run_lane_change_road,
     run_on_lane_road,
     run_path_bounds_road,
     run_straight_road,
@@ -498,15 +497,18 @@ def s_overtake_stack_combine() -> SimResult:
     )
 
 
-# --- lane change (closed loop on both reference lines) ---
+# --- lane change: closed-loop borrow around a moving leader ---
 
 
 def s_lane_change_overtake_slow_npc() -> SimResult:
-    result = run_lane_change_road(
+    """Moving leader, replanned borrow corridor + lateral QP each cycle."""
+    result = run_path_bounds_road(
         "lane_change_overtake_slow_npc",
-        Actor("ego", x=0.0, v=10.0),
-        [Actor("npc_slow", x=20.0, v=3.0)],
-        horizon_s=2.0,
+        Actor("ego", x=0.0, v=8.0),
+        [Actor("npc_slow", x=22.0, v=3.0)],
+        horizon_s=4.0,
+        path_label="regular/left/forward",
+        blocking_actor_id="npc_slow",
     )
     return _finish(result, min_abs_y=1.0)
 
@@ -666,7 +668,7 @@ SCENARIOS: List[Scenario] = [
     ),
     Scenario(
         "lane_change_overtake_slow_npc",
-        "Closed loop: lattice chooses between the current lane and the lane-change reference",
+        "Closed loop: lateral QP borrow around a slower moving leader",
         "lane_change",
         s_lane_change_overtake_slow_npc,
     ),

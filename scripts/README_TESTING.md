@@ -62,7 +62,7 @@ python scripts/run_all_scenario_animations.py --list    # 预览哪些会出 GIF
 | `on_lane` | OnLanePlanning.RunOnce 端到端，含 PathBounds 借道超车分支 |
 | `stress` | 障碍距离、初速扫描（信息性，不作为失败门禁） |
 | `overtake` | **闭环超车**：每个周期重算 PathBounds 借道（或纯 Lattice 跟车），动画播的是执行轨迹 |
-| `lane_change` | **闭环**：当前车道和变道参考线每个周期都重新规划 |
+| `lane_change` | **闭环**：每个周期重算借道走廊，横向 QP 绕开慢车 |
 | `sim` | 空路、跟慢车、跟停这三条闭环回归 |
 
 **超车动画（推荐先看 `overtake_path_bounds_left`）**：
