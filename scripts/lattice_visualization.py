@@ -37,6 +37,7 @@ class PlotContext:
     traj_t: List[float] = field(default_factory=list)
     traj_v: List[float] = field(default_factory=list)
     traj_a: List[float] = field(default_factory=list)
+    traj_theta: List[float] = field(default_factory=list)
     path_x: List[float] = field(default_factory=list)
     path_y: List[float] = field(default_factory=list)
     obstacles: List[ObstacleDraw] = field(default_factory=list)
@@ -125,6 +126,7 @@ def context_from_reference_line_info(
             ctx.traj_y.append(pt.path_point.y)
             ctx.traj_v.append(pt.v)
             ctx.traj_a.append(pt.a)
+            ctx.traj_theta.append(pt.path_point.theta or 0.0)
             t = pt.relative_time
             if t is None:
                 t = float(i) * 0.1

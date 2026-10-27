@@ -113,14 +113,17 @@ def sample_trajectory_frames(
             ]
         return []
 
-    thetas: List[float] = []
-    for i in range(len(ctx.traj_x)):
-        if i + 1 < len(ctx.traj_x):
-            dx = ctx.traj_x[i + 1] - ctx.traj_x[i]
-            dy = ctx.traj_y[i + 1] - ctx.traj_y[i]
-            thetas.append(math.atan2(dy, dx) if abs(dx) + abs(dy) > 1e-9 else 0.0)
-        else:
-            thetas.append(thetas[-1] if thetas else 0.0)
+    if len(ctx.traj_theta) == len(ctx.traj_x) and ctx.traj_theta:
+        thetas = list(ctx.traj_theta)
+    else:
+        thetas = []
+        for i in range(len(ctx.traj_x)):
+            if i + 1 < len(ctx.traj_x):
+                dx = ctx.traj_x[i + 1] - ctx.traj_x[i]
+                dy = ctx.traj_y[i + 1] - ctx.traj_y[i]
+                thetas.append(math.atan2(dy, dx) if abs(dx) + abs(dy) > 1e-9 else 0.0)
+            else:
+                thetas.append(thetas[-1] if thetas else 0.0)
 
     t_end = ctx.traj_t[-1]
     samples: List[EgoSample] = []
@@ -265,7 +268,6 @@ def animate_context(
     fig.subplots_adjust(left=0.08, right=0.95, top=0.92, bottom=0.08)
 
     trail_line, = ax.plot([], [], color="#3498db", linewidth=2.5, zorder=5)
-    full_line, = ax.plot([], [], color="#aed6f1", linewidth=1.0, alpha=0.5, zorder=4)
     ego_patch = MplPolygon([[0, 0]], closed=True, facecolor="#2980b9", edgecolor="#1a5276", linewidth=2.0, zorder=8)
     ax.add_patch(ego_patch)
     time_text = ax.text(
@@ -288,9 +290,6 @@ def animate_context(
         )
         ax.add_patch(patch)
         moving_patches.append(patch)
-
-    if ctx.traj_x:
-        full_line.set_data(ctx.traj_x, ctx.traj_y)
 
     _draw_static_scene(ax, ctx)
     ax.set_xlim(xmin, xmax)

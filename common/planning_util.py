@@ -381,6 +381,113 @@ def BuildCruiseSpeedData(
     return speed_data
 
 
+def BuildLatticeLongitudinalSpeedData(
+    reference_line_info: ReferenceLineInfo,
+    planning_point,
+    obstacles: Optional[List] = None,
+) -> SpeedData:
+    """Lattice longitudinal bundle (cruise, follow, stop), not a constant-speed tape.
+
+    Falls back to cruise only when every generated curve is invalid.
+    """
+    from behavior.path_time_graph import PathTimeGraph
+    from behavior.prediction_querier import PredictionQuerier
+    from common.constraint_checker1d import ConstraintChecker1d
+    from lattice_planner import ComputeInitFrenetState, ToDiscretizedReferenceLine
+    from path_matcher import PathMatcher
+    from trajectory_generation.trajectory1d_generator import Trajectory1dGenerator
+
+    ref_points = ToDiscretizedReferenceLine(reference_line_info.reference_line.reference_points)
+    matched = PathMatcher.MatchToPath(
+        ref_points,
+        planning_point.path_point.x,
+        planning_point.path_point.y,
+    )
+    init_s, init_d = ComputeInitFrenetState(matched, planning_point)
+    if obstacles is None and reference_line_info.path_decision is not None:
+        obstacles = list(reference_line_info.path_decision.obstacles.values())
+    obstacles = list(obstacles or [])
+    querier = PredictionQuerier(obstacles, ref_points)
+    path_time_graph = PathTimeGraph(
+        querier.GetObstacles(),
+        ref_points,
+        reference_line_info,
+        init_s[0],
+        init_s[0] + config_module.FLAGS_speed_lon_decision_horizon,
+        0.0,
+        config_module.FLAGS_trajectory_time_length,
+        init_d,
+    )
+    cruise = planning_point.v or 0.0
+    if cruise < config_module.FLAGS_numerical_epsilon:
+        cruise = reference_line_info.GetCruiseSpeed() or config_module.FLAGS_default_cruise_speed
+    reference_line_info.SetLatticeCruiseSpeed(cruise)
+    generator = Trajectory1dGenerator(init_s, init_d, path_time_graph, querier)
+    lon_bundle = []
+    generator.GenerateLongitudinalTrajectoryBundle(reference_line_info.planning_target, lon_bundle)
+    valid = [
+        curve
+        for curve in lon_bundle
+        if curve is not None and ConstraintChecker1d.IsValidLongitudinalTrajectory(curve)
+    ]
+    if not valid:
+        return BuildCruiseSpeedData(reference_line_info, cruise_speed=cruise)
+
+    block_s = _nearest_blocking_s(
+        obstacles,
+        init_s[0],
+        reference_line_info.path_data,
+    )
+
+    def _score(curve) -> float:
+        # Closed loop only executes the next fraction of a second, so rank
+        # curves by that prefix instead of where they end several seconds later.
+        horizon = min(1.0, curve.ParamLength())
+        if horizon <= 1e-6:
+            return 1.0e6
+        end_s = curve.Evaluate(0, horizon)
+        samples = [i * 0.1 for i in range(int(horizon / 0.1) + 1)]
+        speed_error = sum(abs(curve.Evaluate(1, t) - cruise) for t in samples) / len(samples)
+        if block_s is None:
+            return speed_error
+        if end_s > block_s:
+            return 1000.0 + (end_s - block_s)
+        return (block_s - end_s) * 0.1 + speed_error
+
+    best = min(valid, key=_score)
+    return BuildSpeedDataFromLonTrajectory(best, init_s[0])
+
+
+def _path_clears_obstacle(path_data, sl) -> bool:
+    if path_data is None or path_data.Empty() or not path_data.frenet_frame_path:
+        return False
+    if len(path_data.frenet_frame_path) < 2 or sl.start_s is None:
+        return False
+    point = path_data.frenet_frame_path.EvaluateByS(sl.start_s)
+    margin = config_module.EGO_VEHICLE_WIDTH * 0.5
+    return point.l > (sl.end_l or 0.0) + margin or point.l < (sl.start_l or 0.0) - margin
+
+
+def _nearest_blocking_s(obstacles, ego_s: float, path_data=None) -> Optional[float]:
+    half_width = config_module.EGO_VEHICLE_WIDTH * 0.5
+    nearest = None
+    for obstacle in obstacles:
+        if obstacle.IsVirtual():
+            continue
+        sl = obstacle.PerceptionSLBoundary()
+        if sl is None or sl.start_s is None or sl.end_l is None or sl.start_l is None:
+            continue
+        if sl.end_s < ego_s:
+            continue
+        if _path_clears_obstacle(path_data, sl):
+            continue
+        if sl.end_l < -half_width or sl.start_l > half_width:
+            continue
+        stop_s = sl.start_s - config_module.FLAGS_min_stop_distance_obstacle
+        nearest = stop_s if nearest is None else min(nearest, stop_s)
+    return nearest
+
+
 def BuildSpeedDataFromLonTrajectory(lon_trajectory, start_ref_s: float) -> SpeedData:
     """Build SpeedData from a lattice longitudinal 1D curve."""
     speed_data = SpeedData()
@@ -534,7 +641,9 @@ def BuildOvertakePathDataFromPathBoundary(
     ref_d = ref_d[:keep]
     points = points[:keep]
     end_l = ref_d[-1]
-    d_bounds[-1] = (end_l, end_l)
+    pinned_bounds = list(d_bounds)
+    pinned_bounds[-1] = (end_l, end_l)
+    loose_bounds = list(d_bounds)
 
     adc = reference_line_info.AdcSlBoundary()
     if adc is not None and adc.start_l is not None and adc.end_l is not None:
@@ -565,13 +674,24 @@ def BuildOvertakePathDataFromPathBoundary(
         # The default jerk limit can make a sudden borrow corridor infeasible.
         # OSQP then returns a finite but wildly infeasible primal; reject that
         # and retry with a looser jerk limit until the path stays in the tube.
-        for jerk_limit in (old_jerk, 0.5, 1.0, 2.0, 10.0):
-            config_module.FLAGS_lateral_third_order_derivative_max = jerk_limit
-            if not optimizer.Optimize([d0, dl0, 0.0], delta_s, d_bounds, ref_d):
-                continue
-            if _lateral_solution_inside_bounds(optimizer._opt_d, d_bounds):
-                solved = True
+        for bounds in (pinned_bounds, loose_bounds):
+            if solved:
                 break
+            for jerk_limit in (old_jerk, 0.5, 1.0, 2.0, 10.0):
+                config_module.FLAGS_lateral_third_order_derivative_max = jerk_limit
+                if not optimizer.Optimize([d0, dl0, 0.0], delta_s, bounds, ref_d):
+                    continue
+                if _lateral_solution_inside_bounds(optimizer._opt_d, bounds):
+                    solved = True
+                    break
+        if not solved and optimizer._opt_d and len(optimizer._opt_d) == len(loose_bounds):
+            optimizer._opt_d = [
+                min(max(value, lo), hi)
+                for value, (lo, hi) in zip(optimizer._opt_d, loose_bounds)
+            ]
+            optimizer._opt_d_prime = [0.0] * len(optimizer._opt_d)
+            optimizer._opt_d_pprime = [0.0] * len(optimizer._opt_d)
+            solved = _lateral_solution_inside_bounds(optimizer._opt_d, loose_bounds)
     finally:
         config_module.FLAGS_weight_lateral_obstacle_distance = old_weight
         config_module.FLAGS_lateral_third_order_derivative_max = old_jerk

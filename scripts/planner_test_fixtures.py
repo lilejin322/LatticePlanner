@@ -489,7 +489,7 @@ def apply_path_bounds_overtake_trajectory(
     from common.path_bounds_decider import PathBoundsDecider
     from common.planning_context import PlanningContext
     from common.planning_util import (
-        BuildCruiseSpeedData,
+        BuildLatticeLongitudinalSpeedData,
         BuildOvertakePathDataFromPathBoundary,
     )
     from protoclass.adc_trajectory import ADCTrajectory
@@ -521,9 +521,11 @@ def apply_path_bounds_overtake_trajectory(
         return False, "BuildOvertakePathData failed"
 
     reference_line_info.SetPathData(path_data)
-    reference_line_info.SetLatticeCruiseSpeed(cruise_v)
     reference_line_info.SetSpeedData(
-        BuildCruiseSpeedData(reference_line_info, cruise_speed=cruise_v)
+        BuildLatticeLongitudinalSpeedData(
+            reference_line_info,
+            start_point,
+        )
     )
     trajectory = DiscretizedTrajectory()
     ok = reference_line_info.CombinePathAndSpeedProfile(
@@ -568,7 +570,7 @@ def apply_borrow_path_trajectory(
     from common.discretized_trajectory import DiscretizedTrajectory
     from common.path_bounds_decider import PathBoundsDecider, BuildCandidatePathsFromBoundaries
     from common.planning_context import PlanningContext
-    from common.planning_util import BuildCruiseSpeedData
+    from common.planning_util import BuildLatticeLongitudinalSpeedData
 
     ctx = PlanningContext()
     if lane_borrow:
@@ -588,8 +590,9 @@ def apply_borrow_path_trajectory(
         return False, f"no path {path_label!r} in {labels}"
 
     reference_line_info.SetPathData(path_data)
-    reference_line_info.SetLatticeCruiseSpeed(8.0)
-    reference_line_info.SetSpeedData(BuildCruiseSpeedData(reference_line_info))
+    reference_line_info.SetSpeedData(
+        BuildLatticeLongitudinalSpeedData(reference_line_info, start_point)
+    )
     trajectory = DiscretizedTrajectory()
     ok = reference_line_info.CombinePathAndSpeedProfile(
         0.0, start_point.path_point.s, trajectory
