@@ -4,7 +4,7 @@ Generate scenario animations for all Lattice scenario cases (default 0.1s/frame 
 
 Equivalent to running planning with --animate for every scenario in
 scripts/lattice_scenarios.py, skipping scenarios that cannot produce a
-trajectory (e.g. stress sweeps, PathBounds-only scenarios, etc.).
+trajectory (stress sweeps do not publish one).
 
 Usage:
   .venv/bin/python scripts/run_all_scenario_animations.py
@@ -41,7 +41,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--tag",
-        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "sim", "all"],
+        choices=["lattice", "stress", "sim", "all"],
         default="all",
         help="Only process one category of scenarios (default: all)",
     )
@@ -92,17 +92,10 @@ def main() -> int:
     if args.list:
         print(f"{len(scenarios)} scenarios total (tag={args.tag}):\n")
         for s in scenarios:
-            hint = "animatable" if s.category in ("lattice", "on_lane", "overtake", "lane_change") else "may have no trajectory"
+            hint = "animatable" if s.category in ("lattice", "sim") else "may have no trajectory"
             if not s.expect_ok and not s.informational:
                 hint = "usually skipped"
-            if s.name == "decider_bounds_assessment":
-                hint = "animatable"
-            elif s.name in (
-                "decider_lane_borrow_bounds",
-                "decider_cruise_speed_data",
-            ):
-                hint = "usually skipped"
-            elif s.category == "stress":
+            if s.category == "stress":
                 hint = "skipped (no trajectory)"
             print(f"  {s.category:8s} {s.name:36s} {hint}  {s.description}")
         return 0
@@ -150,7 +143,7 @@ def main() -> int:
             print("  (has a trajectory but no animation was generated)")
         else:
             skipped += 1
-            print("  (animation skipped: no trajectory, or decider/stress only)")
+            print("  (animation skipped: no trajectory)")
         if not out.passed and not out.scenario.informational:
             test_failed += 1
 

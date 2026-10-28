@@ -34,11 +34,13 @@ def plan_on_centerline(
     left_width: float = 1.75,
     right_width: float = 1.75,
     reference_line: Optional[ReferenceLine] = None,
+    obstacles: Optional[Sequence] = None,
 ):
     """Plan one lattice cycle on ``center_xy``.
 
     ``ego`` and ``actors`` are already in the planner frame. Pass the same
-    ``reference_line`` every cycle so the centerline is built once. Returns
+    ``reference_line`` every cycle so the centerline is built once. Pass
+    ``obstacles`` when the caller already built them. Returns
     ``(ok, trajectory, type_name, obstacles)``.
     """
     from scripts.closed_loop_sim import _bind_obstacles, _obstacle_from_actor
@@ -67,7 +69,10 @@ def plan_on_centerline(
     frame = Frame(0)
     frame._reference_line_info = [reference_line_info]
     reference_line_info._frame = frame
-    obstacles = [_obstacle_from_actor(actor) for actor in actors]
+    if obstacles is None:
+        obstacles = [_obstacle_from_actor(actor) for actor in actors]
+    else:
+        obstacles = list(obstacles)
     _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
     ok = LatticePlanner().PlanOnReferenceLine(
         reference_line_info._adc_planning_point, frame, reference_line_info

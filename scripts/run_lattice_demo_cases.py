@@ -30,7 +30,7 @@ DEMO_CASE_NAMES = [
     "close_obstacle_no_backup",
     "close_obstacle_with_backup",
     "higher_speed_cruise",
-    "decider_bounds_assessment",
+    "stopped_start",
 ]
 
 

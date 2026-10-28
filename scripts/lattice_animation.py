@@ -345,8 +345,7 @@ def default_animation_path(plot_dir: Path, scenario_name: str) -> Path:
 def main() -> int:
     print(
         "lattice_animation.py is the animation tool module, please generate animations through the scenario runner:\n"
-        "  python scripts/run_lattice_scenario_cases.py open_road --animate\n"
-        "  python scripts/run_overtake_animations.py"
+        "  python scripts/run_lattice_scenario_cases.py open_road --animate"
     )
     return 0
 

@@ -16,11 +16,9 @@ from typing import List, Optional, Sequence, Tuple
 import numpy as np
 import shapely
 
-import config
 from scripts.closed_loop_sim import Actor
 from scripts.commonroad_drive import (
     _longest_lanelet,
-    _polyline_length,
     _resample,
     load_scenario,
     occupancy_clearance,
@@ -65,10 +63,7 @@ class OfficialDrive:
     collision_fn: object
 
     def close(self) -> None:
-        from common.hd_map import HDMapUtil
-
-        if self.frame.hdmap is not None:
-            HDMapUtil.SetBaseMap(self.previous_map)
+        return None
 
     def annotate(self, result):
         frame = self.frame
@@ -103,14 +98,10 @@ def open_official_drive(
 ) -> OfficialDrive:
     """Snap ``ego`` onto the official lanelet and follow actors along it.
 
-    ``role`` is ``through`` for the long lane, ``borrow-left``, or ``borrow-right``.
+    ``role`` is ``through``, the longest loaded lanelet.
     """
-    from common.hd_map import HDMapUtil
-
     frame = official_frame(role)
-    previous = HDMapUtil.BaseMap()
-    if frame.hdmap is not None:
-        HDMapUtil.SetBaseMap(frame.hdmap)
+    previous = None
     placed = []
     for actor in actors:
         placed.append(
@@ -159,23 +150,14 @@ def open_official_drive(
 
 
 def official_frame(role: str) -> OfficialFrame:
+    if role != "through":
+        raise ValueError(f"unknown official-map role {role!r}")
     cached = _CACHE.get(role)
     if cached is not None:
         return cached
     scenario, _problems = _official_scenario()
-    if role == "through":
-        lanelet = _longest_lanelet(scenario.lanelet_network)
-        neighbor = None
-        side = None
-    elif role == "borrow-left":
-        lanelet, neighbor = _parallel_pair(scenario, "left")
-        side = "left"
-    elif role == "borrow-right":
-        lanelet, neighbor = _parallel_pair(scenario, "right")
-        side = "right"
-    else:
-        raise ValueError(f"unknown official-map role {role!r}")
-    frame = _build_frame(scenario, lanelet, neighbor, side)
+    lanelet = _longest_lanelet(scenario.lanelet_network)
+    frame = _build_frame(scenario, lanelet)
     _CACHE[role] = frame
     return frame
 
@@ -218,174 +200,26 @@ def _official_scenario():
     return _CACHE["scenario"]
 
 
-def _parallel_pair(scenario, side: str):
-    network = scenario.lanelet_network
-    best = None
-    best_key = None
-    for lanelet in network.lanelets:
-        if side == "left":
-            neighbor_id = lanelet.adj_left if lanelet.adj_left_same_direction else None
-        else:
-            neighbor_id = lanelet.adj_right if lanelet.adj_right_same_direction else None
-        if neighbor_id is None:
-            continue
-        neighbor = network.find_lanelet_by_id(neighbor_id)
-        if neighbor is None:
-            continue
-        distances = _center_distances(lanelet.center_vertices, neighbor.center_vertices)
-        if len(distances) < 2:
-            continue
-        median = float(np.median(distances))
-        spread = float(max(distances) - min(distances))
-        if median < 2.8 or median > 4.5 or spread > 1.0:
-            continue
-        key = (_polyline_length(lanelet.center_vertices), -spread, -lanelet.lanelet_id)
-        if best_key is None or key > best_key:
-            best_key = key
-            best = (lanelet, neighbor)
-    if best is None:
-        raise ValueError(f"converted {_MAP_NAME} has no same-direction {side} neighbor")
-    return best
-
-
-def _center_distances(center, other) -> List[float]:
-    line = shapely.LineString(np.asarray(other, dtype=float))
-    return [
-        float(line.distance(shapely.Point(float(point[0]), float(point[1]))))
-        for point in np.asarray(center, dtype=float)
-    ]
-
-
-def _build_frame(scenario, lanelet, neighbor, side: Optional[str]) -> OfficialFrame:
-    from common.hd_map import HDMap, HDMapUtil
-    from common.lane_types import LaneSegment
-    from common.path import Path as MapPath
-    from common.route_segments import RouteSegments
-    from reference_line import ReferenceLine
-
+def _build_frame(scenario, lanelet) -> OfficialFrame:
     center_world, stations = _resample(np.asarray(lanelet.center_vertices, dtype=float), 1.0)
     origin = center_world[0].copy()
     center = center_world - origin
     left_width = _distance_samples(center_world, lanelet.left_vertices)
     right_width = _distance_samples(center_world, lanelet.right_vertices)
-    left_half = float(np.median(left_width))
-    right_half = float(np.median(right_width))
-    road_left = list(left_width)
-    road_right = list(right_width)
-    neighbor_local = None
-    lanelet_ids = [lanelet.lanelet_id]
-    left_ids: List[str] = []
-    right_ids: List[str] = []
-    hdmap = HDMap()
-    if neighbor is not None and side is not None:
-        neighbor_world, neighbor_stations = _resample(np.asarray(neighbor.center_vertices, dtype=float), 1.0)
-        neighbor_local = neighbor_world - origin
-        neighbor_id = f"cr_{neighbor.lanelet_id}"
-        lanelet_ids.append(neighbor.lanelet_id)
-        neighbor_left = _distance_samples(neighbor_world, neighbor.left_vertices)
-        neighbor_right = _distance_samples(neighbor_world, neighbor.right_vertices)
-        if side == "left":
-            left_ids = [neighbor_id]
-            road_left = _distance_samples(center_world, neighbor.left_vertices)
-        else:
-            right_ids = [neighbor_id]
-            road_right = _distance_samples(center_world, neighbor.right_vertices)
-        hdmap.AddLane(
-            _apollo_lane(
-                neighbor_id,
-                neighbor_local,
-                neighbor_stations,
-                neighbor_left,
-                neighbor_right,
-                neighbor_left,
-                neighbor_right,
-                [],
-                [],
-            )
-        )
-    ego_id = f"cr_{lanelet.lanelet_id}"
-    ego_lane = _apollo_lane(
-        ego_id,
-        center,
-        stations,
-        left_width,
-        right_width,
-        road_left,
-        road_right,
-        left_ids,
-        right_ids,
-    )
-    lane_info = hdmap.AddLane(ego_lane)
-    HDMapUtil.SetBaseMap(hdmap)
-    end_s = float(lane_info.total_length)
-    end_s = end_s - 1.0 if end_s > 2.0 else end_s * 0.5
-    route = RouteSegments()
-    route.SetIsOnSegment(True)
-    route.SetId(ego_id)
-    route.append(LaneSegment(lane_info, 0.0, end_s))
-    reference = ReferenceLine(MapPath(route))
     return OfficialFrame(
         scenario=scenario,
-        hdmap=hdmap,
-        reference_line=reference,
-        lanes=route,
+        hdmap=None,
+        reference_line=None,
+        lanes=None,
         center=center,
         stations=stations,
         origin_x=float(origin[0]),
         origin_y=float(origin[1]),
-        lanelet_ids=lanelet_ids,
-        neighbor_xy=neighbor_local,
+        lanelet_ids=[lanelet.lanelet_id],
+        neighbor_xy=None,
         length=float(stations[-1]),
-        left_width=left_half,
-        right_width=right_half,
-    )
-
-
-def _apollo_lane(
-    lane_id,
-    local_xy,
-    stations,
-    left_width,
-    right_width,
-    road_left,
-    road_right,
-    left_ids,
-    right_ids,
-):
-    from protoclass.lane import Curve, CurveSegment, Lane, LaneSampleAssociation, LineSegment
-    from protoclass.point_enu import PointENU
-
-    count = min(
-        len(local_xy),
-        len(stations),
-        len(left_width),
-        len(right_width),
-        len(road_left),
-        len(road_right),
-    )
-    points = [PointENU(x=float(local_xy[index][0]), y=float(local_xy[index][1])) for index in range(count)]
-    left_sample = []
-    right_sample = []
-    left_road = []
-    right_road = []
-    for index in range(count):
-        station = float(stations[index])
-        left_sample.append(LaneSampleAssociation(s=station, width=max(float(left_width[index]), 1e-3)))
-        right_sample.append(LaneSampleAssociation(s=station, width=max(float(right_width[index]), 1e-3)))
-        left_road.append(LaneSampleAssociation(s=station, width=max(float(road_left[index]), 1e-3)))
-        right_road.append(LaneSampleAssociation(s=station, width=max(float(road_right[index]), 1e-3)))
-    return Lane(
-        id=Lane.Id(lane_id),
-        central_curve=Curve(segment=[CurveSegment(curve_type=LineSegment(point=points))]),
-        length=float(stations[count - 1]) if count else 0.0,
-        speed_limit=config.FLAGS_default_cruise_speed,
-        left_sample=left_sample,
-        right_sample=right_sample,
-        left_road_sample=left_road,
-        right_road_sample=right_road,
-        left_neighbor_forward_lane_id=[Lane.Id(item) for item in left_ids],
-        right_neighbor_forward_lane_id=[Lane.Id(item) for item in right_ids],
-        type=Lane.LaneType.CITY_DRIVING,
+        left_width=float(np.median(left_width)),
+        right_width=float(np.median(right_width)),
     )
 
 
