@@ -24,14 +24,6 @@ FLAGS_lateral_acceleration_bound = 4.0
 FLAGS_lateral_jerk_bound = 4.0
 FLAGS_kappa_bound = 0.1979
 
-# ST boundary and obstacle decision parameters.
-FLAGS_st_max_s = 100.0
-FLAGS_st_max_t = 8.0
-FLAGS_static_obstacle_nudge_l_buffer = 0.3
-FLAGS_nonstatic_obstacle_nudge_l_buffer = 0.4
-FLAGS_max_stop_distance_obstacle = 10.0
-FLAGS_min_stop_distance_obstacle = 6.0
-
 # Lattice planner core.
 FLAGS_numerical_epsilon = 1e-6
 FLAGS_default_cruise_speed = 11.18  # planning.conf overrides 5.0.
@@ -40,7 +32,6 @@ FLAGS_trajectory_space_resolution = 1.0
 FLAGS_speed_lon_decision_horizon = 200.0
 FLAGS_num_velocity_sample = 6
 FLAGS_enable_backup_trajectory = True
-FLAGS_backup_trajectory_cost = 1000.0
 FLAGS_min_velocity_sample_gap = 1.0
 FLAGS_lon_collision_buffer = 2.0
 FLAGS_lat_collision_buffer = 0.1
