@@ -1,6 +1,5 @@
 from typing import List
-from common.map_path_point import MapPathPoint
-from copy import deepcopy
+from common.map_path_point import LaneWaypoint, MapPathPoint
 from protoclass.path_point import PathPoint
 
 class ReferencePoint(MapPathPoint):
@@ -16,8 +15,13 @@ class ReferencePoint(MapPathPoint):
         :param float kappa: kappa
         :param float dkappa: dkappa
         """
-        
-        self.__dict__ = deepcopy(map_path_point.__dict__)
+
+        # Share the lane. Copy coordinates and waypoint s/l so this point can
+        # be edited without cloning LaneInfo, which is what made every
+        # interpolated query copy the whole lane.
+        self.__dict__ = dict(map_path_point.__dict__)
+        waypoints = getattr(map_path_point, "_lane_waypoints", None) or []
+        self._lane_waypoints = [LaneWaypoint(wp.lane, wp.s, wp.l) for wp in waypoints]
         self._kappa: float = kappa
         self._dkappa: float = dkappa
 

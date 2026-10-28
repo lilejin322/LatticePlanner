@@ -248,3 +248,8 @@ z3/*
 
 # CommonRoad simulation artifacts.
 scripts/output/commonroad/
+
+# Generated playback. Recreate with scripts/run_lattice_scenario_cases.py --animate.
+scripts/output/animations/
+scripts/output/frames/
+scripts/output/mpl-cache/
