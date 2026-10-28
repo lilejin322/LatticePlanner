@@ -252,6 +252,9 @@ scripts/output/commonroad/
 # Public CommonRoad scenario XML. Fetch with scripts/fetch_commonroad_scenarios.py.
 data/commonroad-scenarios/
 
+# Dataset sweep report. Recreate with scripts/run_lattice_dataset_sweep.py.
+scripts/output/lattice_sweep/
+
 # Generated playback. Recreate with scripts/run_lattice_scenario_cases.py --animate.
 scripts/output/animations/
 scripts/output/frames/
