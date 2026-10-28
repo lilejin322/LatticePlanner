@@ -101,6 +101,5 @@ FLAGS_default_highway_speed_limit = 29.06
 FLAGS_use_navigation_mode = False
 FLAGS_use_multi_thread_to_add_obstacles = False
 FLAGS_enable_lattice_path_assessment = False
-FLAGS_cost_non_priority_reference_line = 5.0
 FLAGS_planning_loop_rate = 10.0
 FLAGS_enable_lateral_jerk_check = False

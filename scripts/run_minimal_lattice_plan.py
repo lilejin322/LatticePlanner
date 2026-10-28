@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a minimal lattice planning smoke test on a straight centerline."""
+"""Run a minimal lattice planning smoke test on a straight CommonRoad lanelet."""
 
 from pathlib import Path
 import sys
@@ -7,26 +7,15 @@ import sys
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
+import config as config_module
+from lanelet_path import path_from_lanelet, straight_lanelet
 from lattice_planner import LatticePlanner
-from common.frame import Frame
-from reference_line.reference_line_info import ReferenceLineInfo
-from common.route_segments import RouteSegments
-from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
-from protoclass.vehicle_state import VehicleState
-import config as config_module
-from scripts.lattice_commonroad import _reference_line
-
-
-def build_reference_line(length: float = 100.0):
-    center = [(float(index), 0.0) for index in range(int(length) + 1)]
-    return _reference_line(center, 2.0, 2.0), RouteSegments()
 
 
 def main() -> int:
-    reference_line, route_segments = build_reference_line()
-
+    path = path_from_lanelet(straight_lanelet(100.0, 2.0, 2.0), config_module.FLAGS_default_cruise_speed)
     planning_start_point = TrajectoryPoint(
         path_point=PathPoint(
             x=0.0,
@@ -42,34 +31,16 @@ def main() -> int:
         a=0.0,
         relative_time=0.0,
     )
-
-    vehicle_state = VehicleState()
-    vehicle_state.x = 0.0
-    vehicle_state.y = 0.0
-    vehicle_state.heading = 0.0
-
-    reference_line_info = ReferenceLineInfo(
-        vehicle_state, planning_start_point, reference_line, route_segments
+    ok, trajectory, _traj_type = LatticePlanner().PlanOnLanelet(
+        planning_start_point,
+        [],
+        path.points,
+        path.lane_width,
+        path.speed_at(0.0),
     )
-
-    frame = Frame(0)
-    frame._reference_line_info = [reference_line_info]
-    frame._obstacles = {}
-    if not reference_line_info.Init([], config_module.FLAGS_default_cruise_speed):
-        print("failed to initialize reference line info", file=sys.stderr)
-        return 1
-
-    ok = LatticePlanner().Plan(planning_start_point, frame, ADCTrajectory())
-    if not ok:
+    if not ok or trajectory is None or len(trajectory) == 0:
         print("minimal lattice plan failed", file=sys.stderr)
         return 1
-
-    if config_module.FLAGS_enable_lattice_path_assessment:
-        assert reference_line_info.path_data is not None
-        debug_paths = reference_line_info.debug.planning_data.path
-        if debug_paths:
-            assert any(p.name == "Planning PathData" for p in debug_paths)
-
     print("minimal lattice plan succeeded")
     return 0
 

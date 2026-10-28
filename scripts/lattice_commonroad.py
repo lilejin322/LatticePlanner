@@ -1,52 +1,50 @@
-"""Run the existing lattice core on a CommonRoad centerline.
+"""Run the lattice core on a CommonRoad lanelet.
 
 Polynomial bundles, the evaluator, the combiner, and the constraint checks stay
-in the lattice modules. This file only turns a lanelet centerline and the
-current actor poses into the reference line those modules already consume.
+in the lattice modules. This file only turns the lanelet and the current actor
+poses into the centerline and obstacles those modules already consume.
 """
 
 from __future__ import annotations
 
-import math
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 
 import config
-from common.frame import Frame
-from common.map_path_point import MapPathPoint
-from common.route_segments import RouteSegments
-from common.vec2d import Vec2d
+from lanelet_path import LaneletPath, path_from_lanelet
 from lattice_planner import LatticePlanner
-from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
-from protoclass.vehicle_state import VehicleState
-from reference_line import ReferenceLine
-from reference_line.reference_line_info import ReferenceLineInfo
-from reference_line.reference_point import ReferencePoint
 
 
-def plan_on_centerline(
-    center_xy,
+def plan_on_lanelet(
+    lanelet,
     ego,
     actors: Sequence,
     blocking_actor_id: Optional[str] = None,
     *,
-    left_width: float = 1.75,
-    right_width: float = 1.75,
-    reference_line: Optional[ReferenceLine] = None,
+    path: Optional[LaneletPath] = None,
     obstacles: Optional[Sequence] = None,
+    speed_limit: Optional[float] = None,
 ):
-    """Plan one lattice cycle on ``center_xy``.
+    """Plan one lattice cycle on ``lanelet``.
 
-    ``ego`` and ``actors`` are already in the planner frame. Pass the same
-    ``reference_line`` every cycle so the centerline is built once. Pass
-    ``obstacles`` when the caller already built them. Returns
+    Pass the same ``path`` every cycle so the centerline is built once. Pass
+    ``obstacles`` when the caller already built them from recorded states.
+    ``blocking_actor_id`` is accepted for callers that still name a leader;
+    the ST graph already stops for vehicles on the lanelet. Returns
     ``(ok, trajectory, type_name, obstacles)``.
     """
-    from scripts.closed_loop_sim import _bind_obstacles, _obstacle_from_actor
+    del blocking_actor_id
+    from scripts.closed_loop_sim import _obstacle_from_actor
 
-    if reference_line is None:
-        reference_line = _reference_line(center_xy, left_width, right_width)
+    if path is None:
+        path = path_from_lanelet(
+            lanelet, config.FLAGS_default_cruise_speed if speed_limit is None else speed_limit
+        )
+    if obstacles is None:
+        obstacles = [_obstacle_from_actor(actor) for actor in actors]
+    else:
+        obstacles = list(obstacles)
     start = TrajectoryPoint(
         path_point=PathPoint(
             x=ego.x,
@@ -62,78 +60,8 @@ def plan_on_centerline(
         a=ego.a,
         relative_time=0.0,
     )
-    vehicle_state = VehicleState(x=ego.x, y=ego.y, heading=ego.theta)
-    reference_line_info = ReferenceLineInfo(
-        vehicle_state, start, reference_line, RouteSegments(), share_map=True
+    ok, trajectory, traj_type = LatticePlanner().PlanOnLanelet(
+        start, obstacles, path.points, path.lane_width, path.speed_at(0.0)
     )
-    frame = Frame(0)
-    frame._reference_line_info = [reference_line_info]
-    reference_line_info._frame = frame
-    if obstacles is None:
-        obstacles = [_obstacle_from_actor(actor) for actor in actors]
-    else:
-        obstacles = list(obstacles)
-    _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
-    ok = LatticePlanner().PlanOnReferenceLine(
-        reference_line_info._adc_planning_point, frame, reference_line_info
-    )
-    trajectory = reference_line_info.trajectory
-    traj_type = getattr(reference_line_info, "trajectory_type", None)
     type_name = traj_type.name if traj_type is not None else "UNKNOWN"
     return ok, trajectory, type_name, obstacles
-
-
-def _reference_line(center_xy, left_width: float, right_width: float) -> ReferenceLine:
-    import logging
-
-    points = _reference_points(center_xy)
-    # The centerline has no Apollo lane waypoints. Width is applied just below.
-    disabled = logging.root.manager.disable
-    logging.disable(logging.WARNING)
-    try:
-        reference_line = ReferenceLine(points)
-    finally:
-        logging.disable(disabled)
-    reference_line.AddSpeedLimit(0.0, reference_line.Length(), config.FLAGS_default_cruise_speed)
-    _set_width(reference_line, left_width, right_width)
-    return reference_line
-
-
-def _reference_points(center_xy) -> List[ReferencePoint]:
-    center = [(float(point[0]), float(point[1])) for point in center_xy]
-    if len(center) < 2:
-        raise ValueError("centerline needs at least two points")
-    headings = []
-    for index, (x, y) in enumerate(center):
-        if index + 1 < len(center):
-            dx = center[index + 1][0] - x
-            dy = center[index + 1][1] - y
-        else:
-            dx = x - center[index - 1][0]
-            dy = y - center[index - 1][1]
-        headings.append(math.atan2(dy, dx))
-    points = []
-    for index, (x, y) in enumerate(center):
-        if index + 1 < len(center):
-            step = math.hypot(center[index + 1][0] - x, center[index + 1][1] - y)
-            turn = _angle_delta(headings[index + 1], headings[index])
-            kappa = turn / step if step > 1e-6 else 0.0
-        else:
-            kappa = 0.0
-        points.append(
-            ReferencePoint(MapPathPoint(Vec2d(x, y), headings[index], []), kappa, 0.0)
-        )
-    return points
-
-
-def _set_width(reference_line: ReferenceLine, left_width: float, right_width: float) -> None:
-    path = reference_line.map_path
-    count = len(path._lane_left_width)
-    path._lane_left_width = [left_width] * count
-    path._lane_right_width = [right_width] * count
-    path._road_left_width = [left_width] * count
-    path._road_right_width = [right_width] * count
-
-
-def _angle_delta(left: float, right: float) -> float:
-    return (left - right + math.pi) % (2.0 * math.pi) - math.pi

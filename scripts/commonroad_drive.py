@@ -61,9 +61,13 @@ def run_loaded_scenario(
         follow_successors=follow_successors,
         min_reference_length=min_reference_length,
     )
-    center, left, right = _concat_boundaries(chain)
-    local_center, origin, samples, total = _local_centerline(center)
-    widths = _boundary_widths(center, left, right, samples)
+    from lanelet_path import merged_lanelet, path_from_lanelet, translated_lanelet
+
+    merged = merged_lanelet(chain)
+    origin = np.asarray(merged.center_vertices[0], dtype=float)
+    local_lanelet = translated_lanelet(merged, origin)
+    local_center = np.asarray(local_lanelet.center_vertices, dtype=float)
+    path = path_from_lanelet(local_lanelet, config.FLAGS_default_cruise_speed)
     start = _ego_start(
         origin,
         planning_problems,
@@ -81,24 +85,18 @@ def run_loaded_scenario(
         for actor in actors:
             sync_actor(actor, linked[actor.actor_id], t, origin, scenario_dt)
 
-    left_width = float(np.median([pair[0] for pair in widths]))
-    right_width = float(np.median([pair[1] for pair in widths]))
-    from scripts.lattice_commonroad import _reference_line, plan_on_centerline
-
-    reference_line = _reference_line(local_center, left_width, right_width)
+    from scripts.lattice_commonroad import plan_on_lanelet
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
         obstacles = [
             _planner_obstacle(actor, linked[actor.actor_id], clock["t"], origin, scenario_dt)
             for actor in actors_now
         ]
-        ok, trajectory, type_name, _bound = plan_on_centerline(
-            local_center,
+        ok, trajectory, type_name, _bound = plan_on_lanelet(
+            local_lanelet,
             ego_now,
             actors_now,
-            left_width=left_width,
-            right_width=right_width,
-            reference_line=reference_line,
+            path=path,
             obstacles=obstacles,
         )
         return ok, trajectory, type_name, obstacles
