@@ -1,6 +1,7 @@
 """
 Discretized path submodule
 """
+from copy import deepcopy
 from typing import List, Optional
 from bisect import bisect_left, bisect_right
 from logging import Logger
@@ -43,10 +44,12 @@ class DiscretizedPath(UserList):
         """
         assert len(self) > 0, "path is empty"
         it_lower = self.QueryLowerBound(path_s)
+        # C++ returns PathPoint by value. The endpoints used to be the stored
+        # objects, so `point.s += start_s` in Combine rewrote the path.
         if it_lower == 0:
-            return self[0]
+            return deepcopy(self[0])
         if it_lower == len(self):
-            return self[-1]
+            return deepcopy(self[-1])
         return PathMatcher.InterpolateUsingLinearApproximation(self[it_lower -1], self[it_lower], path_s)
 
     def EvaluateReverse(self, path_s: float) -> PathPoint:
@@ -60,9 +63,9 @@ class DiscretizedPath(UserList):
         assert len(self) > 0, "path is empty"
         it_upper = self.QueryUpperBound(path_s)
         if it_upper == 0:
-            return self[0]
+            return deepcopy(self[0])
         if it_upper == len(self):
-            return self[-1]
+            return deepcopy(self[-1])
         return PathMatcher.InterpolateUsingLinearApproximation(self[it_upper - 1], self[it_upper], path_s)
 
     def QueryLowerBound(self, path_s: float) -> int:

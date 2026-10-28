@@ -2464,6 +2464,47 @@ def check_aggregate_reference_line_trajectory_handles_none_start_s():
     AggregateReferenceLineTrajectory(reference_line_info, planning_start_point)
 
 
+def check_path_evaluate_does_not_alias_stored_points():
+    """Evaluate used to hand back the stored endpoint. Combine then did
+    path_point.s += start_s and rewrote the path under itself."""
+    from common.discretized_path import DiscretizedPath
+    from common.discretized_trajectory import DiscretizedTrajectory
+    from common.path_data import PathData
+    from common.speed_data import SpeedData
+
+    _, _, reference_line_info = _build_reference_line()
+    reference_line_info.Init([], 10.0)
+    stored = DiscretizedPath([
+        PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
+        PathPoint(x=1.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=1.0, dkappa=0.0, ddkappa=0.0),
+        PathPoint(x=2.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=2.0, dkappa=0.0, ddkappa=0.0),
+    ])
+    shifted = stored.Evaluate(0.0)
+    shifted.s += 5.0
+    assert stored[0].s == 0.0
+    past_end = stored.Evaluate(10.0)
+    past_end.s += 1.0
+    assert stored[-1].s == 2.0
+
+    path_data = PathData()
+    path_data.SetReferenceLine(reference_line_info.reference_line)
+    assert path_data.SetDiscretizedPath(stored)
+    speed = SpeedData()
+    speed.AppendSpeedPoint(0.0, 0.0, 1.0, 0.0, 0.0)
+    speed.AppendSpeedPoint(2.0, 2.0, 1.0, 0.0, 0.0)
+    reference_line_info.SetPathData(path_data)
+    reference_line_info.SetSpeedData(speed)
+    trajectory = DiscretizedTrajectory()
+    assert reference_line_info.CombinePathAndSpeedProfile(0.0, 4.0, trajectory)
+    assert stored[0].s == 0.0
+    assert stored[-1].s == 2.0
+    assert trajectory[0].path_point.s == 4.0
+
+    played = trajectory.Evaluate(trajectory[0].relative_time or 0.0)
+    played.v = 99.0
+    assert trajectory[0].v != 99.0
+
+
 def check_discretized_path_evaluate_reverse_matches_cpp_reverse_case():
     """
     Regression test: DiscretizedPath.QueryUpperBound used bisect_right, which
@@ -3057,6 +3098,7 @@ def main():
     check_obstacle_validators_treat_none_as_protobuf_zero_default()
     check_create_obstacles_uses_perception_validator_like_cpp()
     check_aggregate_reference_line_trajectory_handles_none_start_s()
+    check_path_evaluate_does_not_alias_stored_points()
     check_discretized_path_evaluate_reverse_matches_cpp_reverse_case()
     check_path_data_sl_to_xy_matches_cpp_unconditional_dkappa_division()
     check_generate_stop_trajectory_matches_cpp_loop_and_default_total_path_time()
