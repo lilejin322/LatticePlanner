@@ -6,9 +6,8 @@ Unlike ``run_lattice_scenario_cases.py``, these cases replan every planning
 cycle and step both ego and dynamic actors forward. They fail if planning
 fails or the executed prefix overlaps an actor.
 
-Every closed-loop case drives a lanelet from the Borregas Ave CommonRoad file
-produced by the Apollo map converter. ``--animate`` draws that lanelet with
-CommonRoad's renderer.
+Every closed-loop case drives a lanelet from the fetched CommonRoad scenario
+repository. ``--animate`` draws that lanelet with CommonRoad's renderer.
 
 Usage:
   python scripts/run_closed_loop_sim.py
@@ -77,7 +76,7 @@ def stopped_leader() -> SimResult:
 
 
 def loaded_map() -> SimResult:
-    """Two seconds on the same Borregas lanelet as ``open_road``."""
+    """Two seconds on the same fetched lanelet as ``open_road``."""
     result = run_straight_road(
         "loaded_map",
         Actor("ego", x=0.0, v=5.0),

@@ -1,11 +1,10 @@
 """Drive the lattice closed loop on a CommonRoad scenario that already exists.
 
-The scenario comes from ``CommonRoadFileReader`` or from the Apollo map
-converter. This module does not build lanelets, obstacles, or a new scenario.
-The planner sees the loaded centerline in a local frame. Obstacle poses are
-copied from ``state_at_time``, and clearance uses each obstacle's occupancy
-polygon. Playback draws those same lanelets and the driven ego; the ego is
-not inserted into the scenario.
+The scenario comes from ``CommonRoadFileReader``. This module does not build
+lanelets, obstacles, or a new scenario. The planner sees the loaded centerline
+in a local frame. Obstacle poses are copied from ``state_at_time``, and
+clearance uses each obstacle's occupancy polygon. Playback draws those same
+lanelets and the driven ego; the ego is not inserted into the scenario.
 """
 
 from __future__ import annotations
@@ -355,6 +354,7 @@ def _actors_from_scenario(scenario, origin):
         prediction = getattr(obstacle, "prediction", None)
         actor = Actor(
             actor_id=f"cr_{obstacle.obstacle_id}",
+            x=0.0,
             length=length,
             width=width,
             is_static=isinstance(obstacle, StaticObstacle) or prediction is None,

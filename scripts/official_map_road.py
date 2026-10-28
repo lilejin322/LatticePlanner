@@ -1,15 +1,14 @@
-"""Closed-loop roads taken from the converted Apollo map.
+"""Closed-loop roads taken from a fetched CommonRoad scenario.
 
-The geometry is the Borregas Ave CommonRoad file written by the existing
-converter. Lanelets are not created here. An actor's ``x`` is station along
-the chosen centerline and ``y`` is the lateral offset, positive to the left.
-Speed stays constant. This module does not manage traffic.
+The geometry is one XML file from the public scenario repository. Lanelets
+are not created here. An actor's ``x`` is station along the chosen centerline
+and ``y`` is the lateral offset, positive to the left. Speed stays constant.
+This module does not manage traffic.
 """
 
 from __future__ import annotations
 
 import math
-import tempfile
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
@@ -21,8 +20,8 @@ from scripts.commonroad_drive import (
     load_scenario,
     occupancy_clearance,
 )
+from scripts.commonroad_scenarios import ROAD_SCENARIO_ID, scenario_file
 
-_MAP_NAME = "borregas_ave"
 _CACHE: dict = {}
 
 
@@ -186,10 +185,7 @@ def project_station(frame: OfficialFrame, x: float, y: float) -> Tuple[float, fl
 def _official_scenario():
     if "scenario" in _CACHE:
         return _CACHE["scenario"]
-    from apollo_map.to_commonroad import convert_map
-
-    with tempfile.TemporaryDirectory() as output_dir:
-        scenario, problems = load_scenario(convert_map(_MAP_NAME, output_dir))
+    scenario, problems = load_scenario(scenario_file(ROAD_SCENARIO_ID))
     _CACHE["scenario"] = (scenario, problems)
     return _CACHE["scenario"]
 

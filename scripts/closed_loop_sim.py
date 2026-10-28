@@ -1,7 +1,7 @@
 """
 Closed-loop lattice simulation.
 
-The road is a lanelet from the converted Borregas Ave map. See
+The road is a lanelet from a fetched CommonRoad scenario. See
 ``scripts/official_map_road.py``. Each cycle plans once from the executed ego
 state and commits only the next planning cycle. Other vehicles hold a constant
 speed along the centerline; this is not a traffic simulator.
@@ -170,7 +170,7 @@ def run_straight_road(
     backup: Optional[bool] = None,
     blocking_actor_id: Optional[str] = None,
 ) -> SimResult:
-    """Replan on the converted map's long lanelet until ``horizon_s``.
+    """Replan on the fetched scenario's long lanelet until ``horizon_s``.
 
     ``ego.x`` and ``actor.x`` are station along that lanelet. ``y`` is the
     lateral offset. ``road_length`` is unused; the lanelet sets the length.
@@ -197,7 +197,7 @@ def run_curved_road(
     backup: Optional[bool] = None,
     blocking_actor_id: Optional[str] = None,
 ) -> SimResult:
-    """Same converted lanelet as ``run_straight_road``.
+    """Same fetched lanelet as ``run_straight_road``.
 
     Older cases still call this name. ``radius`` and ``arc_length`` are ignored.
     """
