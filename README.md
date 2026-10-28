@@ -22,7 +22,7 @@ python scripts/fetch_commonroad_scenarios.py
 
 Running it again leaves an existing clone in place. That checkout is the public 2020a set (on the order of 18k XML files). The larger catalog on commonroad.in.tum.de asks for a login and is not what this script downloads.
 
-Closed-loop cases that place their own actors use the longest lanelet in `DEU_A9-2_1_T-1`. An actor's `x` is station along that centerline and `y` is lateral offset. Those actors hold a constant speed. Recorded vehicles in a loaded file are read with `state_at_time` and `occupancy_at_time`. Nothing here builds lanelets or generates traffic.
+Recorded vehicles in a loaded file are read with `state_at_time`. Nothing here builds lanelets or generates traffic. `DEU_A9-2_1_T-1` is the recording used by the one-cycle check.
 
 ## What to run
 
@@ -53,16 +53,14 @@ python scripts/run_lattice_known_failures.py
 python verification/pinned_sampling_gaps.py
 ```
 
-`scripts/run_closed_loop_sim.py` and `scripts/run_lattice_scenario_cases.py` still replan on the A9 lanelet and score how far the ego traveled. They are not part of the gate above. `--animate` writes a GIF under `scripts/output/animations/`.
-
-A discovery sweep over fetched files is not a pass/fail gate. It writes `scripts/output/lattice_sweep/report.jsonl` (gitignored) and separates numeric blow-ups, negative-speed assertions, commits that leave the ego, acceleration outside [-6, 4] m/s², collisions, and backup-only cycles:
+A discovery sweep over fetched files is not a pass/fail gate. It plans once per file and writes `scripts/output/lattice_sweep/report.jsonl` (gitignored):
 
 ```bash
 python scripts/run_lattice_dataset_sweep.py --limit 20
 python scripts/run_lattice_dataset_sweep.py
 ```
 
-The default selection is recorded scenarios with at most 8 dynamic obstacles and a 1 s horizon.
+The default selection is recorded scenarios with at most 8 dynamic obstacles. The two defects that show up only after a committed point is fed back in are measured by `run_lattice_known_failures.py`, not by this sweep.
 
 ## Recorded defects
 

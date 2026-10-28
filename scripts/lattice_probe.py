@@ -12,24 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-import numpy as np
-
 import config
-from lanelet_path import merged_lanelet, path_from_lanelet, translated_lanelet
 from lattice_planner import ComputeInitFrenetState
 from path_matcher import PathMatcher
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
-from scripts.commonroad_drive import (
-    _MIN_REFERENCE_LENGTH_M,
-    _actors_from_scenario,
-    _ego_start,
-    _lanelet_chain,
-    _planner_obstacle,
-    load_scenario,
-)
 from scripts.commonroad_scenarios import scenario_file
 from scripts.lattice_commonroad import plan_on_lanelet
+from scripts.recording import load_scenario, obstacles_at, open_recording, sync_vehicles
 
 BLOWUP_LIMIT = 1.0e5
 FAR_MATCH_M = 20.0
@@ -64,29 +54,17 @@ class PlanProbe:
     first_distance_m: Optional[float] = None
 
 
-def _prepare_recording(scenario, problems):
-    """Lanelet, ego, and recorded actors for an already loaded scenario."""
-    chain = _lanelet_chain(
-        scenario,
-        lanelet_id=None,
-        planning_problems=problems,
-        follow_successors=True,
-        min_reference_length=_MIN_REFERENCE_LENGTH_M,
-    )
-    merged = merged_lanelet(chain)
-    origin = np.asarray(merged.center_vertices[0], dtype=float)
-    local = translated_lanelet(merged, origin)
-    center = np.asarray(local.center_vertices, dtype=float)
-    path_line = path_from_lanelet(local, config.FLAGS_default_cruise_speed)
-    ego = _ego_start(origin, problems, None, center, use_planning_state=True)
-    actors, linked = _actors_from_scenario(scenario, origin)
-    return origin, local, path_line, ego, actors, linked
-
-
-def _open_recording(path: Path):
-    """Lanelet, ego, and recorded actors for one CommonRoad file."""
-    scenario, problems = load_scenario(path)
-    return (scenario, *_prepare_recording(scenario, problems))
+def _committed_point_stays(ego, point, dt: float) -> bool:
+    """The point one planning period ahead is still a usable next init."""
+    path_point = point.path_point
+    if path_point is None:
+        return False
+    values = (path_point.x, path_point.y, path_point.theta, point.v)
+    if any(value is None or value != value or abs(value) > BLOWUP_LIMIT for value in values):
+        return False
+    jump = math.hypot((path_point.x or 0.0) - ego.x, (path_point.y or 0.0) - ego.y)
+    limit = max(2.0, (abs(ego.v) + 8.0) * max(dt, 0.1) * 5.0)
+    return jump <= limit
 
 
 def _classify_plan_error(scenario_id: str, path: Path, exc: Exception) -> PlanProbe:
@@ -102,11 +80,9 @@ def probe_loaded(scenario, problems, scenario_id: str, source: Path | str = "") 
     """Plan once on an already loaded scenario and classify the result."""
     logging.disable(logging.CRITICAL)
     try:
-        origin, local, path_line, ego, actors, linked = _prepare_recording(scenario, problems)
-        obstacles = [
-            _planner_obstacle(actor, linked[actor.actor_id], 0.0, origin, float(scenario.dt))
-            for actor in actors
-        ]
+        recording = open_recording(scenario, problems)
+        ego = recording.ego
+        obstacles = obstacles_at(recording, 0.0)
         start = TrajectoryPoint(
             path_point=PathPoint(
                 x=ego.x,
@@ -120,10 +96,14 @@ def probe_loaded(scenario, problems, scenario_id: str, source: Path | str = "") 
             a=ego.a,
             relative_time=0.0,
         )
-        matched = PathMatcher.MatchToPath(path_line.points, ego.x, ego.y)
+        matched = PathMatcher.MatchToPath(recording.path.points, ego.x, ego.y)
         init_s, init_d = ComputeInitFrenetState(matched, start)
         ok, trajectory, type_name, _unused = plan_on_lanelet(
-            local, ego, actors, path=path_line, obstacles=obstacles
+            recording.lanelet,
+            ego,
+            recording.actors,
+            path=recording.path,
+            obstacles=obstacles,
         )
     except Exception as exc:
         return _classify_plan_error(scenario_id, Path(source), exc)
@@ -207,30 +187,28 @@ def commit_chain(scenario_id: str, horizon_s: float = 1.0) -> PlanProbe:
     logging.disable(logging.CRITICAL)
     path = scenario_file(scenario_id)
     try:
-        scenario, origin, local, path_line, ego, actors, linked = _open_recording(path)
+        scenario, problems = load_scenario(path)
+        recording = open_recording(scenario, problems)
     except Exception as exc:
         return _classify_plan_error(scenario_id, path, exc)
 
-    from scripts.closed_loop_sim import _executed_state_is_usable
-    from scripts.commonroad_drive import sync_actor
-
+    ego = recording.ego
     dt = 1.0 / max(config.FLAGS_planning_loop_rate, 1e-3)
-    scenario_dt = float(scenario.dt)
     t = 0.0
     low = None
     high = None
     worst = None
     cycles = 0
     while t < horizon_s - 1e-9:
-        for actor in actors:
-            sync_actor(actor, linked[actor.actor_id], t, origin, scenario_dt)
-        obstacles = [
-            _planner_obstacle(actor, linked[actor.actor_id], t, origin, scenario_dt)
-            for actor in actors
-        ]
+        sync_vehicles(recording, t)
+        obstacles = obstacles_at(recording, t)
         try:
             ok, trajectory, type_name, _unused = plan_on_lanelet(
-                local, ego, actors, path=path_line, obstacles=obstacles
+                recording.lanelet,
+                ego,
+                recording.actors,
+                path=recording.path,
+                obstacles=obstacles,
             )
         except Exception as exc:
             return _classify_plan_error(scenario_id, path, exc)
@@ -243,7 +221,7 @@ def commit_chain(scenario_id: str, horizon_s: float = 1.0) -> PlanProbe:
                 f"no trajectory at t={t:.2f}",
             )
         committed = trajectory.Evaluate(min(dt, trajectory.GetTemporalLength()))
-        if not _executed_state_is_usable(ego, committed, dt):
+        if not _committed_point_stays(ego, committed, dt):
             jump = math.hypot(
                 (committed.path_point.x or 0.0) - ego.x,
                 (committed.path_point.y or 0.0) - ego.y,
@@ -300,23 +278,3 @@ def commit_chain(scenario_id: str, horizon_s: float = 1.0) -> PlanProbe:
         f"{cycles} commits, speed change in [{low}, {high}] m/s^2",
     )
 
-
-def executed_accel_span(result) -> tuple[float | None, float | None]:
-    """Min and max acceleration of the committed closed-loop trace."""
-    accels = []
-    for left, right in zip(result.ego_trace, result.ego_trace[1:]):
-        dt = right.t - left.t
-        if dt > 1e-6:
-            accels.append((right.v - left.v) / dt)
-    if not accels:
-        return None, None
-    return min(accels), max(accels)
-
-
-def drive_scenario(scenario_id: str, horizon_s: float = 1.0):
-    """Run a short closed loop. Returns the ``SimResult``."""
-    logging.disable(logging.CRITICAL)
-    from scripts.commonroad_drive import load_scenario, run_loaded_scenario
-
-    scenario, problems = load_scenario(scenario_file(scenario_id))
-    return run_loaded_scenario(scenario, planning_problems=problems, horizon_s=horizon_s)

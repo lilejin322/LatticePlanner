@@ -37,7 +37,7 @@ def main() -> int:
         )
         print(f"Cloned {DATASET_BRANCH} into {DATASET_DIR}")
     road = scenario_file()
-    print(f"Closed-loop road: {road}")
+    print(f"Recorded road: {road}")
     return 0
 
 

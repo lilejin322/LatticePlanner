@@ -9,7 +9,7 @@ DATASET_DIR = PROJECT_ROOT / "data" / "commonroad-scenarios"
 DATASET_REPO = "https://gitlab.lrz.de/tum-cps/commonroad-scenarios.git"
 DATASET_BRANCH = "2020a_scenarios"
 
-# Highway recording used as the closed-loop road. It is part of the public
+# Highway recording used by the one-cycle check. It is part of the public
 # 2020a scenario repository, fetched into DATASET_DIR.
 ROAD_SCENARIO_ID = "DEU_A9-2_1_T-1"
 ROAD_SCENARIO_RELATIVE = Path("scenarios/recorded/hand-crafted") / f"{ROAD_SCENARIO_ID}.xml"
@@ -18,7 +18,7 @@ ROAD_SCENARIO_RELATIVE = Path("scenarios/recorded/hand-crafted") / f"{ROAD_SCENA
 def scenario_file(scenario_id: str | None = None) -> Path:
     """Return one XML inside the fetched dataset.
 
-    ``scenario_id`` defaults to the road used by the closed-loop cases.
+    ``scenario_id`` defaults to the recording used by the one-cycle check.
     """
     relative = ROAD_SCENARIO_RELATIVE if scenario_id in (None, ROAD_SCENARIO_ID) else None
     if relative is not None:

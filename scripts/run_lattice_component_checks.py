@@ -414,7 +414,7 @@ def check_collision_checker_obstacle_behind_ego_no_crash():
 
 def check_commonroad_scenario_file_loads():
     """The fetched scenario repository contains a recorded road and its planning problem."""
-    from scripts.commonroad_drive import load_scenario
+    from scripts.recording import load_scenario
     from scripts.commonroad_scenarios import ROAD_SCENARIO_ID, scenario_file
 
     path = scenario_file(ROAD_SCENARIO_ID)
@@ -426,28 +426,17 @@ def check_commonroad_scenario_file_loads():
 def check_loaded_commonroad_scenario_plans_one_cycle():
     """One lattice cycle on a fetched scenario leaves that file's geometry alone.
 
-    Recorded actors are copied into planner obstacles. The cycle's result is
-    the trajectory type and the committed point, not a distance traveled.
+    A recorded pose is copied into the obstacle the planner sees. The cycle's
+    result is the trajectory type and the committed point.
     """
     import numpy as np
-
-    import config
-    from common.discretized_trajectory import DiscretizedTrajectory
     from commonroad.geometry.obstacle_shapes.rect_obstacle_shape import RectObstacleShape
     from commonroad.prediction.prediction import TrajectoryPrediction
-    from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType, StaticObstacle
+    from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType
     from commonroad.scenario.state import CustomState, InitialState
     from commonroad.scenario.trajectory import Trajectory
-    from protoclass.path_point import PathPoint
-    from protoclass.trajectory_point import TrajectoryPoint
-    from scripts.closed_loop_sim import Actor, _advance_actor
     from scripts.commonroad_scenarios import ROAD_SCENARIO_ID, scenario_file
-    from scripts.commonroad_drive import (
-        _planner_obstacle,
-        load_scenario,
-        occupancy_clearance,
-        sync_actor,
-    )
+    from scripts.recording import Vehicle, load_scenario, obstacle_for
 
     shape = RectObstacleShape(width=2.0, length=4.0)
     dynamic = DynamicObstacle(
@@ -475,54 +464,9 @@ def check_loaded_commonroad_scenario_plans_one_cycle():
             shape,
         ),
     )
-    actor = Actor("cr_7", x=0.0, replay=True, v=2.0)
-    sync_actor(actor, dynamic, 0.1, np.zeros(2), 0.1)
-    assert abs(actor.x - 0.2) < 1e-6
-    held_x = actor.x
-    _advance_actor(actor, 0.1)
-    assert actor.x == held_x
-    planned = _planner_obstacle(actor, dynamic, 0.1, np.zeros(2), 0.1)
+    planned = obstacle_for(Vehicle("cr_7", length=4.0, width=2.0), dynamic, 0.1, np.zeros(2), 0.1)
     predicted = planned.state_at_time(0)
     assert abs(float(predicted.position[0]) - 0.2) < 1e-6
-
-    shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
-    box = RectObstacleShape(width=2.0, length=4.0)
-    executed = DiscretizedTrajectory(
-        [
-            TrajectoryPoint(
-                path_point=PathPoint(x=0.0, y=0.0, theta=0.0),
-                v=0.0,
-                a=0.0,
-                relative_time=0.0,
-            ),
-            TrajectoryPoint(
-                path_point=PathPoint(x=0.0, y=0.0, theta=0.0),
-                v=0.0,
-                a=0.0,
-                relative_time=0.1,
-            ),
-        ]
-    )
-    overlap = StaticObstacle(
-        1,
-        ObstacleType.CAR,
-        box,
-        InitialState(time_step=0, position=np.array([shift, 0.0]), orientation=0.0, velocity=0.0),
-    )
-    clear = StaticObstacle(
-        2,
-        ObstacleType.CAR,
-        box,
-        InitialState(time_step=0, position=np.array([shift, 20.0]), orientation=0.0, velocity=0.0),
-    )
-    clearance, collided = occupancy_clearance(
-        executed, [overlap], t0=0.0, scenario_dt=0.1, origin=np.zeros(2)
-    )
-    assert collided and clearance == 0.0
-    clearance, collided = occupancy_clearance(
-        executed, [clear], t0=0.0, scenario_dt=0.1, origin=np.zeros(2)
-    )
-    assert not collided and clearance > 10.0
 
     from scripts.lattice_probe import CONTAINED, probe_loaded
 

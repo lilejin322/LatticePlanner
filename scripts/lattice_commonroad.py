@@ -35,14 +35,14 @@ def plan_on_lanelet(
     ``(ok, trajectory, type_name, obstacles)``.
     """
     del blocking_actor_id
-    from scripts.closed_loop_sim import _obstacle_from_actor
+    from lattice_motion import obstacle_from_actor
 
     if path is None:
         path = path_from_lanelet(
             lanelet, config.FLAGS_default_cruise_speed if speed_limit is None else speed_limit
         )
     if obstacles is None:
-        obstacles = [_obstacle_from_actor(actor) for actor in actors]
+        obstacles = [obstacle_from_actor(actor) for actor in actors]
     else:
         obstacles = list(obstacles)
     start = TrajectoryPoint(

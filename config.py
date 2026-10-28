@@ -1,5 +1,5 @@
 
-"""Flags the lattice planner and the closed-loop drive still read."""
+"""Flags the lattice planner still reads."""
 
 # Vehicle geometry fallback values for the simplified Python environment.
 # Apollo normally reads these from VehicleConfigHelper, not planning_gflags.
@@ -71,6 +71,6 @@ FLAGS_bound_buffer = 0.1
 FLAGS_nudge_buffer = 0.3
 FLAGS_enable_osqp_debug = False
 
-# Closed-loop cycle.
+# Time between a committed point and the next planning init.
 FLAGS_planning_loop_rate = 10.0
 FLAGS_enable_lateral_jerk_check = False
