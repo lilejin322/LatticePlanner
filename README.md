@@ -36,10 +36,11 @@ That runs, in order:
 
 | Command | What it checks |
 |---------|----------------|
-| `scripts/run_lattice_component_checks.py` | Polynomials, backup, ST graph, collision, one loaded scenario drive |
+| `scripts/run_lattice_component_checks.py` | Polynomials, backup, ST graph, collision, one cycle on a loaded scenario |
 | `scripts/run_minimal_lattice_plan.py` | One lattice cycle on a straight lanelet, no obstacles |
-| `scripts/run_closed_loop_sim.py` | Open road, follow a slower leader, stop behind a stopped leader, two seconds on the A9 lanelet |
+| `scripts/run_lattice_cycle_checks.py` | Cruise and stop samples, cost order, fallback, the next cycle's init |
 | `scripts/run_lattice_known_failures.py` | Four recorded defects. Passes while each signature is still present |
+| `verification/pinned_sampling_gaps.py` | Two fixed curves the 0.1 s checker still misses |
 
 The same pieces one at a time:
 
@@ -47,20 +48,12 @@ The same pieces one at a time:
 python scripts/verify_imports.py
 python scripts/run_lattice_component_checks.py
 python scripts/run_minimal_lattice_plan.py
-python scripts/run_closed_loop_sim.py
+python scripts/run_lattice_cycle_checks.py
 python scripts/run_lattice_known_failures.py
+python verification/pinned_sampling_gaps.py
 ```
 
-Placed-actor cases on the A9 lanelet, tagged `lattice`, `stress`, and `sim`:
-
-```bash
-python scripts/run_lattice_scenario_cases.py --list
-python scripts/run_lattice_scenario_cases.py --tag lattice
-python scripts/run_lattice_scenario_cases.py
-python scripts/run_lattice_demo_cases.py
-```
-
-`stress` cases are informational and are not a failure gate. `--animate` writes a GIF under `scripts/output/animations/`. `python scripts/run_closed_loop_sim.py --animate` draws the lanelet with CommonRoad's renderer.
+`scripts/run_closed_loop_sim.py` and `scripts/run_lattice_scenario_cases.py` still replan on the A9 lanelet and score how far the ego traveled. They are not part of the gate above. `--animate` writes a GIF under `scripts/output/animations/`.
 
 A discovery sweep over fetched files is not a pass/fail gate. It writes `scripts/output/lattice_sweep/report.jsonl` (gitignored) and separates numeric blow-ups, negative-speed assertions, commits that leave the ego, acceleration outside [-6, 4] m/s², collisions, and backup-only cycles:
 
@@ -79,8 +72,8 @@ The default selection is recorded scenarios with at most 8 dynamic obstacles and
 |----------|------|--------------------|
 | `USA_Peach-3_1_T-1` | `numeric_blowup` | The backup trajectory's committed point is outside the 1e5 m guard |
 | `ESP_Monzon-7_5_T-1` | `negative_speed_assert` | A negative Frenet speed raises `AssertionError` instead of a failed plan |
-| `ZAM_Tjunction-1_266_T-1` | `left_road` | Within 1 s a committed point jumps away from the ego |
-| `FRA_MoissyCramayel-1_1_T-1` | `accel_bound` | A finished 1 s trace decelerates faster than -6 m/s² and is still accepted |
+| `ZAM_Tjunction-1_266_T-1` | `left_road` | The first cycle stays on the ego. At 0.7 s the backup trajectory's committed point jumps away from that cycle's init |
+| `FRA_MoissyCramayel-1_1_T-1` | `accel_bound` | Replanning from each committed point, a returned backup changes speed by about -8.9 m/s² over 0.1 s. That trajectory's sample accelerations stay inside [-6, 4] m/s² |
 
 ## SMT checks
 
@@ -97,8 +90,10 @@ python verification/verify_lateral_constraint1d.py 200 1
 
 ```text
 tested=4000 checker_said_valid=38 counterexamples=1
-[quartic] start=[0.0, 30.93, 2.39] end=[30.57, -3.38] T=1.8694 -> checker says VALID, but at t=1.843750: v=30.6592 a=-3.2740 j=-4.0280
+[quartic] start=[0.0, 30.93, 2.39] end=[30.57, -3.38] T=1.8694 -> checker says VALID, but at t=1.84375: v=30.6554 a=-3.2763 j=-4.0306
 ```
+
+`pinned_sampling_gaps.py` builds that quartic from the boundary values above. The search print had rounded them; the jerk at the rounded values is -4.0306 m/s³.
 
 The lateral script uses the same loop on lateral acceleration. One miss sits between the sample at 0.5 s and the unchecked end at 0.5536 s, with lateral acceleration past ±4 m/s²:
 
@@ -113,4 +108,4 @@ tested=400 checker_said_valid=43 counterexamples=3
 
 `verification/verify_constraint_checker.py` asks the same question for `ConstraintChecker.ValidTrajectory` on the Cartesian trajectory the planner actually accepts. The reference line in that proof is perfectly straight, so the Frenet-to-Cartesian formulas stay closed form. Curved reference lines are outside that proof. Longitudinal jerk there is a difference between two samples, and that script does not model it.
 
-`FRA_MoissyCramayel-1_1_T-1` is the closed-loop version of this sampling gap: the executed trace decelerates at about -8.9 m/s² while the bound is -6 m/s², and the 0.1 s checker still accepts the plan.
+`verification/pinned_sampling_gaps.py` replays the two curves above and passes while the checker still misses them. `FRA_MoissyCramayel-1_1_T-1` is the same kind of hole on a trajectory the planner returned: the speed change between the planning init and the committed point is about -8.9 m/s², while the accelerations stored on the 0.1 s samples stay inside [-6, 4].

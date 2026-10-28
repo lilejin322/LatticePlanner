@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Closed-loop lattice simulations.
+Closed-loop lattice drives. Not part of ``run_all_planner_checks.py``.
 
 Unlike ``run_lattice_scenario_cases.py``, these cases replan every planning
 cycle and step both ego and dynamic actors forward. They fail if planning
