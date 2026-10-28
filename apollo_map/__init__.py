@@ -1,8 +1,7 @@
 """Apollo HD map loader brought over from ApolloAppleSilicon.
 
 Map binaries live in ``apollo_map/data/<name>/``. They are decoded with the
-bundled ``common_msgs_v9.desc`` descriptor set, not the incomplete
-``generated/`` protobuf modules.
+bundled ``common_msgs_v9.desc`` descriptor set.
 """
 
 from pathlib import Path
