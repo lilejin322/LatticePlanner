@@ -1,0 +1,626 @@
+"""Drive the lattice closed loop on a CommonRoad scenario that already exists.
+
+The scenario comes from ``CommonRoadFileReader`` or from the Apollo map
+converter. This module does not build lanelets, obstacles, or a new scenario.
+The planner sees the loaded centerline in a local frame. Obstacle poses are
+copied from ``state_at_time``, and clearance uses each obstacle's occupancy
+polygon.
+"""
+
+from __future__ import annotations
+
+import math
+from typing import List, Optional, Sequence, Tuple
+
+import numpy as np
+import shapely
+
+import config
+from scripts.closed_loop_sim import (
+    Actor,
+    SimResult,
+    _bind_obstacles,
+    _obstacle_from_actor,
+    _reference_line_info_at,
+    _run_loop,
+    _trajectory_type_name,
+)
+
+_SAMPLE_STEP_M = 1.0
+_MIN_REFERENCE_LENGTH_M = 100.0
+_MAX_SUCCESSOR_TURN_RAD = math.radians(75.0)
+
+
+def load_scenario(path):
+    """Read one existing CommonRoad file. Returns ``(scenario, planning_problems)``."""
+    from commonroad.common.file_reader import CommonRoadFileReader
+
+    return CommonRoadFileReader(str(path)).open()
+
+
+def run_loaded_scenario(
+    scenario,
+    *,
+    planning_problems=None,
+    lanelet_id: Optional[int] = None,
+    horizon_s: float = 3.0,
+    init_v: Optional[float] = None,
+    follow_successors: bool = True,
+    min_reference_length: float = _MIN_REFERENCE_LENGTH_M,
+) -> SimResult:
+    """Replan along lanelets that are already in ``scenario``.
+
+    ``lanelet_id`` selects one loaded lanelet. When it is omitted, a planning
+    problem initial state selects the lanelet under that point, and otherwise
+    the longest loaded lanelet is used. Successors already stored on those
+    lanelets are appended while the centerline is shorter than
+    ``min_reference_length``.
+    """
+    chain = _lanelet_chain(
+        scenario,
+        lanelet_id=lanelet_id,
+        planning_problems=planning_problems,
+        follow_successors=follow_successors,
+        min_reference_length=min_reference_length,
+    )
+    center, left, right = _concat_boundaries(chain)
+    local_center, origin, samples, total = _local_centerline(center)
+    widths = _boundary_widths(center, left, right, samples)
+    start = _ego_start(
+        origin,
+        planning_problems,
+        init_v,
+        local_center,
+        use_planning_state=lanelet_id is None,
+    )
+    actors, linked = _actors_from_scenario(scenario, origin)
+    scenario_obstacles = list(scenario.obstacles)
+    scenario_dt = float(scenario.dt)
+    clock = {"t": 0.0}
+
+    def sync_fn(t: float) -> None:
+        clock["t"] = t
+        for actor in actors:
+            sync_actor(actor, linked[actor.actor_id], t, origin, scenario_dt)
+
+    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
+        obstacles = [
+            _planner_obstacle(actor, linked[actor.actor_id], clock["t"], origin, scenario_dt)
+            for actor in actors_now
+        ]
+        reference_line_info, planning_start = _reference_line_info_at(
+            reference_line, lanes, ego_now
+        )
+        _bind_obstacles(reference_line_info, obstacles, None)
+        from lattice_planner import LatticePlanner
+        from protoclass.adc_trajectory import ADCTrajectory
+
+        ok = LatticePlanner().Plan(planning_start, reference_line_info._frame, ADCTrajectory())
+        return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
+
+    def collision_fn(_obstacles, executed, t: float):
+        return occupancy_clearance(
+            executed,
+            scenario_obstacles,
+            t0=t,
+            scenario_dt=scenario_dt,
+            origin=origin,
+        )
+
+    from common.hd_map import HDMapUtil
+
+    previous_map = HDMapUtil.BaseMap()
+    try:
+        reference_line, lanes = _planner_reference(
+            chain[0].lanelet_id, local_center, samples, widths, total
+        )
+        result = _run_loop(
+            _run_name(scenario, chain),
+            start,
+            actors,
+            plan_fn,
+            horizon_s=horizon_s,
+            sync_fn=sync_fn,
+            collision_fn=collision_fn,
+        )
+    finally:
+        HDMapUtil.SetBaseMap(previous_map)
+    result.ref_x = [float(point[0]) for point in local_center]
+    result.ref_y = [float(point[1]) for point in local_center]
+    result.lanelet_ids = [lanelet.lanelet_id for lanelet in chain]
+    return result
+
+
+def sync_actor(actor: Actor, obstacle, t: float, origin, scenario_dt: float) -> None:
+    """Copy one loaded obstacle pose at time ``t`` onto ``actor``."""
+    state, held = _state_at(obstacle, _time_step(t, scenario_dt))
+    pose = _pose_from_state(state, origin)
+    if pose is None:
+        return
+    actor.x, actor.y, actor.theta, speed = pose
+    actor.v = 0.0 if held else speed
+    actor.a = 0.0
+
+
+def occupancy_clearance(
+    executed,
+    obstacles,
+    *,
+    t0: float,
+    scenario_dt: float,
+    origin,
+) -> Tuple[Optional[float], bool]:
+    """Gap between the executed ego boxes and loaded occupancy polygons.
+
+    ``executed`` is in the planner's local frame. ``origin`` maps it back onto
+    the scenario. The scenario itself is not moved.
+    """
+    if executed is None or executed.NumOfPoints() == 0 or not obstacles:
+        return None, False
+    origin_xy = np.asarray(origin, dtype=float)
+    best: Optional[float] = None
+    collided = False
+    for index in range(executed.NumOfPoints()):
+        point = executed.TrajectoryPointAt(index)
+        theta = _valid_orientation(point.path_point.theta or 0.0)
+        relative = point.relative_time or 0.0
+        step = _time_step(t0 + relative, scenario_dt)
+        ego_polygon = _ego_polygon(point.path_point.x or 0.0, point.path_point.y or 0.0, theta, origin_xy)
+        for obstacle in obstacles:
+            occupancy = _occupancy_at(obstacle, step)
+            polygon = None if occupancy is None else getattr(occupancy, "shapely_object", None)
+            if polygon is None:
+                continue
+            distance = float(ego_polygon.distance(polygon))
+            best = distance if best is None else min(best, distance)
+            if distance <= 1e-6:
+                collided = True
+    return best, collided
+
+
+def _lanelet_chain(scenario, *, lanelet_id, planning_problems, follow_successors, min_reference_length):
+    network = scenario.lanelet_network
+    start_state = _planning_state(planning_problems)
+    if lanelet_id is None and start_state is not None:
+        lanelet_id = _lanelet_id_at(network, start_state.position)
+    if lanelet_id is None:
+        start = _longest_lanelet(network)
+    else:
+        start = network.find_lanelet_by_id(int(lanelet_id))
+        if start is None:
+            raise ValueError(f"lanelet {lanelet_id} is not in the loaded scenario")
+    if len(np.asarray(start.center_vertices)) < 2:
+        raise ValueError(f"lanelet {start.lanelet_id} has no centerline")
+
+    chain = [start]
+    seen = {start.lanelet_id}
+    total = _polyline_length(start.center_vertices)
+    while follow_successors and total < min_reference_length:
+        current = chain[-1]
+        heading = _end_heading(current.center_vertices)
+        candidates = []
+        for successor_id in current.successor or []:
+            if successor_id in seen:
+                continue
+            successor = network.find_lanelet_by_id(successor_id)
+            if successor is None or len(np.asarray(successor.center_vertices)) < 2:
+                continue
+            turn = _angle_between(heading, _start_heading(successor.center_vertices))
+            if turn <= _MAX_SUCCESSOR_TURN_RAD:
+                candidates.append((turn, successor))
+        if not candidates:
+            break
+        _turn, successor = min(candidates, key=lambda item: (item[0], item[1].lanelet_id))
+        chain.append(successor)
+        seen.add(successor.lanelet_id)
+        total += _polyline_length(successor.center_vertices)
+    return chain
+
+
+def _longest_lanelet(network):
+    lanelets = [
+        lanelet
+        for lanelet in network.lanelets
+        if _polyline_length(lanelet.center_vertices) > 0.0
+    ]
+    if not lanelets:
+        raise ValueError("loaded scenario has no lanelets")
+    return max(lanelets, key=lambda lanelet: (_polyline_length(lanelet.center_vertices), -lanelet.lanelet_id))
+
+
+def _lanelet_id_at(network, position) -> Optional[int]:
+    point = np.asarray(position, dtype=float)
+    try:
+        matches = network.find_lanelet_by_position([point])
+    except (AssertionError, TypeError, ValueError):
+        matches = []
+    if matches and matches[0]:
+        return int(matches[0][0])
+    nearest = None
+    nearest_distance = float("inf")
+    here = shapely.Point(float(point[0]), float(point[1]))
+    for lanelet in network.lanelets:
+        vertices = np.asarray(lanelet.center_vertices, dtype=float)
+        if len(vertices) < 2:
+            continue
+        distance = float(shapely.LineString(vertices).distance(here))
+        if distance < nearest_distance:
+            nearest_distance = distance
+            nearest = lanelet.lanelet_id
+    return nearest
+
+
+def _planning_state(planning_problems):
+    problems = getattr(planning_problems, "planning_problem_dict", None)
+    if not problems:
+        return None
+    state = next(iter(problems.values())).initial_state
+    if _position_of(state) is None:
+        return None
+    return state
+
+
+def _concat_boundaries(chain):
+    return (
+        _concat([lanelet.center_vertices for lanelet in chain]),
+        _concat([lanelet.left_vertices for lanelet in chain]),
+        _concat([lanelet.right_vertices for lanelet in chain]),
+    )
+
+
+def _concat(polylines: Sequence) -> np.ndarray:
+    chunks = []
+    for polyline in polylines:
+        points = np.asarray(polyline, dtype=float)
+        if len(points) == 0:
+            continue
+        if chunks and np.linalg.norm(chunks[-1][-1] - points[0]) < 1e-2:
+            points = points[1:]
+        if len(points):
+            chunks.append(points)
+    if not chunks:
+        return np.zeros((0, 2))
+    return np.vstack(chunks)
+
+
+def _local_centerline(center: np.ndarray):
+    samples, distances = _resample(center, _SAMPLE_STEP_M)
+    origin = samples[0].copy()
+    return samples - origin, origin, distances, float(distances[-1])
+
+
+def _resample(points: np.ndarray, step: float) -> Tuple[np.ndarray, np.ndarray]:
+    segment = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    if float(segment.sum()) < 1e-6:
+        raise ValueError("loaded centerline has no length")
+    station = np.concatenate([[0.0], np.cumsum(segment)])
+    total = float(station[-1])
+    samples = np.arange(0.0, total, step)
+    if samples.size == 0 or total - float(samples[-1]) > 1e-4:
+        samples = np.append(samples, total)
+    sampled = np.column_stack(
+        (
+            np.interp(samples, station, points[:, 0]),
+            np.interp(samples, station, points[:, 1]),
+        )
+    )
+    return sampled, samples
+
+
+def _boundary_widths(center, left, right, stations) -> List[Tuple[float, float]]:
+    if len(left) < 2 or len(right) < 2:
+        raise ValueError("loaded lanelet is missing a boundary")
+    left_line = shapely.LineString(left)
+    right_line = shapely.LineString(right)
+    widths = []
+    for point in _points_at(center, stations):
+        here = shapely.Point(float(point[0]), float(point[1]))
+        widths.append((float(left_line.distance(here)), float(right_line.distance(here))))
+    return widths
+
+
+def _points_at(points: np.ndarray, stations: np.ndarray) -> np.ndarray:
+    segment = np.linalg.norm(np.diff(points, axis=0), axis=1)
+    station = np.concatenate([[0.0], np.cumsum(segment)])
+    return np.column_stack(
+        (
+            np.interp(stations, station, points[:, 0]),
+            np.interp(stations, station, points[:, 1]),
+        )
+    )
+
+
+def _planner_reference(lanelet_id: int, local_center, stations, widths, total):
+    from common.hd_map import HDMap
+    from common.lane_types import LaneSegment
+    from common.path import Path as MapPath
+    from common.route_segments import RouteSegments
+    from protoclass.lane import Curve, CurveSegment, Lane, LaneSampleAssociation, LineSegment
+    from protoclass.point_enu import PointENU
+    from reference_line import ReferenceLine
+
+    points = [PointENU(x=float(point[0]), y=float(point[1])) for point in local_center]
+    left_sample = []
+    right_sample = []
+    for station, (left_width, right_width) in zip(stations, widths):
+        left_sample.append(LaneSampleAssociation(s=float(station), width=max(float(left_width), 1e-3)))
+        right_sample.append(LaneSampleAssociation(s=float(station), width=max(float(right_width), 1e-3)))
+    road_left = [LaneSampleAssociation(s=sample.s, width=sample.width) for sample in left_sample]
+    road_right = [LaneSampleAssociation(s=sample.s, width=sample.width) for sample in right_sample]
+    lane = Lane(
+        id=Lane.Id(f"cr_{lanelet_id}"),
+        central_curve=Curve(segment=[CurveSegment(curve_type=LineSegment(point=points))]),
+        length=float(total),
+        speed_limit=config.FLAGS_default_cruise_speed,
+        left_sample=left_sample,
+        right_sample=right_sample,
+        left_road_sample=road_left,
+        right_road_sample=road_right,
+        type=Lane.LaneType.CITY_DRIVING,
+    )
+    from common.hd_map import HDMapUtil
+
+    hdmap = HDMap()
+    lane_info = hdmap.AddLane(lane)
+    HDMapUtil.SetBaseMap(hdmap)
+    end_s = float(lane_info.total_length)
+    end_s = end_s - 1.0 if end_s > 2.0 else end_s * 0.5
+    route = RouteSegments()
+    route.SetIsOnSegment(True)
+    route.SetId(f"cr_{lanelet_id}")
+    route.append(LaneSegment(lane_info, 0.0, end_s))
+    return ReferenceLine(MapPath(route)), route
+
+
+def _ego_start(origin, planning_problems, init_v, local_center, *, use_planning_state: bool) -> Actor:
+    state = _planning_state(planning_problems) if use_planning_state else None
+    if state is not None:
+        position = _position_of(state)
+        x = float(position[0] - origin[0])
+        y = float(position[1] - origin[1])
+        theta = _float_attr(state, "orientation", _start_heading(local_center))
+        speed = init_v if init_v is not None else _float_attr(state, "velocity", 5.0)
+    else:
+        x = float(local_center[0, 0])
+        y = float(local_center[0, 1])
+        theta = _start_heading(local_center)
+        speed = 5.0 if init_v is None else float(init_v)
+    return Actor("ego", x=x, y=y, theta=theta, v=max(0.0, speed), kappa=_start_kappa(local_center))
+
+
+def _actors_from_scenario(scenario, origin):
+    from commonroad.scenario.obstacle import StaticObstacle
+
+    actors = []
+    linked = {}
+    for obstacle in list(scenario.static_obstacles) + list(scenario.dynamic_obstacles):
+        if _position_of(obstacle.initial_state) is None:
+            continue
+        length, width = _box_size(obstacle)
+        prediction = getattr(obstacle, "prediction", None)
+        actor = Actor(
+            actor_id=f"cr_{obstacle.obstacle_id}",
+            length=length,
+            width=width,
+            is_static=isinstance(obstacle, StaticObstacle) or prediction is None,
+            replay=True,
+        )
+        sync_actor(actor, obstacle, 0.0, origin, float(scenario.dt))
+        actors.append(actor)
+        linked[actor.actor_id] = obstacle
+    return actors, linked
+
+
+def _planner_obstacle(actor: Actor, obstacle, t0: float, origin, scenario_dt: float):
+    if actor.is_static:
+        return _obstacle_from_actor(actor)
+    from common.obstacle import Obstacle
+    from protoclass.adc_trajectory import Point3D
+    from protoclass.path_point import PathPoint
+    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
+    from protoclass.trajectory import Trajectory
+    from protoclass.trajectory_point import TrajectoryPoint
+
+    sample_dt = config.FLAGS_trajectory_time_resolution
+    horizon = config.FLAGS_trajectory_time_length
+    points = []
+    relative = 0.0
+    while relative <= horizon + 1e-9:
+        state, held = _state_at(obstacle, _time_step(t0 + relative, scenario_dt))
+        pose = _pose_from_state(state, origin)
+        if pose is None:
+            break
+        x, y, theta, speed = pose
+        points.append(
+            TrajectoryPoint(
+                path_point=PathPoint(
+                    x=x,
+                    y=y,
+                    z=0.0,
+                    theta=theta,
+                    kappa=0.0,
+                    s=0.0,
+                    dkappa=0.0,
+                    ddkappa=0.0,
+                ),
+                v=0.0 if held else speed,
+                a=0.0,
+                relative_time=relative,
+            )
+        )
+        relative += sample_dt
+    if len(points) < 2:
+        return _obstacle_from_actor(actor)
+    perception = PerceptionObstacle(
+        id=int(obstacle.obstacle_id),
+        type=PerceptionObstacleType.VEHICLE,
+        position=Point3D(x=actor.x, y=actor.y, z=0.0),
+        velocity=Point3D(
+            x=actor.v * math.cos(actor.theta),
+            y=actor.v * math.sin(actor.theta),
+            z=0.0,
+        ),
+        length=actor.length,
+        width=actor.width,
+        height=1.5,
+        theta=actor.theta,
+    )
+    return Obstacle(
+        actor.actor_id,
+        perception,
+        is_static=False,
+        trajectory=Trajectory(trajectory_point=points),
+    )
+
+
+def _box_size(obstacle) -> Tuple[float, float]:
+    shape = obstacle.obstacle_shape
+    length = getattr(shape, "length", None)
+    width = getattr(shape, "width", None)
+    if isinstance(length, (int, float)) and isinstance(width, (int, float)):
+        return float(length), float(width)
+    occupancy = obstacle.occupancy_at_time(obstacle.initial_state.time_step or 0)
+    polygon = None if occupancy is None else getattr(occupancy, "shapely_object", None)
+    if polygon is None or polygon.is_empty:
+        return 4.0, 2.0
+    rectangle = polygon.minimum_rotated_rectangle
+    coords = list(rectangle.exterior.coords)
+    edges = [
+        math.hypot(coords[index + 1][0] - coords[index][0], coords[index + 1][1] - coords[index][1])
+        for index in range(len(coords) - 1)
+    ]
+    edges = [edge for edge in edges if edge > 1e-6]
+    if len(edges) < 2:
+        return 4.0, 2.0
+    return max(edges), min(edges)
+
+
+def _state_at(obstacle, step: int):
+    state = obstacle.state_at_time(step)
+    if state is not None and _position_of(state) is not None:
+        return state, False
+    initial = obstacle.initial_state
+    initial_step = initial.time_step or 0
+    if step <= initial_step and _position_of(initial) is not None:
+        return initial, step != initial_step
+    prediction = getattr(obstacle, "prediction", None)
+    final = getattr(prediction, "final_time_step", None) if prediction is not None else None
+    if isinstance(final, int) and step > final:
+        held = obstacle.state_at_time(final)
+        if held is not None and _position_of(held) is not None:
+            return held, True
+    if _position_of(initial) is not None:
+        return initial, True
+    return None, True
+
+
+def _occupancy_at(obstacle, step: int):
+    if not hasattr(obstacle, "occupancy_at_time"):
+        return None
+    occupancy = obstacle.occupancy_at_time(step)
+    if occupancy is not None:
+        return occupancy
+    initial_step = obstacle.initial_state.time_step or 0
+    if step < initial_step:
+        return obstacle.occupancy_at_time(initial_step)
+    prediction = getattr(obstacle, "prediction", None)
+    final = getattr(prediction, "final_time_step", None) if prediction is not None else None
+    if isinstance(final, int) and step > final:
+        return obstacle.occupancy_at_time(final)
+    return None
+
+
+def _pose_from_state(state, origin):
+    position = None if state is None else _position_of(state)
+    if position is None:
+        return None
+    origin_xy = np.asarray(origin, dtype=float)
+    return (
+        float(position[0] - origin_xy[0]),
+        float(position[1] - origin_xy[1]),
+        _float_attr(state, "orientation", 0.0),
+        _float_attr(state, "velocity", 0.0),
+    )
+
+
+def _position_of(state):
+    position = getattr(state, "position", None)
+    if position is None:
+        return None
+    array = np.asarray(position, dtype=float)
+    if array.shape != (2,) or not np.all(np.isfinite(array)):
+        return None
+    return array
+
+
+def _float_attr(state, name: str, default: float) -> float:
+    value = getattr(state, name, None)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    return default
+
+
+def _time_step(t: float, dt: float) -> int:
+    if dt <= 0.0:
+        return 0
+    return max(0, int(math.floor(float(t) / float(dt) + 0.5)))
+
+
+def _polyline_length(vertices) -> float:
+    points = np.asarray(vertices, dtype=float)
+    if len(points) < 2:
+        return 0.0
+    return float(np.linalg.norm(np.diff(points, axis=0), axis=1).sum())
+
+
+def _start_heading(vertices) -> float:
+    points = np.asarray(vertices, dtype=float)
+    return math.atan2(points[1, 1] - points[0, 1], points[1, 0] - points[0, 0])
+
+
+def _end_heading(vertices) -> float:
+    points = np.asarray(vertices, dtype=float)
+    return math.atan2(points[-1, 1] - points[-2, 1], points[-1, 0] - points[-2, 0])
+
+
+def _angle_between(left: float, right: float) -> float:
+    return abs((right - left + math.pi) % (2.0 * math.pi) - math.pi)
+
+
+def _start_kappa(points: np.ndarray) -> float:
+    if len(points) < 3:
+        return 0.0
+    a, b, c = points[0], points[1], points[2]
+    ab = float(np.linalg.norm(b - a))
+    bc = float(np.linalg.norm(c - b))
+    ca = float(np.linalg.norm(a - c))
+    area2 = float((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+    if ab * bc * ca < 1e-6:
+        return 0.0
+    return 2.0 * area2 / (ab * bc * ca)
+
+
+def _valid_orientation(angle: float) -> float:
+    from commonroad.common.util import make_valid_orientation
+
+    return float(make_valid_orientation(float(angle)))
+
+
+def _ego_polygon(x: float, y: float, theta: float, origin: np.ndarray):
+    from commonroad.geometry.occupancy.rect_occupancy import RectOccupancy
+
+    shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
+    center_x = float(x) + float(origin[0]) + shift * math.cos(theta)
+    center_y = float(y) + float(origin[1]) + shift * math.sin(theta)
+    return RectOccupancy(
+        rect_center=shapely.Point(center_x, center_y),
+        width=config.EGO_VEHICLE_WIDTH,
+        length=config.EGO_VEHICLE_LENGTH,
+        orientation=theta,
+    ).shapely_object
+
+
+def _run_name(scenario, chain) -> str:
+    scenario_id = getattr(scenario, "scenario_id", "scenario")
+    ids = "-".join(str(lanelet.lanelet_id) for lanelet in chain[:4])
+    return f"{scenario_id}:lanelet_{ids}"
