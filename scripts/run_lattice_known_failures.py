@@ -17,14 +17,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.lattice_probe import (
     ACCEL_BOUND,
-    ACCEL_HIGH,
-    ACCEL_LOW,
     CONTAINED,
     LEFT_ROAD,
     NEGATIVE_SPEED_ASSERT,
     NUMERIC_BLOWUP,
-    drive_scenario,
-    executed_accel_span,
+    commit_chain,
     probe_scenario,
 )
 
@@ -50,12 +47,12 @@ RECORDED = (
     RecordedDefect(
         "ZAM_Tjunction-1_266_T-1",
         LEFT_ROAD,
-        "within 1s a committed point jumps off the ego on the junction centerline",
+        "at 0.7s the backup trajectory's committed point jumps off that cycle's init",
     ),
     RecordedDefect(
         "FRA_MoissyCramayel-1_1_T-1",
         ACCEL_BOUND,
-        "the closed loop accepts a trace whose acceleration is below -6 m/s^2",
+        "a later commit changes speed faster than -6 m/s^2 while sample a stays inside",
     ),
 )
 
@@ -63,16 +60,10 @@ RECORDED = (
 def main() -> int:
     mismatched = 0
     for defect in RECORDED:
-        if defect.kind == LEFT_ROAD:
-            result = drive_scenario(defect.scenario_id, horizon_s=1.0)
-            kind = LEFT_ROAD if result.reason.startswith("executed state left the road") else CONTAINED
-            detail = result.reason
-        elif defect.kind == ACCEL_BOUND:
-            result = drive_scenario(defect.scenario_id, horizon_s=1.0)
-            low, high = executed_accel_span(result)
-            outside = low is not None and (low < ACCEL_LOW - 0.05 or high > ACCEL_HIGH + 0.05)
-            kind = ACCEL_BOUND if result.ok and outside else CONTAINED
-            detail = f"a in [{low}, {high}] m/s^2; {result.reason}"
+        if defect.kind in (LEFT_ROAD, ACCEL_BOUND):
+            observed = commit_chain(defect.scenario_id, horizon_s=1.0)
+            kind = observed.kind
+            detail = observed.detail
         else:
             probe = probe_scenario(defect.scenario_id)
             kind = probe.kind

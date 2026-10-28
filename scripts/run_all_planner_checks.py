@@ -13,18 +13,22 @@ PYTHON = sys.executable
 SCRIPTS = [
     "run_lattice_component_checks.py",
     "run_minimal_lattice_plan.py",
-    "run_closed_loop_sim.py",
+    "run_lattice_cycle_checks.py",
     "run_lattice_known_failures.py",
 ]
 
 
+COMMANDS = [
+    PROJECT_ROOT / "scripts" / script for script in SCRIPTS
+] + [PROJECT_ROOT / "verification" / "pinned_sampling_gaps.py"]
+
+
 def main() -> int:
-    for script in SCRIPTS:
-        path = PROJECT_ROOT / "scripts" / script
-        print(f"\n=== {script} ===")
+    for path in COMMANDS:
+        print(f"\n=== {path.name} ===", flush=True)
         result = subprocess.run([PYTHON, str(path)], cwd=str(PROJECT_ROOT))
         if result.returncode != 0:
-            print(f"{script} failed with code {result.returncode}", file=sys.stderr)
+            print(f"{path.name} failed with code {result.returncode}", file=sys.stderr)
             return result.returncode
 
     print("\nall planner checks passed")

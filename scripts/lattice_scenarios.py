@@ -1,7 +1,8 @@
 """
-Lattice scenario definitions shared by the scenario runner and the demo.
+Placed-actor drives shared by the scenario runner and the demo.
 
-Driving scenarios run closed-loop: replan every cycle from the executed state.
+These replan from the executed state and score travel. They are not the
+planner gate in ``run_all_planner_checks.py``.
 """
 
 from __future__ import annotations
