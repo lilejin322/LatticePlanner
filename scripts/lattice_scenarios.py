@@ -7,7 +7,7 @@ Driving scenarios run closed-loop: replan every cycle from the executed state.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence, Union
+from typing import Callable, List, Optional, Sequence
 
 from scripts.closed_loop_sim import (
     Actor,
@@ -16,8 +16,7 @@ from scripts.closed_loop_sim import (
     run_straight_road,
 )
 
-# Component checks still return this tuple. Driving cases return SimResult.
-BuilderResult = Union[SimResult, Tuple]
+BuilderResult = SimResult
 
 
 @dataclass

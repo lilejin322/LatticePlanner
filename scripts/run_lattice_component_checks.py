@@ -53,7 +53,6 @@ from trajectory_generation.lattice_trajectory1d import CreateLatticeTrajectory1d
 from trajectory_generation.lateral_osqp_optimizer import LateralOSQPOptimizer
 from trajectory_generation.trajectory1d_generator import Trajectory1dGenerator
 
-
 def _build_reference_line(length: float = 100.0):
     from scripts.lattice_commonroad import _reference_line
 
@@ -87,7 +86,6 @@ def _build_reference_line(length: float = 100.0):
     )
     return reference_line, discretized_ref_points, reference_line_info
 
-
 def _build_path_time_graph(obstacles):
     _, discretized_ref_points, reference_line_info = _build_reference_line()
     init_s = [0.0, 1.0, 0.0]
@@ -103,14 +101,12 @@ def _build_path_time_graph(obstacles):
         init_d,
     )
 
-
 def check_lattice_trajectory_extrapolation():
     base = QuarticPolynomialCurve1d([0.0, 1.0, 0.0], [1.0, 0.0], 1.0)
     lattice = CreateLatticeTrajectory1d(base)
     end_s = lattice.Evaluate(0, 1.0)
     extrapolated_s = lattice.Evaluate(0, 2.0)
     assert extrapolated_s >= end_s
-
 
 def check_backup_generator():
     _, discretized_ref_points, reference_line_info = _build_reference_line()
@@ -137,7 +133,6 @@ def check_backup_generator():
     assert len(trajectory) > 0
     assert len(backup_generator.trajectory_pair_pqueue) < initial_pair_count
 
-
 def check_discretized_trajectory_uses_proto_scalar_defaults():
     trajectory = DiscretizedTrajectory([
         TrajectoryPoint(path_point=PathPoint(), relative_time=0.0),
@@ -153,7 +148,6 @@ def check_discretized_trajectory_uses_proto_scalar_defaults():
     assert point.path_point.theta == 0.0
     assert point.path_point.kappa == 0.0
     assert point.path_point.s == 0.0
-
 
 def check_adjust_trajectory_resamples_cut_trajectory():
     def make_point(x, relative_time):
@@ -186,7 +180,6 @@ def check_adjust_trajectory_resamples_cut_trajectory():
         adjusted[i - 1].relative_time < adjusted[i].relative_time
         for i in range(1, len(adjusted))
     )
-
 
 def check_path_time_graph_lane_width_fallback():
     import config as config_module
@@ -241,7 +234,6 @@ def check_path_time_graph_lane_width_fallback():
     )
     assert graph.IsObstacleInGraph("fallback_width_obstacle")
 
-
 def check_collision_checker_lane_width_fallback():
     class ReferenceLineStub:
         def GetLaneWidth(self, s):
@@ -257,7 +249,6 @@ def check_collision_checker_lane_width_fallback():
     assert checker.IsEgoVehicleInLane(10.0, 0.0)
     assert checker.IsEgoVehicleInLane(10.0, 0.49 * config_module.FLAGS_default_reference_line_width)
     assert not checker.IsEgoVehicleInLane(10.0, 0.51 * config_module.FLAGS_default_reference_line_width)
-
 
 def check_constraint_checker_dynamic_speed_bound():
     import config as config_module
@@ -282,7 +273,6 @@ def check_constraint_checker_dynamic_speed_bound():
         assert ConstraintChecker.ValidTrajectory(trajectory) == ConstraintChecker.Result.LON_VELOCITY_OUT_OF_BOUND
     finally:
         config_module.FLAGS_speed_upper_bound = old_upper
-
 
 def check_constraint_checker_matches_cpp_non_increasing_time():
     def make_point(relative_time):
@@ -310,7 +300,6 @@ def check_constraint_checker_matches_cpp_non_increasing_time():
     decreasing_time = DiscretizedTrajectory([make_point(0.0), make_point(-0.1)])
     assert ConstraintChecker.ValidTrajectory(decreasing_time) == ConstraintChecker.Result.VALID
 
-
 def check_constraint_checker1d_dynamic_speed_bound():
     import config as config_module
 
@@ -330,7 +319,6 @@ def check_constraint_checker1d_dynamic_speed_bound():
     finally:
         config_module.FLAGS_speed_upper_bound = old_upper
 
-
 def check_dynamic_obstacle_sampling():
     _, discretized_ref_points, _ = _build_reference_line()
     obstacle = _build_dynamic_obstacle()
@@ -341,7 +329,6 @@ def check_dynamic_obstacle_sampling():
     )
     assert len(path_time_graph.GetPathTimeObstacles()) == 1
     assert len(sampler.SampleLonEndConditionsForPathTimePoints()) > 0
-
 
 def check_cruise_sampler_matches_cpp_negative_range_cast():
     sampler = EndConditionSampler(
@@ -354,7 +341,6 @@ def check_cruise_sampler_matches_cpp_negative_range_cast():
     one_second_conditions = [condition for condition in conditions if condition[1] == 1.0]
     assert len(one_second_conditions) == 6
     assert len(conditions) == 33
-
 
 def check_reference_line_sl_boundary_lane_width_failure_matches_cpp():
     class MapPathStub:
@@ -381,7 +367,6 @@ def check_reference_line_sl_boundary_lane_width_failure_matches_cpp():
     assert reference_line.IsOnLane(crossing_center)
     assert not reference_line.IsOnLane(entirely_left)
 
-
 def check_lateral_osqp_optimizer():
     optimizer = LateralOSQPOptimizer()
     assert optimizer.Optimize([0.0, 0.0, 0.0], 1.0, [(-1.0, 1.0)] * 12)
@@ -391,7 +376,6 @@ def check_lateral_osqp_optimizer():
     assert abs(trajectory.Evaluate(0, 0.0)) < 1e-6
     assert abs(frenet_path[-1].dl) < 1e-6
     assert abs(frenet_path[-1].ddl) < 1e-6
-
 
 def check_lateral_osqp_keeps_usable_non_solved_result():
     import numpy as np
@@ -419,7 +403,6 @@ def check_lateral_osqp_keeps_usable_non_solved_result():
         assert len(optimizer.GetFrenetFramePath()) == 12
     finally:
         optimizer_module.OSQP = original_osqp
-
 
 def check_lateral_bundle_ignores_optimizer_return_value():
     import config as config_module
@@ -455,7 +438,6 @@ def check_lateral_bundle_ignores_optimizer_return_value():
         generator_module.CreateLateralOptimizer = original_factory
         config_module.FLAGS_lateral_optimization = original_flag
 
-
 def check_prediction_time_alignment():
     prediction = PredictionObstacles(
         header=Header(timestamp_sec=10.0),
@@ -486,17 +468,6 @@ def check_prediction_time_alignment():
     aligned_points = prediction.prediction_obstacle[0].trajectory[0].trajectory_point
     assert [point.relative_time for point in aligned_points] == [0.0, 1.0]
 
-
-
-
-
-
-
-
-
-
-
-
 def check_lattice_main_path_without_backup():
     import config as config_module
 
@@ -519,29 +490,6 @@ def check_lattice_main_path_without_backup():
     finally:
         config_module.FLAGS_enable_backup_trajectory = old_backup_flag
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def check_obstacle_decision_property_api():
     from common.obstacle import Obstacle
     from protoclass.decision_result import ObjectDecisionType, ObjectIgnore
@@ -562,7 +510,6 @@ def check_obstacle_decision_property_api():
     ignore.object_tag = ObjectIgnore()
     obs.AddLongitudinalDecision("test", ignore)
     assert obs.HasNonIgnoreDecision() is False
-
 
 def check_obstacle_copies_trajectory():
     """
@@ -600,7 +547,6 @@ def check_obstacle_copies_trajectory():
     assert obs.Trajectory() is not trajectory
     assert [tp.path_point.s for tp in obs.Trajectory().trajectory_point] == [0.0, 1.0, 2.0]
 
-
 def check_obstacle_empty_trajectory_is_static_for_st_graph():
     """
     Apollo Obstacle::HasTrajectory checks trajectory_point().empty(), not
@@ -623,7 +569,6 @@ def check_obstacle_empty_trajectory_is_static_for_st_graph():
     assert len(graph.static_obs_sl_boundaries) == 1
     assert len(graph.path_time_obstacles) == 1
     assert graph.path_time_obstacles[0].id() == "empty_traj"
-
 
 def check_path_time_graph_keeps_ignored_static_obstacle():
     """
@@ -650,9 +595,6 @@ def check_path_time_graph_keeps_ignored_static_obstacle():
     graph = _build_path_time_graph([obs])
     assert len(graph.static_obs_sl_boundaries) == 1
 
-
-
-
 def check_polygon_box_distance():
     from common.box2d import Box2d
     from common.polygon2d import Polygon2d
@@ -667,7 +609,6 @@ def check_polygon_box_distance():
     overlap_ego = Box2d(Vec2d(10.0, 0.0), 0.0, 4.8, 2.0)
     assert polygon.DistanceTo(overlap_ego) == 0.0
 
-
 def check_polygon_overlap_contains_line_segment():
     from common.polygon2d import Polygon2d
 
@@ -679,7 +620,6 @@ def check_polygon_overlap_contains_line_segment():
     ])
     inside_segment = LineSegment2d(Vec2d(1.0, 1.0), Vec2d(3.0, 3.0))
     assert polygon.HasOverlap(inside_segment)
-
 
 def check_polygon_bounding_box_with_heading_uses_cross_projection():
     import math
@@ -695,7 +635,6 @@ def check_polygon_bounding_box_with_heading_uses_cross_projection():
     assert abs(box.length - 2.0) < 1e-6
     assert abs(box.width - 4.0) < 1e-6
 
-
 def check_polygon_extreme_points_accepts_triangle():
     from common.polygon2d import Polygon2d
 
@@ -708,12 +647,10 @@ def check_polygon_extreme_points_accepts_triangle():
     assert first.x == 0.0
     assert last.x == 2.0
 
-
 def check_route_segments_uses_cpp_segmentation_epsilon():
     from common.route_segments import kSegmentationEpsilon
 
     assert kSegmentationEpsilon == 0.2
-
 
 def check_box_distance_to_segment_canonical_state():
     from common.box2d import Box2d
@@ -724,15 +661,6 @@ def check_box_distance_to_segment_canonical_state():
     segment = LineSegment2d(Vec2d(3.0, 1.5), Vec2d(-1.0, 1.5))
     assert abs(box.DistanceTo(segment) - 0.5) < 1e-6
 
-
-
-
-
-
-
-
-
-
 def check_reference_point_remove_duplicates_uses_euclidean_distance():
     points = [
         ReferencePoint(MapPathPoint(Vec2d(0.0, 0.0), 0.0), 0.0, 0.0),
@@ -740,7 +668,6 @@ def check_reference_point_remove_duplicates_uses_euclidean_distance():
     ]
     ReferencePoint.RemoveDuplicates(points)
     assert len(points) == 2
-
 
 def check_reference_line_get_sl_boundary_failure_is_false():
     from protoclass.sl_boundary import SLBoundary
@@ -758,7 +685,6 @@ def check_reference_line_get_sl_boundary_failure_is_false():
         assert result is False
     finally:
         reference_line.XYToSL = original_xy_to_sl
-
 
 def check_reference_line_info_copies_reference_line():
     """
@@ -778,7 +704,6 @@ def check_reference_line_info_copies_reference_line():
         "ReferenceLineInfo.SetPriority must not mutate the caller's original ReferenceLine"
     )
     assert reference_line_info.GetPriority() == original_priority + 1
-
 
 def _build_dynamic_obstacle():
     perception = PerceptionObstacle(
@@ -841,7 +766,6 @@ def _build_dynamic_obstacle():
     )
     return Obstacle("obs_1", perception, is_static=False, trajectory=trajectory)
 
-
 def check_obstacle_non_increasing_prediction_time_does_not_abort():
     perception = PerceptionObstacle(
         id=101,
@@ -858,7 +782,6 @@ def check_obstacle_non_increasing_prediction_time_does_not_abort():
     ])
     obstacle = Obstacle("non_monotonic", perception, trajectory=trajectory)
     assert obstacle.Trajectory().trajectory_point[-1].path_point.s == 1.0
-
 
 def check_obstacle_uses_full_adc_width_for_blocking():
     import config as config_module
@@ -889,7 +812,6 @@ def check_obstacle_uses_full_adc_width_for_blocking():
     obstacle.BuildReferenceLineStBoundary(reference_line, 0.0)
     assert reference_line.gap == config_module.EGO_VEHICLE_WIDTH
 
-
 def check_obstacle_first_st_search_window_matches_cpp():
     reference_line, _, _ = _build_reference_line()
     obstacle = _build_dynamic_obstacle()
@@ -904,7 +826,6 @@ def check_obstacle_first_st_search_window_matches_cpp():
     obstacle.BuildTrajectoryStBoundary(reference_line, 50.0)
     assert starts
     assert starts[0] == 0.0
-
 
 def check_collision_checker_obstacle_behind_ego_no_crash():
     """
@@ -934,7 +855,6 @@ def check_collision_checker_obstacle_behind_ego_no_crash():
         "obstacle behind the ADC in-lane should be excluded from the predicted environment"
     )
 
-
 def check_st_boundary_expand_by_t():
     """
     Regression test: STBoundary.ExpandByT used to call list.append(a, b)
@@ -950,7 +870,6 @@ def check_st_boundary_expand_by_t():
     assert expanded.min_t < boundary.min_t
     assert expanded.max_t > boundary.max_t
 
-
 def check_st_boundary_out_of_range_index_does_not_raise():
     boundary = STBoundary()
     ok, left, right = boundary.GetIndexRange(
@@ -959,7 +878,6 @@ def check_st_boundary_out_of_range_index_does_not_raise():
     assert not ok
     assert left == 0
     assert right == 0
-
 
 def check_st_graph_data_set_st_drivable_boundary():
     """
@@ -973,7 +891,6 @@ def check_st_graph_data_set_st_drivable_boundary():
     v_obs_info = [(0.0, -1.0, 1.0), (1.0, -1.0, 1.0), (2.0, -1.0, 1.0)]
     assert sg.SetSTDrivableBoundary(s_boundary, v_obs_info)
     assert len(sg.st_drivable_boundary.st_boundary) == len(s_boundary)
-
 
 def check_obstacle_build_trajectory_st_boundary():
     """
@@ -990,7 +907,6 @@ def check_obstacle_build_trajectory_st_boundary():
     assert isinstance(boundary, STBoundary)
     assert boundary.min_s <= boundary.max_s
     assert boundary.min_t <= boundary.max_t
-
 
 def check_path_approximation_matches_exact_projection():
     """
@@ -1016,14 +932,12 @@ def check_path_approximation_matches_exact_projection():
     for approx_value, exact_value in zip(approx_result, exact_result):
         assert abs(approx_value - exact_value) < 1e-6
 
-
 def check_path_approximation_projection_samples_advance():
     points = [MapPathPoint(Vec2d(float(i), 0.0)) for i in range(41)]
     path = MapPath(points, [], 0.5)
     samples = path._approximation._sampled_max_original_projections_to_left
     assert len(samples) > 1
     assert samples[-1] > samples[0]
-
 
 def check_path_get_projection_with_warm_start_s():
     """
@@ -1040,7 +954,6 @@ def check_path_get_projection_with_warm_start_s():
     assert abs(accumulate_s - 15.0) < 1e-6
     assert abs(lateral - 1.0) < 1e-6
 
-
 def check_vec2d_rmul():
     """
     Regression test: Vec2d only implemented __mul__ (Vec2d * scalar), not
@@ -1050,7 +963,6 @@ def check_vec2d_rmul():
     result = 0.5 * Vec2d(2.0, 4.0)
     assert abs(result.x - 1.0) < 1e-9
     assert abs(result.y - 2.0) < 1e-9
-
 
 def check_aabox2d_distance_to():
     """
@@ -1062,7 +974,6 @@ def check_aabox2d_distance_to():
     assert abs(box.DistanceTo(Vec2d(5.0, 0.0)) - 4.0) < 1e-9
     other = AABox2d(Vec2d(10.0, 0.0), 2.0, 2.0)
     assert abs(box.DistanceTo(other) - 8.0) < 1e-9
-
 
 def check_box2d_has_overlap_line_segment():
     """
@@ -1077,7 +988,6 @@ def check_box2d_has_overlap_line_segment():
     assert box.HasOverlap(crossing_segment) is True
     far_segment = LineSegment2d(Vec2d(100.0, 100.0), Vec2d(101.0, 101.0))
     assert box.HasOverlap(far_segment) is False
-
 
 def check_st_point_from_vec2d():
     """
@@ -1096,7 +1006,6 @@ def check_st_point_from_vec2d():
     assert point.s == 7.0
     assert point.x == 3.0
     assert point.y == 7.0
-
 
 def check_polygon2d_get_overlap_no_overlap_does_not_crash():
     """
@@ -1119,7 +1028,6 @@ def check_polygon2d_get_overlap_no_overlap_does_not_crash():
     assert has_overlap is True
     assert first is not None and last is not None
 
-
 def check_path_overlap_with_approximation_enabled():
     """
     Regression test: Path.OverlapWith called
@@ -1135,7 +1043,6 @@ def check_path_overlap_with_approximation_enabled():
     assert approximated_path.OverlapWith(overlapping_box, 0.1) is True
     far_box = Box2d(Vec2d(100.0, 100.0), 0.0, 2.0, 1.0)
     assert approximated_path.OverlapWith(far_box, 0.1) is False
-
 
 def check_kd_tree_nearest_object_matches_brute_force():
     """
@@ -1180,7 +1087,6 @@ def check_kd_tree_nearest_object_matches_brute_force():
         assert nearest is not None
         assert abs(nearest.DistanceTo(query) - brute_force_nearest.DistanceTo(query)) < 1e-9
 
-
 def check_obstacle_validators_treat_none_as_protobuf_zero_default():
     """
     Regression test: an unset protobuf scalar field reads back as its type's
@@ -1209,7 +1115,6 @@ def check_obstacle_validators_treat_none_as_protobuf_zero_default():
     )
     assert Obstacle.IsValidTrajectoryPoint(sparse_trajectory_point) is True
 
-
 def check_create_obstacles_uses_perception_validator_like_cpp():
     """
     Regression test: Obstacle.CreateObstacles used to gate obstacles through
@@ -1230,7 +1135,6 @@ def check_create_obstacles_uses_perception_validator_like_cpp():
         ]
     )
     assert Obstacle.CreateObstacles(predictions) == []
-
 
 def check_path_evaluate_does_not_alias_stored_points():
     """Evaluate used to hand back the stored endpoint. Combine then did
@@ -1271,7 +1175,6 @@ def check_path_evaluate_does_not_alias_stored_points():
     played = trajectory.Evaluate(trajectory[0].relative_time or 0.0)
     played.v = 99.0
     assert trajectory[0].v != 99.0
-
 
 def check_discretized_path_evaluate_reverse_matches_cpp_reverse_case():
     """
@@ -1317,7 +1220,6 @@ def check_discretized_path_evaluate_reverse_matches_cpp_reverse_case():
     assert math.isclose(eval_p4.x, (2.0 + 0.5) / sqrt2, abs_tol=1e-9)
     assert math.isclose(eval_p4.y, (2.0 + 0.5) / sqrt2, abs_tol=1e-9)
 
-
 def check_path_data_sl_to_xy_matches_cpp_unconditional_dkappa_division():
     """
     Regression test: PathData.SLToXY guarded `dkappa = (kappa - last.kappa) /
@@ -1357,19 +1259,6 @@ def check_path_data_sl_to_xy_matches_cpp_unconditional_dkappa_division():
     assert discretized_path[1].s == 0.0, "coincident cartesian points must not advance s"
     assert discretized_path[1].dkappa == math.inf
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 def check_apollo_map_borregas_ave_loads():
     """The vendored ApolloAppleSilicon loader decodes a bundled binary map."""
     from shapely.geometry import Point
@@ -1382,7 +1271,6 @@ def check_apollo_map_borregas_ave_loads():
     line = service.get_lane_central_curve_by_id(lane_id)
     nearest = service.get_nearest_lane(Point(line.coords[0]))
     assert nearest in service.lane_table
-
 
 def check_apollo_map_exports_commonroad_lanelets():
     """Apollo base_map.bin becomes a CommonRoad file with one lanelet per lane."""
@@ -1400,7 +1288,6 @@ def check_apollo_map_exports_commonroad_lanelets():
     assert len(scenario.lanelet_network.lanelets) == len(service.lane_table)
     assert scenario.lanelet_network.traffic_lights
     assert scenario.lanelet_network.traffic_signs
-
 
 def check_loaded_commonroad_scenario_is_driven():
     """Closed-loop planning follows a CommonRoad file that already exists.
@@ -1562,7 +1449,6 @@ def check_loaded_commonroad_scenario_is_driven():
     assert len(scenario.obstacles) == obstacle_count
     assert {lanelet.lanelet_id for lanelet in scenario.lanelet_network.lanelets} == lanelet_ids
 
-
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -1621,7 +1507,6 @@ def main():
     check_apollo_map_exports_commonroad_lanelets()
     check_loaded_commonroad_scenario_is_driven()
     print("lattice component checks succeeded")
-
 
 if __name__ == "__main__":
     main()
