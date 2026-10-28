@@ -2809,6 +2809,42 @@ def check_apollo_map_borregas_ave_loads():
     assert nearest in service.lane_table
 
 
+def check_closed_loop_trace_is_commonroad_trajectory():
+    """The executed trace is a CommonRoad dynamic obstacle, step 0 then prediction."""
+    from scripts.commonroad_closed_loop import scenario_from_closed_loop
+    from scripts.lattice_visualization import ObstacleDraw, PlotContext
+
+    ctx = PlotContext(
+        scenario_name="trace",
+        title="trace",
+        passed=True,
+        ref_x=[0.0, 30.0],
+        ref_y=[0.0, 0.0],
+        traj_x=[0.0, 1.0, 2.0],
+        traj_y=[0.0, 0.0, 0.1],
+        traj_t=[0.0, 0.1, 0.2],
+        traj_v=[5.0, 5.0, 5.0],
+        traj_theta=[0.0, 0.0, 0.05],
+        obstacles=[
+            ObstacleDraw(
+                xs=[10.0, 12.0, 12.0, 10.0, 10.0],
+                ys=[-1.0, -1.0, 1.0, 1.0, -1.0],
+                label="parked",
+                is_static=True,
+            )
+        ],
+    )
+    scenario = scenario_from_closed_loop(ctx, dt=0.1)
+    ego = next(obs for obs in scenario.dynamic_obstacles if obs.obstacle_id == 100)
+    assert ego.initial_state.time_step == 0
+    assert ego.prediction.trajectory.initial_time_step == 1
+    assert ego.occupancy_at_time(0) is not None
+    assert ego.occupancy_at_time(2) is not None
+    assert ego.occupancy_at_time(3) is None
+    assert scenario.static_obstacles
+    assert scenario.lanelet_network.lanelets
+
+
 def check_apollo_map_exports_commonroad_lanelets():
     """Apollo base_map.bin becomes a CommonRoad file with one lanelet per lane."""
     import tempfile
@@ -2927,6 +2963,7 @@ def main():
     check_fem_pos_deviation_smoother_never_sets_polish()
     check_fem_pos_deviation_smoother_matches_cpp_osqp_settings()
     check_apollo_map_borregas_ave_loads()
+    check_closed_loop_trace_is_commonroad_trajectory()
     check_apollo_map_exports_commonroad_lanelets()
     print("lattice component checks succeeded")
 
