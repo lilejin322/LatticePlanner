@@ -24,7 +24,11 @@ from protoclass.trajectory_point import TrajectoryPoint
 
 @dataclass
 class Actor:
-    """One vehicle in the simulated world. ``actor_id`` is the planning id."""
+    """One vehicle in the simulated world. ``actor_id`` is the planning id.
+
+    ``replay`` is set for an actor whose pose is copied from an existing
+    trajectory. The loop does not integrate that actor forward.
+    """
 
     actor_id: str
     x: float
@@ -36,6 +40,7 @@ class Actor:
     length: float = 4.0
     width: float = 2.0
     is_static: bool = False
+    replay: bool = False
 
 
 @dataclass
@@ -82,6 +87,7 @@ class SimResult:
     ref_y: List[float] = field(default_factory=list)
     other_ref_x: List[float] = field(default_factory=list)
     other_ref_y: List[float] = field(default_factory=list)
+    lanelet_ids: List[int] = field(default_factory=list)
 
     def summary(self) -> str:
         clearance = (
@@ -97,6 +103,8 @@ class SimResult:
 
 
 PlanFn = Callable[[Actor, List[Actor]], tuple]
+SyncFn = Callable[[float], None]
+CollisionFn = Callable[[list, DiscretizedTrajectory, float], tuple]
 
 
 def run_straight_road(
@@ -407,6 +415,8 @@ def _run_loop(
     horizon_s: float,
     backup: Optional[bool] = None,
     blocking_actor_id: Optional[str] = None,
+    sync_fn: Optional[SyncFn] = None,
+    collision_fn: Optional[CollisionFn] = None,
 ) -> SimResult:
     cycle_dt = 1.0 / max(config.FLAGS_planning_loop_rate, 1e-3)
     sample_dt = config.FLAGS_trajectory_time_resolution
@@ -426,6 +436,8 @@ def _run_loop(
         config.FLAGS_enable_backup_trajectory = backup
     try:
         while t < horizon_s - 1e-9:
+            if sync_fn is not None:
+                sync_fn(t)
             ok, trajectory, type_name, obstacles = plan_fn(ego, actors)
             trajectory = _as_discretized(trajectory)
             if not ok or trajectory is None or trajectory.NumOfPoints() < 2:
@@ -449,14 +461,17 @@ def _run_loop(
                 fallback_cycles += 1
 
             executed = _executed_prefix(trajectory, cycle_dt, sample_dt)
-            cycle_clearance = _min_clearance(obstacles, executed)
-            cycle_collision = CollisionChecker.StaticInCollision(
-                obstacles,
-                executed,
-                config.EGO_VEHICLE_LENGTH,
-                config.EGO_VEHICLE_WIDTH,
-                config.EGO_BACK_EDGE_TO_CENTER,
-            )
+            if collision_fn is None:
+                cycle_clearance = _min_clearance(obstacles, executed)
+                cycle_collision = CollisionChecker.StaticInCollision(
+                    obstacles,
+                    executed,
+                    config.EGO_VEHICLE_LENGTH,
+                    config.EGO_VEHICLE_WIDTH,
+                    config.EGO_BACK_EDGE_TO_CENTER,
+                )
+            else:
+                cycle_clearance, cycle_collision = collision_fn(obstacles, executed, t)
             if cycle_clearance is not None:
                 min_clearance = (
                     cycle_clearance
@@ -484,6 +499,8 @@ def _run_loop(
             for actor in actors:
                 _advance_actor(actor, cycle_dt)
             t += cycle_dt
+            if sync_fn is not None:
+                sync_fn(t)
             ego_trace.append(_pose(t, ego))
             for actor in actors:
                 actor_traces[actor.actor_id].append(_pose(t, actor))
@@ -713,7 +730,7 @@ def _apply_executed_state(ego: Actor, point: TrajectoryPoint) -> None:
 
 
 def _advance_actor(actor: Actor, dt: float) -> None:
-    if actor.is_static:
+    if actor.is_static or actor.replay:
         return
     actor.x += actor.v * math.cos(actor.theta) * dt
     actor.y += actor.v * math.sin(actor.theta) * dt

@@ -2827,6 +2827,146 @@ def check_apollo_map_exports_commonroad_lanelets():
     assert scenario.lanelet_network.traffic_signs
 
 
+def check_loaded_commonroad_scenario_is_driven():
+    """Closed-loop planning follows a CommonRoad file that already exists.
+
+    The file is the converter output for a bundled Apollo map. The drive does
+    not add lanelets or obstacles, and it leaves the loaded geometry where it was.
+    """
+    import tempfile
+
+    import numpy as np
+    from shapely.geometry import LineString, Point
+
+    import config
+    from apollo_map.to_commonroad import convert_map
+    from common.discretized_trajectory import DiscretizedTrajectory
+    from commonroad.geometry.obstacle_shapes.rect_obstacle_shape import RectObstacleShape
+    from commonroad.prediction.prediction import TrajectoryPrediction
+    from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType, StaticObstacle
+    from commonroad.scenario.state import CustomState, InitialState
+    from commonroad.scenario.trajectory import Trajectory
+    from protoclass.path_point import PathPoint
+    from protoclass.trajectory_point import TrajectoryPoint
+    from scripts.closed_loop_sim import Actor, _advance_actor
+    from scripts.commonroad_drive import (
+        _planner_obstacle,
+        load_scenario,
+        occupancy_clearance,
+        run_loaded_scenario,
+        sync_actor,
+    )
+
+    shape = RectObstacleShape(width=2.0, length=4.0)
+    dynamic = DynamicObstacle(
+        7,
+        ObstacleType.CAR,
+        shape,
+        InitialState(
+            time_step=0,
+            position=np.array([0.0, 0.0]),
+            orientation=0.0,
+            velocity=2.0,
+        ),
+        TrajectoryPrediction(
+            Trajectory(
+                1,
+                [
+                    CustomState(
+                        time_step=1,
+                        position=np.array([0.2, 0.0]),
+                        orientation=0.0,
+                        velocity=2.0,
+                    )
+                ],
+            ),
+            shape,
+        ),
+    )
+    actor = Actor("cr_7", x=0.0, replay=True, v=2.0)
+    sync_actor(actor, dynamic, 0.1, np.zeros(2), 0.1)
+    assert abs(actor.x - 0.2) < 1e-6
+    held_x = actor.x
+    _advance_actor(actor, 0.1)
+    assert actor.x == held_x
+    planned = _planner_obstacle(actor, dynamic, 0.1, np.zeros(2), 0.1)
+    predicted = planned.GetPointAtTime(0.0)
+    assert abs(predicted.path_point.x - 0.2) < 1e-6
+
+    shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
+    box = RectObstacleShape(width=2.0, length=4.0)
+    executed = DiscretizedTrajectory(
+        [
+            TrajectoryPoint(
+                path_point=PathPoint(x=0.0, y=0.0, theta=0.0),
+                v=0.0,
+                a=0.0,
+                relative_time=0.0,
+            ),
+            TrajectoryPoint(
+                path_point=PathPoint(x=0.0, y=0.0, theta=0.0),
+                v=0.0,
+                a=0.0,
+                relative_time=0.1,
+            ),
+        ]
+    )
+    overlap = StaticObstacle(
+        1,
+        ObstacleType.CAR,
+        box,
+        InitialState(time_step=0, position=np.array([shift, 0.0]), orientation=0.0, velocity=0.0),
+    )
+    clear = StaticObstacle(
+        2,
+        ObstacleType.CAR,
+        box,
+        InitialState(time_step=0, position=np.array([shift, 20.0]), orientation=0.0, velocity=0.0),
+    )
+    clearance, collided = occupancy_clearance(
+        executed, [overlap], t0=0.0, scenario_dt=0.1, origin=np.zeros(2)
+    )
+    assert collided and clearance == 0.0
+    clearance, collided = occupancy_clearance(
+        executed, [clear], t0=0.0, scenario_dt=0.1, origin=np.zeros(2)
+    )
+    assert not collided and clearance > 10.0
+
+    with tempfile.TemporaryDirectory() as output_dir:
+        scenario, problems = load_scenario(convert_map("borregas_ave", output_dir))
+    lanelets = list(scenario.lanelet_network.lanelets)
+    lanelet_ids = {lanelet.lanelet_id for lanelet in lanelets}
+    centers = {
+        lanelet.lanelet_id: np.array(lanelet.center_vertices, copy=True) for lanelet in lanelets
+    }
+    obstacle_count = len(scenario.obstacles)
+    result = run_loaded_scenario(
+        scenario, planning_problems=problems, horizon_s=2.0, init_v=5.0
+    )
+    assert result.ok, result.summary()
+    assert result.lanelet_ids and set(result.lanelet_ids) <= lanelet_ids
+    assert not result.actor_traces
+    assert result.min_clearance is None and not result.collided
+    assert {lanelet.lanelet_id for lanelet in scenario.lanelet_network.lanelets} == lanelet_ids
+    assert len(scenario.obstacles) == obstacle_count
+    for lanelet_id, center in centers.items():
+        loaded = scenario.lanelet_network.find_lanelet_by_id(lanelet_id)
+        assert np.allclose(loaded.center_vertices, center)
+    traveled = 0.0
+    for previous, sample in zip(result.ego_trace, result.ego_trace[1:]):
+        traveled += math.hypot(sample.x - previous.x, sample.y - previous.y)
+    assert traveled > 6.0, result.summary()
+    road = LineString(list(zip(result.ref_x, result.ref_y)))
+    lateral = max(road.distance(Point(sample.x, sample.y)) for sample in result.ego_trace)
+    assert lateral < 1.5, f"{result.summary()} lateral={lateral:.2f}"
+    if len(result.lanelet_ids) == 1:
+        chosen = scenario.lanelet_network.find_lanelet_by_id(result.lanelet_ids[0])
+        origin = chosen.center_vertices[0]
+        end = chosen.center_vertices[-1]
+        assert abs(result.ref_x[-1] - (end[0] - origin[0])) < 1e-3
+        assert abs(result.ref_y[-1] - (end[1] - origin[1])) < 1e-3
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -2928,6 +3068,7 @@ def main():
     check_fem_pos_deviation_smoother_matches_cpp_osqp_settings()
     check_apollo_map_borregas_ave_loads()
     check_apollo_map_exports_commonroad_lanelets()
+    check_loaded_commonroad_scenario_is_driven()
     print("lattice component checks succeeded")
 
 
