@@ -41,6 +41,9 @@ CONTAINED = "contained"
 NO_TRAJECTORY = "no_trajectory"
 EXCEPTION = "exception"
 LEFT_ROAD = "left_road"
+ACCEL_BOUND = "accel_bound"
+ACCEL_LOW = -6.0
+ACCEL_HIGH = 4.0
 
 
 @dataclass
@@ -164,6 +167,18 @@ def probe_file(path: Path) -> PlanProbe:
 
 def probe_scenario(scenario_id: str) -> PlanProbe:
     return probe_file(scenario_file(scenario_id))
+
+
+def executed_accel_span(result) -> tuple[float | None, float | None]:
+    """Min and max acceleration of the committed closed-loop trace."""
+    accels = []
+    for left, right in zip(result.ego_trace, result.ego_trace[1:]):
+        dt = right.t - left.t
+        if dt > 1e-6:
+            accels.append((right.v - left.v) / dt)
+    if not accels:
+        return None, None
+    return min(accels), max(accels)
 
 
 def drive_scenario(scenario_id: str, horizon_s: float = 1.0):
