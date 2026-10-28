@@ -2,6 +2,7 @@
 Discretized trajectory submodule
 """
 import math
+from copy import deepcopy
 from logging import Logger
 from bisect import bisect_left
 from collections import UserList
@@ -85,10 +86,10 @@ class DiscretizedTrajectory(UserList):
         idx = bisect_left(times, relative_time)
 
         if idx == 0:
-            return self[0]
+            return deepcopy(self[0])
         elif idx == len(self):
             self.logger.warning(f"Warning: When evaluating trajectory, relative_time({relative_time}) is too large")
-            return self[-1]
+            return deepcopy(self[-1])
         else:
             return self.InterpolateUsingLinearApproximation(self[idx - 1], self[idx], relative_time)
 
