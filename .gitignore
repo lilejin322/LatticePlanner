@@ -249,6 +249,9 @@ z3/*
 # CommonRoad simulation artifacts.
 scripts/output/commonroad/
 
+# Public CommonRoad scenario XML. Fetch with scripts/fetch_commonroad_scenarios.py.
+data/commonroad-scenarios/
+
 # Generated playback. Recreate with scripts/run_lattice_scenario_cases.py --animate.
 scripts/output/animations/
 scripts/output/frames/

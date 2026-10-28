@@ -412,49 +412,27 @@ def check_collision_checker_obstacle_behind_ego_no_crash():
 
 
 
-def check_apollo_map_borregas_ave_loads():
-    """The vendored ApolloAppleSilicon loader decodes a bundled binary map."""
-    from shapely.geometry import Point
+def check_commonroad_scenario_file_loads():
+    """The fetched scenario repository contains the road the closed loop drives."""
+    from scripts.commonroad_drive import load_scenario
+    from scripts.commonroad_scenarios import ROAD_SCENARIO_ID, scenario_file
 
-    from apollo_map import load_map
-
-    service = load_map("borregas_ave")
-    assert service.lane_table, "borregas_ave base_map.bin produced no lanes"
-    lane_id = next(iter(service.lane_table))
-    line = service.get_lane_central_curve_by_id(lane_id)
-    nearest = service.get_nearest_lane(Point(line.coords[0]))
-    assert nearest in service.lane_table
-
-def check_apollo_map_exports_commonroad_lanelets():
-    """Apollo base_map.bin becomes a CommonRoad file with one lanelet per lane."""
-    import tempfile
-
-    from commonroad.common.file_reader import CommonRoadFileReader
-
-    from apollo_map import load_map
-    from apollo_map.to_commonroad import convert_map
-
-    service = load_map("borregas_ave", load_only=True)
-    with tempfile.TemporaryDirectory() as output_dir:
-        xml_path = convert_map("borregas_ave", output_dir)
-        scenario, _planning = CommonRoadFileReader(str(xml_path)).open()
-    assert len(scenario.lanelet_network.lanelets) == len(service.lane_table)
-    assert scenario.lanelet_network.traffic_lights
-    assert scenario.lanelet_network.traffic_signs
+    path = scenario_file(ROAD_SCENARIO_ID)
+    scenario, problems = load_scenario(path)
+    assert scenario.lanelet_network.lanelets
+    assert problems.planning_problem_dict
+    assert str(scenario.scenario_id) == ROAD_SCENARIO_ID
 
 def check_loaded_commonroad_scenario_is_driven():
     """Closed-loop planning follows a CommonRoad file that already exists.
 
-    The file is the converter output for a bundled Apollo map. The drive does
-    not add lanelets or obstacles, and it leaves the loaded geometry where it was.
+    The file is from the fetched scenario repository. The drive does not add
+    lanelets or obstacles, and it leaves the loaded geometry where it was.
     """
-    import tempfile
-
     import numpy as np
     from shapely.geometry import LineString, Point
 
     import config
-    from apollo_map.to_commonroad import convert_map
     from common.discretized_trajectory import DiscretizedTrajectory
     from commonroad.geometry.obstacle_shapes.rect_obstacle_shape import RectObstacleShape
     from commonroad.prediction.prediction import TrajectoryPrediction
@@ -464,6 +442,7 @@ def check_loaded_commonroad_scenario_is_driven():
     from protoclass.path_point import PathPoint
     from protoclass.trajectory_point import TrajectoryPoint
     from scripts.closed_loop_sim import Actor, _advance_actor
+    from scripts.commonroad_scenarios import scenario_file
     from scripts.commonroad_drive import (
         _planner_obstacle,
         ego_obstacle_from_drive,
@@ -549,8 +528,7 @@ def check_loaded_commonroad_scenario_is_driven():
     )
     assert not collided and clearance > 10.0
 
-    with tempfile.TemporaryDirectory() as output_dir:
-        scenario, problems = load_scenario(convert_map("borregas_ave", output_dir))
+    scenario, problems = load_scenario(scenario_file())
     lanelets = list(scenario.lanelet_network.lanelets)
     lanelet_ids = {lanelet.lanelet_id for lanelet in lanelets}
     centers = {
@@ -562,8 +540,8 @@ def check_loaded_commonroad_scenario_is_driven():
     )
     assert result.ok, result.summary()
     assert result.lanelet_ids and set(result.lanelet_ids) <= lanelet_ids
-    assert not result.actor_traces
-    assert result.min_clearance is None and not result.collided
+    assert len(result.actor_traces) == obstacle_count
+    assert not result.collided
     assert {lanelet.lanelet_id for lanelet in scenario.lanelet_network.lanelets} == lanelet_ids
     assert len(scenario.obstacles) == obstacle_count
     for lanelet_id, center in centers.items():
@@ -619,8 +597,7 @@ def main():
     check_obstacle_empty_trajectory_is_static_for_st_graph()
     check_lattice_main_path_without_backup()
     check_collision_checker_obstacle_behind_ego_no_crash()
-    check_apollo_map_borregas_ave_loads()
-    check_apollo_map_exports_commonroad_lanelets()
+    check_commonroad_scenario_file_loads()
     check_loaded_commonroad_scenario_is_driven()
     print("lattice component checks succeeded")
 

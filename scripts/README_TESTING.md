@@ -7,10 +7,11 @@
 | Script | Purpose |
 |------|------|
 | `run_lattice_component_checks.py` | Lattice, obstacle, ST-graph, reference-line, and geometry regressions |
-| `run_lattice_scenario_cases.py` | Closed-loop scenarios on the converted Borregas lanelet. Tags: `lattice`, `stress`, `sim` |
+| `run_lattice_scenario_cases.py` | Closed-loop scenarios on a fetched CommonRoad lanelet. Tags: `lattice`, `stress`, `sim` |
 | `run_lattice_demo_cases.py` | Short demo (a subset of the scenario set) |
 | `run_minimal_lattice_plan.py` | One straight centerline and `LatticePlanner.Plan` |
-| `run_closed_loop_sim.py` | Closed loop on the converted Borregas Ave lanelets |
+| `run_closed_loop_sim.py` | Closed loop on a fetched CommonRoad lanelet |
+| `fetch_commonroad_scenarios.py` | Clone the public scenario repository into gitignored `data/commonroad-scenarios/` |
 | `run_all_scenario_animations.py` | GIFs for scenarios that publish a trajectory |
 | `run_all_planner_checks.py` | Component checks, the minimal plan, and the closed loop |
 
@@ -74,5 +75,5 @@ python scripts/run_closed_loop_sim.py
 - Collision checking and ST-boundary construction
 - Reference-line projection, lane width, and speed limit on a point centerline
 - Polygon, box, and path-approximation geometry
-- The vendored Apollo map loads, and the converter writes CommonRoad lanelets
+- A fetched CommonRoad scenario file loads
 - A loaded CommonRoad file is driven without adding lanelets

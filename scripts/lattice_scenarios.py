@@ -195,7 +195,7 @@ def s_low_speed_creep() -> SimResult:
 
 
 def s_obstacle_60m_pass() -> SimResult:
-    # The converted lanelet leaves this cruise a few centimeters under the old
+    # This lanelet leaves this cruise a few centimeters under the old
     # 6 m fixture threshold. The car still accelerates past a vehicle 60 m ahead.
     return _straight(
         "obstacle_60m_pass",
@@ -306,7 +306,7 @@ def s_sim_stopped_leader() -> SimResult:
 
 
 SCENARIOS: List[Scenario] = [
-    Scenario("open_road", "Closed loop: open lanelet from the converted map", "lattice", s_open_road),
+    Scenario("open_road", "Closed loop: open lanelet from a fetched CommonRoad scenario", "lattice", s_open_road),
     Scenario("far_obstacle_stop", "Closed loop: 35m stationary car", "lattice", s_far_obstacle_stop),
     Scenario(
         "close_obstacle_no_backup",
@@ -350,8 +350,8 @@ SCENARIOS: List[Scenario] = [
         s_backup_off_open_road,
         backup=False,
     ),
-    Scenario("curved_open_road", "Closed loop: converted lanelet, no leader", "lattice", s_curved_open_road),
-    Scenario("curved_obstacle_stop", "Closed loop: converted lanelet, stopped leader", "lattice", s_curved_obstacle_stop),
+    Scenario("curved_open_road", "Closed loop: fetched lanelet, no leader", "lattice", s_curved_open_road),
+    Scenario("curved_obstacle_stop", "Closed loop: fetched lanelet, stopped leader", "lattice", s_curved_obstacle_stop),
     Scenario(
         "stress_obstacle_distance_sweep",
         "Closed-loop obstacle distance sweep",
