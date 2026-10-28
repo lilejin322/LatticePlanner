@@ -1,7 +1,6 @@
 """
 Lattice planner aligned with modules/planning/planner/lattice/lattice_planner.cc
 """
-import math
 import time
 import config
 from logging import Logger
@@ -11,45 +10,15 @@ from cartesian_frenet_converter import CartesianFrenetConverter
 from behavior.collision_checker import CollisionChecker
 from behavior.path_time_graph import PathTimeGraph
 from behavior.prediction_querier import PredictionQuerier
-from common.frame import Frame
 from common.constraint_checker import ConstraintChecker
-from reference_line.reference_line_info import ReferenceLineInfo
-from reference_line.reference_point import ReferencePoint
 from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.path_point import PathPoint
+from protoclass.planning_target import PlanningTarget
 from protoclass.trajectory_point import TrajectoryPoint
 from trajectory_generation.backup_trajectory_generator import BackupTrajectoryGenerator
 from trajectory_generation.trajectory1d_generator import Trajectory1dGenerator
 from trajectory_generation.trajectory_combiner import TrajectoryCombiner
 from trajectory_generation.trajectory_evaluator import TrajectoryEvaluator
-
-def ToDiscretizedReferenceLine(ref_points: List[ReferencePoint]) -> List[PathPoint]:
-    """
-    Convert a list of ReferencePoint to a list of PathPoint with s values computed.
-
-    :param List[ReferencePoint] ref_points: list of ReferencePoint
-    :returns: list of PathPoint with s values computed
-    :rtype: List[PathPoint]
-    """
-    s = 0.0
-    path_points: List[PathPoint] = []
-    for ref_point in ref_points:
-        path_point = PathPoint(
-            x=ref_point.x,
-            y=ref_point.y,
-            z=0.0,
-            theta=ref_point.heading,
-            kappa=ref_point.kappa,
-            dkappa=ref_point.dkappa,
-            ddkappa=0.0,
-        )
-        if path_points:
-            dx = path_point.x - path_points[-1].x
-            dy = path_point.y - path_points[-1].y
-            s += math.sqrt(dx * dx + dy * dy)
-        path_point.s = s
-        path_points.append(path_point)
-    return path_points
 
 def ComputeInitFrenetState(matched_point: PathPoint,
                            cartesian_state: TrajectoryPoint) -> Tuple[List[float],List[float]]:
@@ -91,39 +60,13 @@ class LatticePlanner:
         self.num_planning_succeeded_cycles = 0
         self.logger = Logger("LatticePlanner")
 
-    def Plan(self, planning_start_point: TrajectoryPoint,
-        frame: Frame, computed_trajectory: ADCTrajectory,
-    ) -> bool:
-        """Plan trajectories on every reference line in ``frame``."""
-        del computed_trajectory
+    def PlanOnLanelet(self, planning_init_point: TrajectoryPoint, obstacles, reference_points,
+                      lane_width, cruise_speed: float, planning_target: PlanningTarget = None):
+        """Run one lattice cycle on a lanelet centerline.
 
-        success_line_count = 0
-        for index, reference_line_info in enumerate(frame.mutable_reference_line_info):
-            if index != 0:
-                reference_line_info.SetPriorityCost(config.FLAGS_cost_non_priority_reference_line)
-            else:
-                reference_line_info.SetPriorityCost(0.0)
-
-            if self.PlanOnReferenceLine(planning_start_point, frame, reference_line_info):
-                success_line_count += 1
-            elif reference_line_info.IsChangeLanePath():
-                self.logger.error(
-                    f"Planner failed to change lane to {reference_line_info.Lanes().Id()}"
-                )
-            else:
-                self.logger.error(f"Planner failed to {reference_line_info.Lanes().Id()}")
-
-        return success_line_count > 0
-
-    def PlanOnReferenceLine(self, planning_init_point: TrajectoryPoint, frame: Frame,
-                            reference_line_info: ReferenceLineInfo) -> bool:
-        """
-
-        :param TrajectoryPoint planning_init_point:
-        :param Frame frame: 
-        :param ReferenceLineInfo reference_line_info:
-        :returns:
-        :rtype: bool
+        Sampling, costs, and constraint checks are unchanged. ``lane_width`` and
+        ``reference_points`` come from the CommonRoad lanelet. Returns
+        ``(ok, trajectory, trajectory_type)``.
         """
         start_time = time.time()
         current_time = start_time
@@ -134,11 +77,7 @@ class LatticePlanner:
         )
         self.num_planning_cycles += 1
 
-        reference_line_info.set_is_on_reference_line()
-        reference_line = ToDiscretizedReferenceLine(
-            reference_line_info.reference_line.reference_points
-        )
-
+        reference_line = reference_points
         matched_point = PathMatcher.MatchToPath(
             reference_line,
             planning_init_point.path_point.x,
@@ -146,11 +85,11 @@ class LatticePlanner:
         )
         init_s, init_d = ComputeInitFrenetState(matched_point, planning_init_point)
 
-        prediction_querier = PredictionQuerier(frame.obstacles, reference_line)
+        prediction_querier = PredictionQuerier(obstacles, reference_line)
         path_time_graph = PathTimeGraph(
             prediction_querier.GetObstacles(),
             reference_line,
-            reference_line_info,
+            lane_width,
             init_s[0],
             init_s[0] + config.FLAGS_speed_lon_decision_horizon,
             0.0,
@@ -158,10 +97,10 @@ class LatticePlanner:
             init_d,
         )
 
-        speed_limit = reference_line_info.reference_line.GetSpeedLimitFromS(init_s[0])
-        reference_line_info.SetLatticeCruiseSpeed(speed_limit)
-
-        planning_target = reference_line_info.planning_target
+        if planning_target is None:
+            planning_target = PlanningTarget(cruise_speed=cruise_speed)
+        else:
+            planning_target.cruise_speed = cruise_speed
         if planning_target.stop_point is not None:
             self.logger.debug(
                 f"Planning target stop s: {planning_target.stop_point.s}, "
@@ -185,11 +124,11 @@ class LatticePlanner:
         )
 
         collision_checker = CollisionChecker(
-            frame.obstacles,
+            obstacles,
             init_s[0],
             init_d[0],
             reference_line,
-            reference_line_info,
+            lane_width,
             path_time_graph,
         )
 
@@ -218,12 +157,8 @@ class LatticePlanner:
                 continue
 
             num_lattice_traj += 1
-            reference_line_info.SetTrajectory(combined_trajectory)
-            reference_line_info.SetCost(
-                reference_line_info.PriorityCost() + trajectory_pair_cost
-            )
-            reference_line_info.SetDrivable(True)
-            reference_line_info.set_trajectory_type(ADCTrajectory.TrajectoryType.NORMAL)
+            chosen = combined_trajectory
+            chosen_type = ADCTrajectory.TrajectoryType.NORMAL
             break
 
         self.logger.debug(f"Trajectory_Evaluation_Time = {time.time() - current_time}")
@@ -231,7 +166,7 @@ class LatticePlanner:
 
         if num_lattice_traj > 0:
             self.num_planning_succeeded_cycles += 1
-            return True
+            return True, chosen, chosen_type
 
         self.logger.error("Planning failed")
         if config.FLAGS_enable_backup_trajectory:
@@ -244,13 +179,6 @@ class LatticePlanner:
                 trajectory1d_generator,
             )
             trajectory = backup_generator.GenerateTrajectory(reference_line)
-            reference_line_info.AddCost(config.FLAGS_backup_trajectory_cost)
-            reference_line_info.SetTrajectory(trajectory)
-            reference_line_info.SetDrivable(True)
-            reference_line_info.set_trajectory_type(
-                ADCTrajectory.TrajectoryType.PATH_FALLBACK
-            )
-            return True
+            return True, trajectory, ADCTrajectory.TrajectoryType.PATH_FALLBACK
 
-        reference_line_info.SetCost(float("inf"))
-        return False
+        return False, None, ADCTrajectory.TrajectoryType.UNKNOWN

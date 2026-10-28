@@ -144,19 +144,18 @@ def _drive_official(
 
 
 def _lattice_plan(drive, blocking_actor_id: Optional[str]):
-    from scripts.lattice_commonroad import _reference_line, plan_on_centerline
+    from lanelet_path import path_from_lanelet
+    from scripts.lattice_commonroad import plan_on_lanelet
 
-    reference_line = _reference_line(
-        drive.frame.center, drive.frame.left_width, drive.frame.right_width
-    )
+    path = path_from_lanelet(drive.frame.lanelet, config.FLAGS_default_cruise_speed)
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        return plan_on_centerline(
-            drive.frame.center,
+        return plan_on_lanelet(
+            drive.frame.lanelet,
             ego_now,
             actors_now,
             blocking_actor_id,
-            reference_line=reference_line,
+            path=path,
         )
 
     return plan_fn
@@ -409,14 +408,6 @@ def _run_loop(
         actor_meta=actor_meta,
         blocking_actor_id=blocking_actor_id,
     )
-
-
-def _bind_obstacles(reference_line_info, obstacles, blocking_actor_id: Optional[str]) -> None:
-    reference_line_info.Init(obstacles, 10.0)
-    if blocking_actor_id is not None:
-        reference_line_info.SetBlockingObstacle(blocking_actor_id)
-    frame = reference_line_info._frame
-    frame._obstacles = {obstacle.Id(): obstacle for obstacle in obstacles}
 
 
 def _executed_state_is_usable(ego: Actor, point: TrajectoryPoint, dt: float) -> bool:

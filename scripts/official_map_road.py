@@ -14,12 +14,10 @@ from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
 import numpy as np
-import shapely
 
 from scripts.closed_loop_sim import Actor
 from scripts.commonroad_drive import (
     _longest_lanelet,
-    _resample,
     load_scenario,
     occupancy_clearance,
 )
@@ -31,9 +29,7 @@ _CACHE: dict = {}
 @dataclass
 class OfficialFrame:
     scenario: object
-    hdmap: object
-    reference_line: object
-    lanes: object
+    lanelet: object
     center: np.ndarray
     stations: np.ndarray
     origin_x: float
@@ -41,8 +37,6 @@ class OfficialFrame:
     lanelet_ids: List[int]
     neighbor_xy: Optional[np.ndarray]
     length: float
-    left_width: float = 1.75
-    right_width: float = 1.75
 
 
 @dataclass
@@ -201,16 +195,15 @@ def _official_scenario():
 
 
 def _build_frame(scenario, lanelet) -> OfficialFrame:
-    center_world, stations = _resample(np.asarray(lanelet.center_vertices, dtype=float), 1.0)
-    origin = center_world[0].copy()
-    center = center_world - origin
-    left_width = _distance_samples(center_world, lanelet.left_vertices)
-    right_width = _distance_samples(center_world, lanelet.right_vertices)
+    from lanelet_path import translated_lanelet
+
+    origin = np.asarray(lanelet.center_vertices[0], dtype=float)
+    local = translated_lanelet(lanelet, origin)
+    center = np.asarray(local.center_vertices, dtype=float)
+    stations = np.asarray(local.distance, dtype=float)
     return OfficialFrame(
         scenario=scenario,
-        hdmap=None,
-        reference_line=None,
-        lanes=None,
+        lanelet=local,
         center=center,
         stations=stations,
         origin_x=float(origin[0]),
@@ -218,17 +211,7 @@ def _build_frame(scenario, lanelet) -> OfficialFrame:
         lanelet_ids=[lanelet.lanelet_id],
         neighbor_xy=None,
         length=float(stations[-1]),
-        left_width=float(np.median(left_width)),
-        right_width=float(np.median(right_width)),
     )
-
-
-def _distance_samples(center_world: np.ndarray, boundary) -> List[float]:
-    line = shapely.LineString(np.asarray(boundary, dtype=float))
-    return [
-        float(line.distance(shapely.Point(float(point[0]), float(point[1]))))
-        for point in center_world
-    ]
 
 
 def _put(frame: OfficialFrame, actor: Actor, station: float, lateral: float, speed: float) -> None:
@@ -241,15 +224,16 @@ def _put(frame: OfficialFrame, actor: Actor, station: float, lateral: float, spe
 
 
 def pose_on_center(frame: OfficialFrame, station: float, lateral: float) -> Tuple[float, float, float]:
-    stations = frame.stations
+    length = float(frame.stations[-1])
+    station = min(max(float(station), 0.0), length)
     center = frame.center
-    station = min(max(float(station), 0.0), float(stations[-1]))
-    index = int(np.searchsorted(stations, station, side="right") - 1)
-    index = min(max(index, 0), len(center) - 2)
-    span = float(stations[index + 1] - stations[index])
-    ratio = 0.0 if span < 1e-9 else (station - float(stations[index])) / span
-    point = center[index] * (1.0 - ratio) + center[index + 1] * ratio
-    delta = center[index + 1] - center[index]
+    if station >= length - 1e-9:
+        point = center[-1]
+        delta = center[-1] - center[-2]
+    else:
+        point, _right, _left, index = frame.lanelet.interpolate_position(station)
+        nxt = min(index + 1, len(center) - 1)
+        delta = center[nxt] - center[index]
     theta = math.atan2(float(delta[1]), float(delta[0]))
     x = float(point[0]) + lateral * -math.sin(theta)
     y = float(point[1]) + lateral * math.cos(theta)

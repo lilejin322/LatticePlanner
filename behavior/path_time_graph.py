@@ -9,7 +9,6 @@ from common.vec2d import Vec2d
 from common.st_boundary import STBoundary
 from common.st_point import STPoint
 from common.geometry_utils import lerp
-from reference_line.reference_line_info import ReferenceLineInfo
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.sl_boundary import SLBoundary
@@ -23,34 +22,34 @@ class PathTimeGraph:
     """
 
     def __init__(self, obstacles: List[Obstacle], discretized_ref_points: List[PathPoint],
-                 reference_line_info: ReferenceLineInfo, s_start: float, s_end: float,
+                 lane_width, s_start: float, s_end: float,
                  t_start: float, t_end: float, init_d: List[float]) -> None:
         """
-        Construct a PathTimeGraph with obstacles, reference line info, and graph ranges.
+        Construct a PathTimeGraph.
 
-        :param List[Obstacle] obstacles: a list of obstacles
-        :param List[PathPoint] discretized_ref_points: discretized reference points
-        :param ReferenceLineInfo reference_line_info: reference line information
-        :param float s_start: start s value of the graph
-        :param float s_end: end s value of the graph
-        :param float t_start: start time of the graph
-        :param float t_end: end time of the graph
-        :param List[float] init_d: initial d values
+        ``lane_width(s)`` returns ``(ok, left, right)`` from the lanelet.
         """
         assert s_start < s_end, "s_start must be less than s_end"
         assert t_start < t_end, "t_start must be less than t_end"
 
         self._path_range = (s_start, s_end)
         self._time_range = (t_start, t_end)
-        self.reference_line_info = reference_line_info
+        self.lane_width = lane_width
         self._init_d = init_d
         self.logger = Logger("PathTimeGraph")
-
         self.path_time_obstacle_map: Dict[str, STBoundary] = {}
         self.path_time_obstacles: List[STBoundary] = []
         self.static_obs_sl_boundaries: List[SLBoundary] = []
-
         self.SetUpObstacles(obstacles, discretized_ref_points)
+
+    def _half_widths(self, station: float) -> Tuple[float, float]:
+        left = config_module.FLAGS_default_reference_line_width * 0.5
+        right = left
+        ok, queried_left, queried_right = self.lane_width(station)
+        if ok:
+            left = queried_left
+            right = queried_right
+        return left, right
 
     @staticmethod
     def ComputeObstacleBoundary(vertices: List[Vec2d], discretized_ref_points: List[PathPoint]) -> SLBoundary:
@@ -108,12 +107,7 @@ class PathTimeGraph:
         obstacle_id: str = obstacle.Id()
         sl_boundary: SLBoundary = self.ComputeObstacleBoundary(polygon.GetAllVertices(), discretized_ref_points)
 
-        left_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-        right_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-        ok, queried_left_width, queried_right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
-        if ok:
-            left_width = queried_left_width
-            right_width = queried_right_width
+        left_width, right_width = self._half_widths(sl_boundary.start_s)
         if (sl_boundary.start_s > self._path_range[1] or
                 sl_boundary.end_s < self._path_range[0] or
                 sl_boundary.start_l > left_width or
@@ -147,12 +141,7 @@ class PathTimeGraph:
             box: Box2d = obstacle.GetBoundingBox(point)
             sl_boundary: SLBoundary = self.ComputeObstacleBoundary(box.GetAllCorners(), discretized_ref_points)
 
-            left_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-            right_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-            ok, queried_left_width, queried_right_width = self.reference_line_info.reference_line.GetLaneWidth(sl_boundary.start_s)
-            if ok:
-                left_width = queried_left_width
-                right_width = queried_right_width
+            left_width, right_width = self._half_widths(sl_boundary.start_s)
 
             # The obstacle is not shown on the region to be considered.
             if (sl_boundary.start_s > self._path_range[1] or
@@ -354,12 +343,7 @@ class PathTimeGraph:
 
         # Initialize bounds by reference line width
         for _ in range(num_bound):
-            left_width: float = config_module.FLAGS_default_reference_line_width / 2.0
-            right_width: float = config_module.FLAGS_default_reference_line_width / 2.0
-            ok, queried_left_width, queried_right_width = self.reference_line_info.reference_line.GetLaneWidth(s_curr)
-            if ok:
-                left_width = queried_left_width
-                right_width = queried_right_width
+            left_width, right_width = self._half_widths(s_curr)
             ego_d_lower: float = self._init_d[0] - ego_width / 2.0
             ego_d_upper: float = self._init_d[0] + ego_width / 2.0
             bounds.append((min(-right_width, ego_d_lower - config_module.FLAGS_bound_buffer),

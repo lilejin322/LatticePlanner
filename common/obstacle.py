@@ -16,7 +16,6 @@ from bisect import bisect_left
 from logging import Logger
 import hashlib
 import struct
-from reference_line import ReferenceLine
 import config as config_module
 from enum import Enum
 from protoclass.path_point import PathPoint
@@ -831,31 +830,6 @@ class Obstacle:
 
         return isinstance(self._lateral_decision.object_tag, ObjectIgnore)
 
-    def BuildReferenceLineStBoundary(self, reference_line: ReferenceLine, adc_start_s: float) -> None:
-        """
-        Build reference line ST boundary
-        """
-
-        adc_width: float = config_module.EGO_VEHICLE_WIDTH
-        if self._is_static or not self._trajectory.trajectory_point:
-            point_pairs: List[Tuple[STPoint, STPoint]] = []
-            start_s: float = self._sl_boundary.start_s
-            end_s: float = self._sl_boundary.end_s
-            if end_s - start_s < kStBoundaryDeltaS:
-                end_s = start_s + kStBoundaryDeltaS
-            if not reference_line.IsBlockRoad(self._perception_bounding_box, adc_width):
-                return
-            point_pairs.append((STPoint(start_s - adc_start_s, 0.0), STPoint(end_s - adc_start_s, 0.0)))
-            point_pairs.append((STPoint(start_s - adc_start_s, config_module.FLAGS_st_max_t), STPoint(end_s - adc_start_s, config_module.FLAGS_st_max_t)))
-            self._reference_line_st_boundary = STBoundary(point_pairs)
-        else:
-            success, st_boundary = self.BuildTrajectoryStBoundary(reference_line, adc_start_s)
-            if success:
-                self._reference_line_st_boundary = st_boundary
-                logger.debug(f"Found st_boundary for obstacle {self._id}")
-                logger.debug(f"st_boundary: min_t = {self._reference_line_st_boundary.min_t}, max_t = {self._reference_line_st_boundary.max_t}, min_s = {self._reference_line_st_boundary.min_s}, max_s = {self._reference_line_st_boundary.max_s}")
-            else:
-                logger.debug(f"No st_boundary for obstacle {self._id}")
 
     def SetPerceptionSlBoundary(self, sl_boundary: SLBoundary) -> None:
         """
@@ -920,26 +894,6 @@ class Obstacle:
 
         return self._is_lane_blocking
 
-    def CheckLaneBlocking(self, reference_line: ReferenceLine) -> None:
-        """
-        Check lane blocking
-
-        :param ReferenceLine reference_line: Reference line
-        """
-    
-        if not self.IsStatic():
-            self._is_lane_blocking = False
-            return
-        assert self._sl_boundary.start_s is not None and self._sl_boundary.end_s is not None and self._sl_boundary.start_l is not None \
-               and self._sl_boundary.end_l is not None, f"Obstacle {self._id} has invalid sl_boundary"
-        if self._sl_boundary.start_l * self._sl_boundary.end_l < 0.0:
-            self._is_lane_blocking = True
-            return
-        driving_width = reference_line.GetDrivingWidth(self._sl_boundary)
-        if reference_line.IsOnLane(self._sl_boundary) and driving_width < config_module.EGO_VEHICLE_WIDTH + config_module.FLAGS_static_obstacle_nudge_l_buffer:
-            self._is_lane_blocking = True
-            return
-        self._is_lane_blocking = False
 
     def IsLaneChangeBlocking(self) -> bool:
         """
@@ -982,129 +936,6 @@ class Obstacle:
         trajectory_point_polygon = Polygon2d(polygon_point)
         return trajectory_point_polygon
 
-    def BuildTrajectoryStBoundary(self, reference_line: ReferenceLine, adc_start_s: float) -> Tuple[bool, STBoundary]:
-        """
-        Build trajectory ST boundary
-
-        :param ReferenceLine reference_line: Reference line
-        :param float adc_start_s: ADC start s
-        :returns: Tuple of success bool and the built trajectory ST boundary
-        :rtype: Tuple[bool, STBoundary]
-        """
-
-        if not self.IsValidObstacle(self._perception_obstacle):
-            logger.error(f"Fail to build trajectory st boundary because object is not valid. PerceptionObstacle: {self._perception_obstacle}")
-            return False, None
-
-        object_width = self._perception_obstacle.width
-        object_length = self._perception_obstacle.length
-        trajectory_points = self._trajectory.trajectory_point
-        if not trajectory_points:
-            logger.warning(f"object {self._id} has no trajectory points")
-            return False, None
-        adc_length = config_module.EGO_VEHICLE_LENGTH
-        adc_half_length = config_module.EGO_VEHICLE_LENGTH / 2
-        adc_width = config_module.EGO_VEHICLE_WIDTH
-        polygon_points: List[Tuple[STPoint, STPoint]] = []
-        last_sl_boundary = SLBoundary(
-            start_s=0.0,
-            end_s=0.0,
-            start_l=0.0,
-            end_l=0.0,
-        )
-        last_index: int = 0
-
-        for i in range(1, len(trajectory_points)):
-            logger.debug(f"last_sl_boundary: {last_sl_boundary}")
-            first_traj_point = trajectory_points[i - 1]
-            second_traj_point = trajectory_points[i]
-            first_point = first_traj_point.path_point
-            second_point = second_traj_point.path_point
-
-            object_moving_box_length = object_length + DistanceXY(first_point, second_point)
-
-            center = Vec2d((first_point.x + second_point.x) / 2.0, (first_point.y + second_point.y) / 2.0)
-            object_moving_box = Box2d(center, first_point.theta, object_moving_box_length, object_width)
-            object_boundary = SLBoundary()
-            # NOTICE: this method will have errors when the reference line is not
-            # straight. Need double loop to cover all corner cases.
-            # Roughly skip points that are too close to the previous SL box.
-            distance_xy = DistanceXY(trajectory_points[last_index].path_point, trajectory_points[i].path_point)
-            if last_sl_boundary.start_l > distance_xy or last_sl_boundary.end_l < -distance_xy:
-                continue
-
-            ref_length = reference_line.Length()
-            mid_s: float = (last_sl_boundary.start_s + last_sl_boundary.end_s) / 2.0
-            start_s: float = max(0.0, mid_s - 2.0 * distance_xy)
-            end_s: float = ref_length if i == 1 else min(ref_length, mid_s + 2.0 * distance_xy)
-            ok, object_boundary = reference_line.GetApproximateSLBoundary(object_moving_box, start_s, end_s)
-            if not ok:
-                logger.error(f"failed to calculate boundary")
-                return False, None
-            
-            # update history record
-            last_sl_boundary = object_boundary
-            last_index = i
-
-            # skip if object is entirely on one side of reference line.
-            kSkipLDistanceFactor: float = 0.4
-            skip_l_distance = (object_boundary.end_s - object_boundary.start_s) * kSkipLDistanceFactor + adc_width / 2.0
-
-            if not self.IsCautionLevelObstacle():
-                if (min(object_boundary.start_l, object_boundary.end_l) > skip_l_distance) or (max(object_boundary.start_l, object_boundary.end_l) < -skip_l_distance):
-                    continue
-
-                if object_boundary.end_s < 0:
-                    # skip if behind reference line
-                    continue
-            kSparseMappingS: float = 20.0
-            st_boundary_delta_s = kStBoundarySparseDeltaS if (abs(object_boundary.start_s - adc_start_s) > kSparseMappingS) else kStBoundaryDeltaS
-            object_s_diff: float = object_boundary.end_s - object_boundary.start_s
-            if object_s_diff < st_boundary_delta_s:
-                continue
-            delta_t: float = second_traj_point.relative_time - first_traj_point.relative_time
-            low_s: float = max(object_boundary.start_s - adc_half_length, 0.0)
-            has_low: bool = False
-            high_s: float = min(object_boundary.end_s + adc_half_length, config_module.FLAGS_st_max_s)
-            has_high: bool = False
-            while (low_s + st_boundary_delta_s < high_s) and (not has_low or not has_high):
-                if not has_low:
-                    low_ref = reference_line.GetReferencePoint(low_s)
-                    low_box = Box2d(Vec2d(low_ref.x, low_ref.y), low_ref.heading, adc_length, adc_width + config_module.FLAGS_nonstatic_obstacle_nudge_l_buffer)
-                    has_low = object_moving_box.HasOverlap(low_box)
-                    low_s += st_boundary_delta_s
-                if not has_high:
-                    high_ref = reference_line.GetReferencePoint(high_s)
-                    high_box = Box2d(Vec2d(high_ref.x, high_ref.y), high_ref.heading, adc_length, adc_width + config_module.FLAGS_nonstatic_obstacle_nudge_l_buffer)
-                    has_high = object_moving_box.HasOverlap(high_box)
-                    high_s -= st_boundary_delta_s
-            if has_low and has_high:
-                low_s -= st_boundary_delta_s
-                high_s += st_boundary_delta_s
-                low_t: float = (first_traj_point.relative_time + abs((low_s - object_boundary.start_s) / object_s_diff) * delta_t)
-                polygon_points.append((STPoint(low_s - adc_start_s, low_t), STPoint(high_s - adc_start_s, low_t)))
-                high_t = (first_traj_point.relative_time + abs((high_s - object_boundary.start_s) / object_s_diff) * delta_t)
-                if high_t - low_t > 0.05:
-                    polygon_points.append((STPoint(low_s - adc_start_s, high_t), STPoint(high_s - adc_start_s, high_t)))
-        if polygon_points:
-            polygon_points.sort(key=lambda p: p[0].t)
-            unique_polygon_points = []
-            for point_pair in polygon_points:
-                if (
-                    not unique_polygon_points
-                    or abs(point_pair[0].t - unique_polygon_points[-1][0].t)
-                    >= kStBoundaryDeltaT
-                ):
-                    unique_polygon_points.append(point_pair)
-            polygon_points[:] = unique_polygon_points
-            if len(polygon_points) > 2:
-                st_boundary = STBoundary(polygon_points)
-            else:
-                return False, None
-        else:
-            return False, None
-
-        return True, st_boundary
 
     @staticmethod
     def IsValidObstacle(perception_obstacle: PerceptionObstacle) -> bool:

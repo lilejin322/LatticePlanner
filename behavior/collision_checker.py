@@ -9,7 +9,6 @@ from common.box2d import Box2d
 from common.vec2d import Vec2d
 from common.obstacle import Obstacle
 from common.discretized_trajectory import DiscretizedTrajectory
-from reference_line.reference_line_info import ReferenceLineInfo
 from behavior.path_time_graph import PathTimeGraph
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.path_point import PathPoint
@@ -21,19 +20,12 @@ class CollisionChecker:
     """
 
     def __init__(self, obstacles: List[Obstacle], ego_vehicle_s: float, ego_vehicle_d: float,
-                 discretized_reference_line: List[PathPoint], reference_line_info: ReferenceLineInfo,
+                 discretized_reference_line: List[PathPoint], lane_width,
                  path_time_graph: PathTimeGraph) -> None:
         """
-        Constructor
-
-        :param List[Obstacle] obstacles: List of obstacles
-        :param float ego_vehicle_s: Ego vehicle s-coordinate
-        :param float ego_vehicle_d: Ego vehicle d-coordinate
-        :param List[PathPoint] discretized_reference_line: Discretized reference line
-        :param ReferenceLineInfo reference_line_info: Reference line information
-        :param PathTimeGraph path_time_graph: Path time graph
+        ``lane_width(s)`` returns ``(ok, left, right)`` from the lanelet.
         """
-        self.reference_line_info = reference_line_info
+        self.lane_width = lane_width
         self.path_time_graph = path_time_graph
         self.predicted_bounding_rectangles = []
         self.logger = Logger("CollisionChecker")
@@ -155,7 +147,7 @@ class CollisionChecker:
         """
         left_width: float = config_module.FLAGS_default_reference_line_width * 0.5
         right_width: float = config_module.FLAGS_default_reference_line_width * 0.5
-        ok, lane_left_width, lane_right_width = self.reference_line_info.reference_line.GetLaneWidth(ego_vehicle_s)
+        ok, lane_left_width, lane_right_width = self.lane_width(ego_vehicle_s)
         if ok:
             left_width = lane_left_width
             right_width = lane_right_width
