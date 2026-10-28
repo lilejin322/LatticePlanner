@@ -3,43 +3,17 @@ Shared 2D geometry and interpolation helper utils
 """
 import math
 from logging import Logger
-from common.vec2d import Vec2d, kMathEpsilon
+kMathEpsilon: float = 1e-10
 
 logger: Logger = Logger("geometry_utils")
 
 __all__ = [
     "kMathEpsilon",
-    "WrapAngle",
-    "CrossProd",
     "NormalizeAngle",
     "AngleDiff",
     "value_or_zero",
     "lerp",
 ]
-
-def WrapAngle(angle: float) -> float:
-    """
-    Wrap an angle to [0, 2*pi).
-    
-    :param float angle:
-    :returns: the wrapped angle
-    :rtype: float
-    """
-    new_angle = math.fmod(angle, math.pi * 2.0)
-    return new_angle + math.pi * 2.0 if new_angle < 0 else new_angle
-
-def CrossProd(start_point: Vec2d, end_point_1: Vec2d, 
-              end_point_2: Vec2d) -> float:
-    """
-    Cross product of vectors (end_point_1 - start) x (end_point_2 - start).
-    
-    :param Vec2d start_point: 
-    :param Vec2d end_point_1: 
-    :param Vec2d end_point_2: 
-    :returns: 
-    :rtype: 
-    """
-    return (end_point_1 - start_point).CrossProd(end_point_2 - start_point)
 
 def NormalizeAngle(angle: float) -> float:
     """

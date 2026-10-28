@@ -3,11 +3,10 @@ ADC Trajectory submodule
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Any, List, Optional
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.header import Header
-from protoclass.decision_result import DecisionResult
 import math
 from enum import Enum
 
@@ -167,7 +166,7 @@ class ADCTrajectory:
     trajectory_point: List[TrajectoryPoint] = field(default_factory=list)
     # path point without speed info
     path_point: List[PathPoint] = field(default_factory=list)
-    decision: Optional[DecisionResult] = None
+    decision: Optional[Any] = None
     latency_stats: Optional[LatencyStats] = None
     # the routing used for current planning result
     routing_header: Optional[Header] = None

@@ -2,10 +2,8 @@
 """Run focused smoke checks for Apollo lattice components."""
 
 from pathlib import Path
-import importlib
 import math
 import sys
-from types import SimpleNamespace
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -14,30 +12,13 @@ from behavior.collision_checker import CollisionChecker
 from behavior.path_time_graph import PathTimeGraph
 from behavior.prediction_querier import PredictionQuerier
 from common.discretized_trajectory import DiscretizedTrajectory
-from common.obstacle import Obstacle
-from common.st_boundary import STBoundary
-from common.st_graph_data import StGraphData
-from common.st_point import STPoint
-from common.vec2d import Vec2d
-from common.box2d import Box2d
-from common.aabox2d import AABox2d
-from common.line_segment2d import LineSegment2d
-from common.polygon2d import Polygon2d
 from common.constraint_checker import ConstraintChecker
 from common.constraint_checker1d import ConstraintChecker1d
-from protoclass.adc_trajectory import ADCTrajectory
 from lattice_planner import LatticePlanner
 from common.curve1d.quartic_polynomial_curve1d import QuarticPolynomialCurve1d
-from config import FLAGS_destination_obstacle_id, FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_time_length
-from protoclass.adc_trajectory import Point3D
-from protoclass.header import Header
+from config import FLAGS_speed_lon_decision_horizon, FLAGS_trajectory_time_length
 from protoclass.path_point import PathPoint
-from protoclass.perception_obstacle import PerceptionObstacle
-from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles, Trajectory as PredictionTrajectory
-from protoclass.sl_boundary import SLBoundary
-from protoclass.trajectory import Trajectory
 from protoclass.trajectory_point import TrajectoryPoint
-from protoclass.vehicle_state import VehicleState
 from trajectory_generation.backup_trajectory_generator import BackupTrajectoryGenerator
 from trajectory_generation.end_condition_sampler import EndConditionSampler
 from trajectory_generation.lattice_trajectory1d import CreateLatticeTrajectory1d
@@ -143,16 +124,9 @@ def check_path_time_graph_lane_width_fallback():
     assert all(abs(upper - expected_upper) < 1e-9 for _, upper in bounds)
 
     discretized_ref_points, lane_width = _build_reference_line()
-    perception = PerceptionObstacle(
-        id=16,
-        position=Point3D(x=20.0, y=1.4, z=0.0),
-        velocity=Point3D(x=0.0, y=0.0, z=0.0),
-        length=4.0,
-        width=0.2,
-        height=1.5,
-        theta=0.0,
-    )
-    obstacle = Obstacle("fallback_width_obstacle", perception, is_static=True)
+    from lattice_motion import Mover, Pose
+
+    obstacle = Mover("fallback_width_obstacle", 4.0, 0.2, [Pose(0.0, 20.0, 1.4, 0.0, 0.0)])
     graph = PathTimeGraph(
         [obstacle],
         discretized_ref_points,
@@ -361,253 +335,44 @@ def check_lattice_main_path_without_backup():
     finally:
         config_module.FLAGS_enable_backup_trajectory = old_backup_flag
 
-def check_obstacle_decision_property_api():
-    from common.obstacle import Obstacle
-    from protoclass.decision_result import ObjectDecisionType, ObjectIgnore
-    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
 
-    perception = PerceptionObstacle(
-        id=9,
-        type=PerceptionObstacleType.VEHICLE,
-        position=Point3D(x=1.0, y=0.0, z=0.0),
-        velocity=Point3D(x=0.0, y=0.0, z=0.0),
-        length=4.0,
-        width=2.0,
-        height=1.5,
-        theta=0.0,
-    )
-    obs = Obstacle("obs_prop", perception, is_static=True)
-    ignore = ObjectDecisionType()
-    ignore.object_tag = ObjectIgnore()
-    obs.AddLongitudinalDecision("test", ignore)
-    assert obs.HasNonIgnoreDecision() is False
-
-def check_obstacle_copies_trajectory():
-    """
-    Regression test: Apollo's C++ Obstacle stores trajectory_/perception_obstacle_
-    as value members, copy-constructed from the constructor arguments, then
-    recomputes cumulative path_point.s on its OWN copy. The Python port must
-    copy too - it must never rewrite path_point.s on the caller's original
-    trajectory object.
-    """
-    from common.obstacle import Obstacle
-    from protoclass.trajectory import Trajectory
-    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
-
-    trajectory = Trajectory(trajectory_point=[
-        TrajectoryPoint(path_point=PathPoint(x=float(i), y=0.0, theta=0.0, s=100.0 + i), relative_time=float(i) * 0.1)
-        for i in range(3)
-    ])
-    original_s_values = [tp.path_point.s for tp in trajectory.trajectory_point]
-
-    perception = PerceptionObstacle(
-        id=13,
-        type=PerceptionObstacleType.VEHICLE,
-        position=Point3D(x=0.0, y=0.0, z=0.0),
-        velocity=Point3D(x=0.0, y=0.0, z=0.0),
-        length=4.0,
-        width=2.0,
-        height=1.5,
-        theta=0.0,
-    )
-    obs = Obstacle("obs_traj_copy", perception, trajectory=trajectory)
-
-    assert [tp.path_point.s for tp in trajectory.trajectory_point] == original_s_values, (
-        "Obstacle(...) must not mutate the caller's original trajectory's path_point.s"
-    )
-    assert obs.Trajectory() is not trajectory
-    assert [tp.path_point.s for tp in obs.Trajectory().trajectory_point] == [0.0, 1.0, 2.0]
 
 def check_obstacle_empty_trajectory_is_static_for_st_graph():
-    """
-    Apollo Obstacle::HasTrajectory checks trajectory_point().empty(), not
-    whether the trajectory protobuf object itself exists. An obstacle with an
-    empty trajectory must still enter PathTimeGraph as a static obstacle.
-    """
-    perception = PerceptionObstacle(
-        id=14,
-        position=Point3D(x=20.0, y=0.0, z=0.0),
-        velocity=Point3D(x=0.0, y=0.0, z=0.0),
-        length=4.0,
-        width=2.0,
-        height=1.5,
-        theta=0.0,
-    )
-    obs = Obstacle("empty_traj", perception, trajectory=Trajectory())
-    assert not obs.HasTrajectory()
+    """A single pose is a static obstacle in the ST graph."""
+    from lattice_motion import Mover, Pose
+
+    obs = Mover("empty_traj", 4.0, 2.0, [Pose(0.0, 20.0, 0.0, 0.0, 0.0)])
+    assert not obs.moving()
 
     graph = _build_path_time_graph([obs])
     assert len(graph.static_obs_sl_boundaries) == 1
     assert len(graph.path_time_obstacles) == 1
     assert graph.path_time_obstacles[0].id() == "empty_traj"
 
-def check_path_time_graph_keeps_ignored_static_obstacle():
-    """
-    C++ PathTimeGraph skips virtual obstacles only. Ignore decisions attached
-    by earlier tasks should not erase a real obstacle from ST graph setup.
-    """
-    from protoclass.decision_result import ObjectDecisionType, ObjectIgnore
-
-    perception = PerceptionObstacle(
-        id=15,
-        position=Point3D(x=22.0, y=0.0, z=0.0),
-        velocity=Point3D(x=0.0, y=0.0, z=0.0),
-        length=4.0,
-        width=2.0,
-        height=1.5,
-        theta=0.0,
-    )
-    obs = Obstacle("ignored_static", perception, is_static=True)
-    ignore = ObjectDecisionType()
-    ignore.object_tag = ObjectIgnore()
-    obs.AddLongitudinalDecision("pre_path_decider", ignore)
-    obs.AddLateralDecision("pre_path_decider", ignore)
-
-    graph = _build_path_time_graph([obs])
-    assert len(graph.static_obs_sl_boundaries) == 1
-
-def check_polygon_box_distance():
-    from common.box2d import Box2d
-    from common.polygon2d import Polygon2d
-    from common.vec2d import Vec2d
-
-    box = Box2d(Vec2d(10.0, 0.0), 0.0, 4.0, 2.0)
-    polygon = Polygon2d(box)
-    ego = Box2d(Vec2d(0.0, 0.0), 0.0, 4.8, 2.0)
-    dist = polygon.DistanceTo(ego)
-    assert dist > 5.0
-    assert dist < 8.0
-    overlap_ego = Box2d(Vec2d(10.0, 0.0), 0.0, 4.8, 2.0)
-    assert polygon.DistanceTo(overlap_ego) == 0.0
-
-def check_polygon_overlap_contains_line_segment():
-    from common.polygon2d import Polygon2d
-
-    polygon = Polygon2d([
-        Vec2d(0.0, 0.0),
-        Vec2d(4.0, 0.0),
-        Vec2d(4.0, 4.0),
-        Vec2d(0.0, 4.0),
-    ])
-    inside_segment = LineSegment2d(Vec2d(1.0, 1.0), Vec2d(3.0, 3.0))
-    assert polygon.HasOverlap(inside_segment)
-
-def check_polygon_bounding_box_with_heading_uses_cross_projection():
-    import math
-    from common.polygon2d import Polygon2d
-
-    polygon = Polygon2d([
-        Vec2d(0.0, 0.0),
-        Vec2d(4.0, 0.0),
-        Vec2d(4.0, 2.0),
-        Vec2d(0.0, 2.0),
-    ])
-    box = polygon.BoundingBoxWithHeading(math.pi / 2.0)
-    assert abs(box.length - 2.0) < 1e-6
-    assert abs(box.width - 4.0) < 1e-6
-
-def check_polygon_extreme_points_accepts_triangle():
-    from common.polygon2d import Polygon2d
-
-    triangle = Polygon2d([
-        Vec2d(0.0, 0.0),
-        Vec2d(2.0, 0.0),
-        Vec2d(1.0, 1.0),
-    ])
-    first, last = triangle.ExtremePoints(0.0)
-    assert first.x == 0.0
-    assert last.x == 2.0
 
 
-def check_box_distance_to_segment_canonical_state():
-    from common.box2d import Box2d
-    from common.line_segment2d import LineSegment2d
-    from common.vec2d import Vec2d
 
-    box = Box2d(Vec2d(0.0, 0.0), 0.0, 2.0, 2.0)
-    segment = LineSegment2d(Vec2d(3.0, 1.5), Vec2d(-1.0, 1.5))
-    assert abs(box.DistanceTo(segment) - 0.5) < 1e-6
+
+
+
 
 
 
 
 def _build_dynamic_obstacle():
-    perception = PerceptionObstacle(
-        id=1,
-        position=Point3D(x=10.0, y=0.0, z=0.0),
-        theta=0.0,
-        velocity=Point3D(x=1.0, y=0.0, z=0.0),
-        length=4.0,
-        width=2.0,
-        height=1.5,
-    )
-    trajectory = Trajectory(
-        trajectory_point=[
-            TrajectoryPoint(
-                path_point=PathPoint(
-                    x=10.0,
-                    y=0.0,
-                    z=0.0,
-                    theta=0.0,
-                    kappa=0.0,
-                    s=0.0,
-                    dkappa=0.0,
-                    ddkappa=0.0,
-                ),
-                v=1.0,
-                a=0.0,
-                relative_time=0.0,
-            ),
-            TrajectoryPoint(
-                path_point=PathPoint(
-                    x=11.0,
-                    y=0.0,
-                    z=0.0,
-                    theta=0.0,
-                    kappa=0.0,
-                    s=0.0,
-                    dkappa=0.0,
-                    ddkappa=0.0,
-                ),
-                v=1.0,
-                a=0.0,
-                relative_time=1.0,
-            ),
-            TrajectoryPoint(
-                path_point=PathPoint(
-                    x=12.0,
-                    y=0.0,
-                    z=0.0,
-                    theta=0.0,
-                    kappa=0.0,
-                    s=0.0,
-                    dkappa=0.0,
-                    ddkappa=0.0,
-                ),
-                v=1.0,
-                a=0.0,
-                relative_time=2.0,
-            ),
-        ]
-    )
-    return Obstacle("obs_1", perception, is_static=False, trajectory=trajectory)
+    from lattice_motion import Mover, Pose
 
-def check_obstacle_non_increasing_prediction_time_does_not_abort():
-    perception = PerceptionObstacle(
-        id=101,
-        position=Point3D(x=10.0, y=0.0, z=0.0),
-        theta=0.0,
-        velocity=Point3D(x=1.0, y=0.0, z=0.0),
-        length=4.0,
-        width=2.0,
-        height=1.5,
+    return Mover(
+        "obs_1",
+        4.0,
+        2.0,
+        [
+            Pose(0.0, 10.0, 0.0, 0.0, 1.0),
+            Pose(1.0, 11.0, 0.0, 0.0, 1.0),
+            Pose(2.0, 12.0, 0.0, 0.0, 1.0),
+        ],
     )
-    trajectory = Trajectory(trajectory_point=[
-        TrajectoryPoint(path_point=PathPoint(x=10.0, y=0.0), relative_time=1.0),
-        TrajectoryPoint(path_point=PathPoint(x=11.0, y=0.0), relative_time=1.0),
-    ])
-    obstacle = Obstacle("non_monotonic", perception, trajectory=trajectory)
-    assert obstacle.Trajectory().trajectory_point[-1].path_point.s == 1.0
+
 
 
 
@@ -620,17 +385,9 @@ def check_collision_checker_obstacle_behind_ego_no_crash():
     and that obstacle is correctly filtered out of the predicted environment.
     """
     discretized_ref_points, lane_width = _build_reference_line()
-    perception = PerceptionObstacle(
-        id=901, position=Point3D(x=-5.0, y=0.0, z=0.0), theta=0.0,
-        velocity=Point3D(x=0.0, y=0.0, z=0.0), length=4.0, width=2.0, height=1.5,
-    )
-    trajectory = Trajectory(trajectory_point=[
-        TrajectoryPoint(
-            path_point=PathPoint(x=-5.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
-            v=0.0, a=0.0, relative_time=0.0,
-        ),
-    ])
-    behind_obstacle = Obstacle("behind_obs", perception, is_static=True, trajectory=trajectory)
+    from lattice_motion import Mover, Pose
+
+    behind_obstacle = Mover("behind_obs", 4.0, 2.0, [Pose(0.0, -5.0, 0.0, 0.0, 0.0)])
 
     checker = CollisionChecker([behind_obstacle], 10.0, 0.0, discretized_ref_points, lane_width, None)
     assert checker.logger is not None
@@ -639,171 +396,21 @@ def check_collision_checker_obstacle_behind_ego_no_crash():
         "obstacle behind the ADC in-lane should be excluded from the predicted environment"
     )
 
-def check_st_boundary_expand_by_t():
-    """
-    Regression test: STBoundary.ExpandByT used to call list.append(a, b)
-    with two positional arguments instead of a tuple, raising TypeError
-    on every call. Verify it now expands the boundary's time range.
-    """
-    pp = [
-        (STPoint(0.0, 0.0), STPoint(5.0, 0.0)),
-        (STPoint(3.0, 2.0), STPoint(8.0, 2.0)),
-    ]
-    boundary = STBoundary(pp)
-    expanded = boundary.ExpandByT(1.0)
-    assert expanded.min_t < boundary.min_t
-    assert expanded.max_t > boundary.max_t
-
-def check_st_boundary_out_of_range_index_does_not_raise():
-    boundary = STBoundary()
-    ok, left, right = boundary.GetIndexRange(
-        [STPoint(0.0, 0.0), STPoint(1.0, 1.0)], 2.0
-    )
-    assert not ok
-    assert left == 0
-    assert right == 0
-
-def check_st_graph_data_set_st_drivable_boundary():
-    """
-    Regression test: StGraphData._st_drivable_boundary was never
-    initialized (stayed None) and the append() call sat outside the loop
-    body, so SetSTDrivableBoundary either crashed with AttributeError or
-    silently dropped all but the last point. Verify every point is kept.
-    """
-    sg = StGraphData()
-    s_boundary = [(0.0, 1.0, 2.0), (1.0, 2.0, 3.0), (2.0, 3.0, 4.0)]
-    v_obs_info = [(0.0, -1.0, 1.0), (1.0, -1.0, 1.0), (2.0, -1.0, 1.0)]
-    assert sg.SetSTDrivableBoundary(s_boundary, v_obs_info)
-    assert len(sg.st_drivable_boundary.st_boundary) == len(s_boundary)
 
 
 
 
 
-def check_vec2d_rmul():
-    """
-    Regression test: Vec2d only implemented __mul__ (Vec2d * scalar), not
-    __rmul__ (scalar * Vec2d), raising TypeError anywhere C++'s free
-    `operator*(double, const Vec2d&)` is used, e.g. Polygon2d.BoundingBoxWithHeading.
-    """
-    result = 0.5 * Vec2d(2.0, 4.0)
-    assert abs(result.x - 1.0) < 1e-9
-    assert abs(result.y - 2.0) < 1e-9
-
-def check_aabox2d_distance_to():
-    """
-    Regression test: AABox2d.DistanceTo checked isinstance([0], Vec2d) /
-    isinstance([0], AABox2d) -- the literal list [0], not args[0] -- so it
-    always raised ValueError regardless of input.
-    """
-    box = AABox2d(Vec2d(0.0, 0.0), 2.0, 2.0)
-    assert abs(box.DistanceTo(Vec2d(5.0, 0.0)) - 4.0) < 1e-9
-    other = AABox2d(Vec2d(10.0, 0.0), 2.0, 2.0)
-    assert abs(box.DistanceTo(other) - 8.0) < 1e-9
-
-def check_box2d_has_overlap_line_segment():
-    """
-    Regression test: Box2d.HasOverlap(LineSegment2d) built its rotated
-    start/end points via Vec2d(vec - vec) (double-wrapping an already
-    constructed Vec2d, corrupting it) and its is_inside_rectangle() helper
-    called point.y() on a Python @property, both raising exceptions for
-    any non-trivially-rejected segment.
-    """
-    box = Box2d(Vec2d(0.0, 0.0), 0.0, 4.0, 2.0)
-    crossing_segment = LineSegment2d(Vec2d(-1.0, 0.0), Vec2d(1.0, 0.0))
-    assert box.HasOverlap(crossing_segment) is True
-    far_segment = LineSegment2d(Vec2d(100.0, 100.0), Vec2d(101.0, 101.0))
-    assert box.HasOverlap(far_segment) is False
-
-def check_st_point_from_vec2d():
-    """
-    Regression test: STPoint(Vec2d) read args[0].__dict (missing the
-    trailing "__"), raising AttributeError on every call. Also covers the
-    STPoint.x/.y properties, which used to always raise -- correct for a
-    caller holding a *statically-typed* C++ Vec2d& (where the deleted
-    STPoint::x()/y() never enters the call), but wrong in Python, where
-    attribute access is always dynamically dispatched; library code like
-    LineSegment2d's constructor needs .x/.y to keep working when handed
-    STPoint instances (used as Vec2d(t, s)) directly, e.g. inside
-    STBoundary.RemoveRedundantPoints.
-    """
-    point = STPoint(Vec2d(3.0, 7.0))
-    assert point.t == 3.0
-    assert point.s == 7.0
-    assert point.x == 3.0
-    assert point.y == 7.0
-
-def check_polygon2d_get_overlap_no_overlap_does_not_crash():
-    """
-    Regression test: Polygon2d.GetOverlap only assigned its `first`/`last`
-    locals inside conditional branches (mirroring C++'s output-pointer
-    params, which are simply left untouched when unused). Since Python has
-    no such "leave untouched" semantics for plain locals, a line segment
-    whose bounding box overlaps the polygon but that neither starts/ends
-    inside it nor crosses any edge -- a routine "no overlap" case -- hit
-    UnboundLocalError on the final return.
-    """
-    triangle = Polygon2d([Vec2d(0.0, 0.0), Vec2d(4.0, 0.0), Vec2d(0.0, 4.0)])
-    no_overlap_segment = LineSegment2d(Vec2d(3.5, 3.5), Vec2d(3.8, 3.2))
-    has_overlap, first, last = triangle.GetOverlap(no_overlap_segment)
-    assert has_overlap is False
-    assert first is None and last is None
-
-    crossing_segment = LineSegment2d(Vec2d(-1.0, 1.0), Vec2d(1.0, 1.0))
-    has_overlap, first, last = triangle.GetOverlap(crossing_segment)
-    assert has_overlap is True
-    assert first is not None and last is not None
 
 
 
-def check_obstacle_validators_treat_none_as_protobuf_zero_default():
-    """
-    Regression test: an unset protobuf scalar field reads back as its type's
-    zero default in C++ (a `double` field that was never set() is 0.0, not
-    null); this project's dataclasses instead default such fields to `None`.
-    Obstacle.IsValidPerceptionObstacle/IsValidTrajectoryPoint/IsValidObstacle
-    exist specifically to validate untrusted external (prediction-module)
-    input, and used to call math.isnan()/do comparisons directly on fields
-    that can legitimately be None, raising TypeError where C++ (reading the
-    protobuf default) degrades gracefully to "invalid". Mirrors
-    modules/planning/common/obstacle_test.cc's own default-message test.
-    """
-    # A completely unset PerceptionObstacle -- exactly the scenario the
-    # vendored C++ unit test (obstacle_test.cc) exercises -- must be
-    # rejected, not crash.
-    assert Obstacle.IsValidPerceptionObstacle(PerceptionObstacle()) is False
-    assert Obstacle.IsValidPerceptionObstacle(
-        PerceptionObstacle(length=4.0, width=2.0, height=1.5)
-    ) is True
 
-    assert Obstacle.IsValidObstacle(PerceptionObstacle(length=4.0)) is False
-    assert Obstacle.IsValidObstacle(PerceptionObstacle(length=4.0, width=2.0)) is True
 
-    sparse_trajectory_point = TrajectoryPoint(
-        path_point=PathPoint(x=0.0, y=0.0, z=0.0, kappa=0.0, s=0.0)
-    )
-    assert Obstacle.IsValidTrajectoryPoint(sparse_trajectory_point) is True
 
-def check_create_obstacles_uses_perception_validator_like_cpp():
-    """
-    Regression test: Obstacle.CreateObstacles used to gate obstacles through
-    IsValidObstacle (which only checks width/length), but
-    modules/planning/common/obstacle.cc:200 gates through
-    IsValidPerceptionObstacle (which additionally checks height and, when
-    present, velocity/polygon-point NaNs). An obstacle with valid
-    width/length but a NaN velocity must be rejected, matching C++, not
-    silently accepted.
-    """
-    bad_velocity_obstacle = PerceptionObstacle(
-        id=1, length=4.0, width=2.0, height=1.5,
-        velocity=Point3D(x=float("nan"), y=0.0, z=0.0),
-    )
-    predictions = PredictionObstacles(
-        prediction_obstacle=[
-            PredictionObstacle(perception_obstacle=bad_velocity_obstacle, is_static=True)
-        ]
-    )
-    assert Obstacle.CreateObstacles(predictions) == []
+
+
+
+
 
 
 
@@ -903,8 +510,8 @@ def check_loaded_commonroad_scenario_is_driven():
     _advance_actor(actor, 0.1)
     assert actor.x == held_x
     planned = _planner_obstacle(actor, dynamic, 0.1, np.zeros(2), 0.1)
-    predicted = planned.GetPointAtTime(0.0)
-    assert abs(predicted.path_point.x - 0.2) < 1e-6
+    predicted = planned.pose_at(0.0)
+    assert abs(predicted.x - 0.2) < 1e-6
 
     shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
     box = RectObstacleShape(width=2.0, length=4.0)
@@ -1012,28 +619,9 @@ def main():
     check_lateral_osqp_optimizer()
     check_lateral_osqp_keeps_usable_non_solved_result()
     check_lateral_bundle_ignores_optimizer_return_value()
-    check_obstacle_decision_property_api()
-    check_obstacle_copies_trajectory()
     check_obstacle_empty_trajectory_is_static_for_st_graph()
-    check_path_time_graph_keeps_ignored_static_obstacle()
-    check_polygon_box_distance()
-    check_polygon_overlap_contains_line_segment()
-    check_polygon_bounding_box_with_heading_uses_cross_projection()
-    check_polygon_extreme_points_accepts_triangle()
-    check_box_distance_to_segment_canonical_state()
     check_lattice_main_path_without_backup()
     check_collision_checker_obstacle_behind_ego_no_crash()
-    check_st_boundary_expand_by_t()
-    check_st_boundary_out_of_range_index_does_not_raise()
-    check_st_graph_data_set_st_drivable_boundary()
-    check_obstacle_non_increasing_prediction_time_does_not_abort()
-    check_vec2d_rmul()
-    check_aabox2d_distance_to()
-    check_box2d_has_overlap_line_segment()
-    check_st_point_from_vec2d()
-    check_polygon2d_get_overlap_no_overlap_does_not_crash()
-    check_obstacle_validators_treat_none_as_protobuf_zero_default()
-    check_create_obstacles_uses_perception_validator_like_cpp()
     check_apollo_map_borregas_ave_loads()
     check_apollo_map_exports_commonroad_lanelets()
     check_loaded_commonroad_scenario_is_driven()

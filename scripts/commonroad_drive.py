@@ -367,18 +367,13 @@ def _actors_from_scenario(scenario, origin):
 
 
 def _planner_obstacle(actor: Actor, obstacle, t0: float, origin, scenario_dt: float):
+    from lattice_motion import Mover, Pose
+
     if actor.is_static:
         return _obstacle_from_actor(actor)
-    from common.obstacle import Obstacle
-    from protoclass.adc_trajectory import Point3D
-    from protoclass.path_point import PathPoint
-    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
-    from protoclass.trajectory import Trajectory
-    from protoclass.trajectory_point import TrajectoryPoint
-
     sample_dt = config.FLAGS_trajectory_time_resolution
     horizon = config.FLAGS_trajectory_time_length
-    points = []
+    poses = []
     relative = 0.0
     while relative <= horizon + 1e-9:
         state, held = _state_at(obstacle, _time_step(t0 + relative, scenario_dt))
@@ -386,46 +381,11 @@ def _planner_obstacle(actor: Actor, obstacle, t0: float, origin, scenario_dt: fl
         if pose is None:
             break
         x, y, theta, speed = pose
-        points.append(
-            TrajectoryPoint(
-                path_point=PathPoint(
-                    x=x,
-                    y=y,
-                    z=0.0,
-                    theta=theta,
-                    kappa=0.0,
-                    s=0.0,
-                    dkappa=0.0,
-                    ddkappa=0.0,
-                ),
-                v=0.0 if held else speed,
-                a=0.0,
-                relative_time=relative,
-            )
-        )
+        poses.append(Pose(relative, x, y, theta, 0.0 if held else speed))
         relative += sample_dt
-    if len(points) < 2:
+    if len(poses) < 2:
         return _obstacle_from_actor(actor)
-    perception = PerceptionObstacle(
-        id=int(obstacle.obstacle_id),
-        type=PerceptionObstacleType.VEHICLE,
-        position=Point3D(x=actor.x, y=actor.y, z=0.0),
-        velocity=Point3D(
-            x=actor.v * math.cos(actor.theta),
-            y=actor.v * math.sin(actor.theta),
-            z=0.0,
-        ),
-        length=actor.length,
-        width=actor.width,
-        height=1.5,
-        theta=actor.theta,
-    )
-    return Obstacle(
-        actor.actor_id,
-        perception,
-        is_static=False,
-        trajectory=Trajectory(trajectory_point=points),
-    )
+    return Mover(actor.actor_id, actor.length, actor.width, poses)
 
 
 def _box_size(obstacle) -> Tuple[float, float]:

@@ -6,7 +6,6 @@ from copy import deepcopy
 from logging import Logger
 from bisect import bisect_left
 from collections import UserList
-from common.vec2d import Vec2d
 from common.geometry_utils import NormalizeAngle, value_or_zero, lerp
 from protoclass.path_point import PathPoint
 from protoclass.adc_trajectory import ADCTrajectory
@@ -172,43 +171,6 @@ class DiscretizedTrajectory(UserList):
         times = [tp.relative_time for tp in self]
         idx = bisect_left(times, relative_time - epsilon)
         return idx
-
-    def QueryNearestPoint(self, position: Vec2d) -> int:
-        """
-        Query the nearest point
-
-        :param Vec2d position: The position
-        :returns: The index of the nearest point
-        :rtype: int
-        """
-        dist_sqr_min: float = float('inf')
-        index_min: int = 0
-        for i, tp in enumerate(self):
-            curr_point: Vec2d = Vec2d(tp.path_point.x, tp.path_point.y)
-            dist_sqr: float = curr_point.DistanceSquareTo(position)
-            if dist_sqr < dist_sqr_min:
-                dist_sqr_min = dist_sqr
-                index_min = i
-        return index_min
-
-    def QueryNearestPointWithBuffer(self, position: Vec2d, buffer: float) -> int:
-        """
-        Query the nearest point with buffer
-
-        :param Vec2d position: The position
-        :param float buffer: The buffer
-        :returns: The index of the nearest point with buffer
-        :rtype: int
-        """
-        dist_sqr_min: float = float('inf')
-        index_min: int = 0
-        for i, tp in enumerate(self):
-            curr_point: Vec2d = Vec2d(tp.path_point.x, tp.path_point.y)
-            dist_sqr: float = curr_point.DistanceSquareTo(position)
-            if dist_sqr < dist_sqr_min + buffer:
-                dist_sqr_min = dist_sqr
-                index_min = i
-        return index_min
 
     def AppendTrajectoryPoint(self, trajectory_point: TrajectoryPoint) -> None:
         """

@@ -20,7 +20,6 @@ from typing import Callable, Dict, List, Optional
 import config
 from behavior.collision_checker import CollisionChecker
 from common.discretized_trajectory import DiscretizedTrajectory
-from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 
 
@@ -462,8 +461,7 @@ def _executed_prefix(trajectory, horizon: float, sample_dt: float) -> Discretize
 
 
 def _min_clearance(obstacles, executed: DiscretizedTrajectory) -> Optional[float]:
-    from common.box2d import Box2d
-    from common.vec2d import Vec2d
+    from lattice_motion import ego_occupancy
 
     if executed.NumOfPoints() == 0 or not obstacles:
         return None
@@ -471,18 +469,17 @@ def _min_clearance(obstacles, executed: DiscretizedTrajectory) -> Optional[float
     for i in range(executed.NumOfPoints()):
         ego_point = executed.TrajectoryPointAt(i)
         theta = ego_point.path_point.theta or 0.0
-        ego_box = Box2d(
-            Vec2d(ego_point.path_point.x, ego_point.path_point.y),
+        ego_box = ego_occupancy(
+            ego_point.path_point.x,
+            ego_point.path_point.y,
             theta,
             config.EGO_VEHICLE_LENGTH,
             config.EGO_VEHICLE_WIDTH,
+            config.EGO_BACK_EDGE_TO_CENTER,
         )
-        shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
-        ego_box.Shift(Vec2d(shift * math.cos(theta), shift * math.sin(theta)))
         relative_time = ego_point.relative_time or 0.0
         for obstacle in obstacles:
-            other = obstacle.GetBoundingBox(obstacle.GetPointAtTime(relative_time))
-            distance = float(ego_box.DistanceTo(other))
+            distance = float(ego_box.shapely_object.distance(obstacle.occupancy_at(relative_time).shapely_object))
             best = distance if best is None else min(best, distance)
     return best
 
@@ -505,62 +502,6 @@ def _advance_actor(actor: Actor, dt: float) -> None:
 
 
 def _obstacle_from_actor(actor: Actor):
-    from common.obstacle import Obstacle
-    from protoclass.adc_trajectory import Point3D
-    from protoclass.perception_obstacle import PerceptionObstacle, PerceptionObstacleType
-    from protoclass.trajectory import Trajectory
+    from lattice_motion import mover_from_actor
 
-    speed = 0.0 if actor.is_static else actor.v
-    perception = PerceptionObstacle(
-        id=_perception_id(actor.actor_id),
-        type=PerceptionObstacleType.VEHICLE,
-        position=Point3D(x=actor.x, y=actor.y, z=0.0),
-        velocity=Point3D(
-            x=speed * math.cos(actor.theta),
-            y=speed * math.sin(actor.theta),
-            z=0.0,
-        ),
-        length=actor.length,
-        width=actor.width,
-        height=1.5,
-        theta=actor.theta,
-    )
-    if actor.is_static or abs(speed) < 1e-3:
-        return Obstacle(actor.actor_id, perception, is_static=True)
-
-    dt = config.FLAGS_trajectory_time_resolution
-    horizon = config.FLAGS_trajectory_time_length
-    points = []
-    t = 0.0
-    while t <= horizon + 1e-9:
-        points.append(
-            TrajectoryPoint(
-                path_point=PathPoint(
-                    x=actor.x + speed * math.cos(actor.theta) * t,
-                    y=actor.y + speed * math.sin(actor.theta) * t,
-                    z=0.0,
-                    theta=actor.theta,
-                    kappa=0.0,
-                    s=0.0,
-                    dkappa=0.0,
-                    ddkappa=0.0,
-                ),
-                v=speed,
-                a=0.0,
-                relative_time=t,
-            )
-        )
-        t += dt
-    return Obstacle(
-        actor.actor_id,
-        perception,
-        is_static=False,
-        trajectory=Trajectory(trajectory_point=points),
-    )
-
-
-def _perception_id(actor_id: str) -> int:
-    digits = "".join(ch for ch in actor_id if ch.isdigit())
-    if digits:
-        return int(digits[-6:])
-    return 1
+    return mover_from_actor(actor)
