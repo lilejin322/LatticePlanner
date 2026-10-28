@@ -9,6 +9,7 @@ from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.sl_boundary import SLBoundary
 from path_matcher import PathMatcher
+from lattice_motion import corners_at, is_moving
 from logging import Logger
 from bisect import bisect_left, bisect_right
 
@@ -81,7 +82,7 @@ class PathTimeGraph:
         :param List[PathPoint] discretized_ref_points: discretized reference points
         """
         for obstacle in obstacles:
-            if not obstacle.moving():
+            if not is_moving(obstacle):
                 self.SetStaticObstacle(obstacle, discretized_ref_points)
             else:
                 self.SetDynamicObstacle(obstacle, discretized_ref_points)
@@ -98,9 +99,9 @@ class PathTimeGraph:
         :param Obstacle obstacle: a static obstacle
         :param List[PathPoint] discretized_ref_points: discretized reference points
         """
-        obstacle_id: str = obstacle.id
+        obstacle_id = obstacle.obstacle_id
         sl_boundary: SLBoundary = self.ComputeObstacleBoundary(
-            obstacle.corners_at(0.0), discretized_ref_points
+            corners_at(obstacle, 0.0), discretized_ref_points
         )
 
         left_width, right_width = self._half_widths(sl_boundary.start_s)
@@ -134,7 +135,7 @@ class PathTimeGraph:
         relative_time: float = self._time_range[0]
         while relative_time < self._time_range[1]:
             sl_boundary: SLBoundary = self.ComputeObstacleBoundary(
-                obstacle.corners_at(relative_time), discretized_ref_points
+                corners_at(obstacle, relative_time), discretized_ref_points
             )
 
             left_width, right_width = self._half_widths(sl_boundary.start_s)
@@ -144,23 +145,23 @@ class PathTimeGraph:
                 sl_boundary.end_s < self._path_range[0] or
                 sl_boundary.start_l > left_width or
                 sl_boundary.end_l < -right_width):
-                if obstacle.id in self.path_time_obstacle_map:
+                if obstacle.obstacle_id in self.path_time_obstacle_map:
                     break
                 relative_time += config_module.FLAGS_trajectory_time_resolution
                 continue
 
-            if obstacle.id not in self.path_time_obstacle_map:
-                self.path_time_obstacle_map[obstacle.id] = _STRegion(obstacle.id)
+            if obstacle.obstacle_id not in self.path_time_obstacle_map:
+                self.path_time_obstacle_map[obstacle.obstacle_id] = _STRegion(obstacle.obstacle_id)
 
-                self.path_time_obstacle_map[obstacle.id].set_bottom_left_point(self.SetPathTimePoint(
-                    obstacle.id, sl_boundary.start_s, relative_time))
-                self.path_time_obstacle_map[obstacle.id].set_upper_left_point(self.SetPathTimePoint(
-                    obstacle.id, sl_boundary.end_s, relative_time))
+                self.path_time_obstacle_map[obstacle.obstacle_id].set_bottom_left_point(self.SetPathTimePoint(
+                    obstacle.obstacle_id, sl_boundary.start_s, relative_time))
+                self.path_time_obstacle_map[obstacle.obstacle_id].set_upper_left_point(self.SetPathTimePoint(
+                    obstacle.obstacle_id, sl_boundary.end_s, relative_time))
 
-            self.path_time_obstacle_map[obstacle.id].set_bottom_right_point(self.SetPathTimePoint(
-                obstacle.id, sl_boundary.start_s, relative_time))
-            self.path_time_obstacle_map[obstacle.id].set_upper_right_point(self.SetPathTimePoint(
-                obstacle.id, sl_boundary.end_s, relative_time))
+            self.path_time_obstacle_map[obstacle.obstacle_id].set_bottom_right_point(self.SetPathTimePoint(
+                obstacle.obstacle_id, sl_boundary.start_s, relative_time))
+            self.path_time_obstacle_map[obstacle.obstacle_id].set_upper_right_point(self.SetPathTimePoint(
+                obstacle.obstacle_id, sl_boundary.end_s, relative_time))
             relative_time += config_module.FLAGS_trajectory_time_resolution
 
     @staticmethod

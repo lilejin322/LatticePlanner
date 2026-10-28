@@ -123,9 +123,9 @@ def check_path_time_graph_lane_width_fallback():
     assert all(abs(upper - expected_upper) < 1e-9 for _, upper in bounds)
 
     discretized_ref_points, lane_width = _build_reference_line()
-    from lattice_motion import Mover, Pose
+    from lattice_motion import obstacle_from_samples
 
-    obstacle = Mover("fallback_width_obstacle", 4.0, 0.2, [Pose(0.0, 20.0, 1.4, 0.0, 0.0)])
+    obstacle = obstacle_from_samples(7, 4.0, 0.2, [(0.0, 20.0, 1.4, 0.0, 0.0)])
     graph = PathTimeGraph(
         [obstacle],
         discretized_ref_points,
@@ -136,7 +136,7 @@ def check_path_time_graph_lane_width_fallback():
         FLAGS_trajectory_time_length,
         [0.0, 0.0, 0.0],
     )
-    assert graph.IsObstacleInGraph("fallback_width_obstacle")
+    assert graph.IsObstacleInGraph(7)
 
 def check_collision_checker_lane_width_fallback():
     import config as config_module
@@ -243,11 +243,10 @@ def check_lateral_osqp_optimizer():
     optimizer = LateralOSQPOptimizer()
     assert optimizer.Optimize([0.0, 0.0, 0.0], 1.0, [(-1.0, 1.0)] * 12)
     trajectory = optimizer.GetOptimalTrajectory()
-    frenet_path = optimizer.GetFrenetFramePath()
-    assert len(frenet_path) == 12
+    assert len(optimizer._opt_d) == 12
     assert abs(trajectory.Evaluate(0, 0.0)) < 1e-6
-    assert abs(frenet_path[-1].dl) < 1e-6
-    assert abs(frenet_path[-1].ddl) < 1e-6
+    assert abs(optimizer._opt_d_prime[-1]) < 1e-6
+    assert abs(optimizer._opt_d_pprime[-1]) < 1e-6
 
 def check_lateral_osqp_keeps_usable_non_solved_result():
     import numpy as np
@@ -272,7 +271,7 @@ def check_lateral_osqp_keeps_usable_non_solved_result():
     try:
         optimizer = optimizer_module.LateralOSQPOptimizer()
         assert optimizer.Optimize([0.0, 0.0, 0.0], 1.0, [(-1.0, 1.0)] * 12)
-        assert len(optimizer.GetFrenetFramePath()) == 12
+        assert len(optimizer._opt_d) == 12
     finally:
         optimizer_module.OSQP = original_osqp
 
@@ -337,15 +336,15 @@ def check_lattice_main_path_without_backup():
 
 def check_obstacle_empty_trajectory_is_static_for_st_graph():
     """A single pose is a static obstacle in the ST graph."""
-    from lattice_motion import Mover, Pose
+    from lattice_motion import is_moving, obstacle_from_samples
 
-    obs = Mover("empty_traj", 4.0, 2.0, [Pose(0.0, 20.0, 0.0, 0.0, 0.0)])
-    assert not obs.moving()
+    obs = obstacle_from_samples(8, 4.0, 2.0, [(0.0, 20.0, 0.0, 0.0, 0.0)])
+    assert not is_moving(obs)
 
     graph = _build_path_time_graph([obs])
     assert len(graph.static_obs_sl_boundaries) == 1
     assert len(graph.path_time_obstacles) == 1
-    assert graph.path_time_obstacles[0].id() == "empty_traj"
+    assert graph.path_time_obstacles[0].id() == 8
 
 
 
@@ -358,16 +357,16 @@ def check_obstacle_empty_trajectory_is_static_for_st_graph():
 
 
 def _build_dynamic_obstacle():
-    from lattice_motion import Mover, Pose
+    from lattice_motion import obstacle_from_samples
 
-    return Mover(
-        "obs_1",
+    return obstacle_from_samples(
+        9,
         4.0,
         2.0,
         [
-            Pose(0.0, 10.0, 0.0, 0.0, 1.0),
-            Pose(1.0, 11.0, 0.0, 0.0, 1.0),
-            Pose(2.0, 12.0, 0.0, 0.0, 1.0),
+            (0.0, 10.0, 0.0, 0.0, 1.0),
+            (1.0, 11.0, 0.0, 0.0, 1.0),
+            (2.0, 12.0, 0.0, 0.0, 1.0),
         ],
     )
 
@@ -383,9 +382,9 @@ def check_collision_checker_obstacle_behind_ego_no_crash():
     and that obstacle is correctly filtered out of the predicted environment.
     """
     discretized_ref_points, lane_width = _build_reference_line()
-    from lattice_motion import Mover, Pose
+    from lattice_motion import obstacle_from_samples
 
-    behind_obstacle = Mover("behind_obs", 4.0, 2.0, [Pose(0.0, -5.0, 0.0, 0.0, 0.0)])
+    behind_obstacle = obstacle_from_samples(10, 4.0, 2.0, [(0.0, -5.0, 0.0, 0.0, 0.0)])
 
     checker = CollisionChecker([behind_obstacle], 10.0, 0.0, discretized_ref_points, lane_width, None)
     assert checker.logger is not None
@@ -508,8 +507,8 @@ def check_loaded_commonroad_scenario_is_driven():
     _advance_actor(actor, 0.1)
     assert actor.x == held_x
     planned = _planner_obstacle(actor, dynamic, 0.1, np.zeros(2), 0.1)
-    predicted = planned.pose_at(0.0)
-    assert abs(predicted.x - 0.2) < 1e-6
+    predicted = planned.state_at_time(0)
+    assert abs(float(predicted.position[0]) - 0.2) < 1e-6
 
     shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
     box = RectObstacleShape(width=2.0, length=4.0)

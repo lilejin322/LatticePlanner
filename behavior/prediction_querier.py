@@ -6,6 +6,7 @@ from logging import Logger
 from math import cos, sin
 from path_matcher import PathMatcher
 from protoclass.path_point import PathPoint
+from lattice_motion import is_moving, state_in_horizon
 
 class PredictionQuerier:
     """
@@ -26,11 +27,11 @@ class PredictionQuerier:
         self.logger = Logger("PredictionQuerier")
 
         for obstacle in obstacles:
-            if obstacle.id not in self.id_obstacle_map:
-                self.id_obstacle_map[obstacle.id] = obstacle
+            if obstacle.obstacle_id not in self.id_obstacle_map:
+                self.id_obstacle_map[obstacle.obstacle_id] = obstacle
                 self.obstacles.append(obstacle)
             else:
-                self.logger.warning(f"Duplicated obstacle found [{obstacle.id}]")
+                self.logger.warning(f"Duplicated obstacle found [{obstacle.obstacle_id}]")
 
     def GetObstacles(self):
         """
@@ -52,14 +53,14 @@ class PredictionQuerier:
         :rtype: float
         """
         assert obstacle_id in self.id_obstacle_map, f"Obstacle with id {obstacle_id} not found"
-        mover = self.id_obstacle_map[obstacle_id]
-        if not mover.moving():
+        obstacle = self.id_obstacle_map[obstacle_id]
+        if not is_moving(obstacle):
             return 0.0
-        if t < mover.poses[0].t or t > mover.poses[-1].t:
+        pose = state_in_horizon(obstacle, t)
+        if pose is None:
             return 0.0
-        pose = mover.pose_at(t)
-        v = pose.v
-        theta = pose.theta
+        v = pose.velocity
+        theta = pose.orientation
         v_x: float = v * cos(theta)
         v_y: float = v * sin(theta)
 

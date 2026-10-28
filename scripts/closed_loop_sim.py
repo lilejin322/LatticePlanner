@@ -461,7 +461,7 @@ def _executed_prefix(trajectory, horizon: float, sample_dt: float) -> Discretize
 
 
 def _min_clearance(obstacles, executed: DiscretizedTrajectory) -> Optional[float]:
-    from lattice_motion import ego_occupancy
+    from lattice_motion import ego_occupancy, occupancy_at
 
     if executed.NumOfPoints() == 0 or not obstacles:
         return None
@@ -479,7 +479,7 @@ def _min_clearance(obstacles, executed: DiscretizedTrajectory) -> Optional[float
         )
         relative_time = ego_point.relative_time or 0.0
         for obstacle in obstacles:
-            distance = float(ego_box.shapely_object.distance(obstacle.occupancy_at(relative_time).shapely_object))
+            distance = float(ego_box.shapely_object.distance(occupancy_at(obstacle, relative_time).shapely_object))
             best = distance if best is None else min(best, distance)
     return best
 
@@ -502,6 +502,6 @@ def _advance_actor(actor: Actor, dt: float) -> None:
 
 
 def _obstacle_from_actor(actor: Actor):
-    from lattice_motion import mover_from_actor
+    from lattice_motion import obstacle_from_actor
 
-    return mover_from_actor(actor)
+    return obstacle_from_actor(actor)

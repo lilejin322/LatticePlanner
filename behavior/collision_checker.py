@@ -9,7 +9,7 @@ from common.discretized_trajectory import DiscretizedTrajectory
 from behavior.path_time_graph import PathTimeGraph
 from protoclass.path_point import PathPoint
 from path_matcher import PathMatcher
-from lattice_motion import ego_occupancy, rectangles_overlap
+from lattice_motion import ego_occupancy, occupancy_at, rectangles_overlap, state_at
 
 class CollisionChecker:
     """
@@ -44,7 +44,7 @@ class CollisionChecker:
                 ego_back_edge_to_center,
             )
             for obstacle in obstacles:
-                other = obstacle.occupancy_at(relative_time)
+                other = occupancy_at(obstacle, relative_time)
                 if rectangles_overlap(ego_box, other):
                     return True
         return False
@@ -101,7 +101,7 @@ class CollisionChecker:
         for obstacle in obstacles:
             if ego_vehicle_in_lane and (
                 self.IsObstacleBehindEgoVehicle(obstacle, ego_vehicle_s, discretized_reference_line)
-                or not self.path_time_graph.IsObstacleInGraph(obstacle.id)
+                or not self.path_time_graph.IsObstacleInGraph(obstacle.obstacle_id)
             ):
                 continue
             obstacles_considered.append(obstacle)
@@ -111,7 +111,8 @@ class CollisionChecker:
             predicted_env = []
             for obstacle in obstacles_considered:
                 predicted_env.append(
-                    obstacle.occupancy_at(
+                    occupancy_at(
+                        obstacle,
                         relative_time,
                         length_extra=2.0 * config_module.FLAGS_lon_collision_buffer,
                         width_extra=2.0 * config_module.FLAGS_lat_collision_buffer,
@@ -141,12 +142,12 @@ class CollisionChecker:
     def IsObstacleBehindEgoVehicle(self, obstacle, ego_vehicle_s: float,
                                    discretized_reference_line: List[PathPoint]) -> bool:
         half_lane_width = config_module.FLAGS_default_reference_line_width * 0.5
-        pose = obstacle.pose_at(0.0)
+        pose = state_at(obstacle, 0.0)
         obstacle_reference_line_position = PathMatcher.GetPathFrenetCoordinate(
-            discretized_reference_line, pose.x, pose.y)
+            discretized_reference_line, float(pose.position[0]), float(pose.position[1]))
 
         if (obstacle_reference_line_position[0] < ego_vehicle_s and
                 fabs(obstacle_reference_line_position[1]) < half_lane_width):
-            self.logger.warning(f"Ignore obstacle [{obstacle.id}]")
+            self.logger.warning(f"Ignore obstacle [{obstacle.obstacle_id}]")
             return True
         return False
