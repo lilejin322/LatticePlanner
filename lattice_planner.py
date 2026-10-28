@@ -5,7 +5,7 @@ import math
 import time
 import config
 from logging import Logger
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 from path_matcher import PathMatcher
 from cartesian_frenet_converter import CartesianFrenetConverter
 from behavior.collision_checker import CollisionChecker
@@ -13,7 +13,6 @@ from behavior.path_time_graph import PathTimeGraph
 from behavior.prediction_querier import PredictionQuerier
 from common.frame import Frame
 from common.constraint_checker import ConstraintChecker
-from common.planning_context import PlanningContext
 from reference_line.reference_line_info import ReferenceLineInfo
 from reference_line.reference_point import ReferencePoint
 from protoclass.adc_trajectory import ADCTrajectory
@@ -94,19 +93,9 @@ class LatticePlanner:
 
     def Plan(self, planning_start_point: TrajectoryPoint,
         frame: Frame, computed_trajectory: ADCTrajectory,
-        planning_context: Optional[PlanningContext] = None,
     ) -> bool:
-        """
-        Plan trajectories on all candidate reference lines.
-
-        :param TrajectoryPoint planning_start_point: 
-        :param Frame frame:
-        :param ADCTrajectory computed_trajectory:
-        :param Optional[PlanningContext] planning_context: 
-        :returns:
-        :rtype: bool
-        """
-        del computed_trajectory, planning_context
+        """Plan trajectories on every reference line in ``frame``."""
+        del computed_trajectory
 
         success_line_count = 0
         for index, reference_line_info in enumerate(frame.mutable_reference_line_info):
