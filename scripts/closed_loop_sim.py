@@ -88,6 +88,9 @@ class SimResult:
     other_ref_x: List[float] = field(default_factory=list)
     other_ref_y: List[float] = field(default_factory=list)
     lanelet_ids: List[int] = field(default_factory=list)
+    origin_x: float = 0.0
+    origin_y: float = 0.0
+    commonroad_scenario: Optional[object] = field(default=None, repr=False)
 
     def summary(self) -> str:
         clearance = (

@@ -4,7 +4,8 @@ The scenario comes from ``CommonRoadFileReader`` or from the Apollo map
 converter. This module does not build lanelets, obstacles, or a new scenario.
 The planner sees the loaded centerline in a local frame. Obstacle poses are
 copied from ``state_at_time``, and clearance uses each obstacle's occupancy
-polygon.
+polygon. Playback draws those same lanelets and the driven ego; the ego is
+not inserted into the scenario.
 """
 
 from __future__ import annotations
@@ -128,6 +129,9 @@ def run_loaded_scenario(
     result.ref_x = [float(point[0]) for point in local_center]
     result.ref_y = [float(point[1]) for point in local_center]
     result.lanelet_ids = [lanelet.lanelet_id for lanelet in chain]
+    result.origin_x = float(origin[0])
+    result.origin_y = float(origin[1])
+    result.commonroad_scenario = scenario
     return result
 
 
@@ -624,3 +628,181 @@ def _run_name(scenario, chain) -> str:
     scenario_id = getattr(scenario, "scenario_id", "scenario")
     ids = "-".join(str(lanelet.lanelet_id) for lanelet in chain[:4])
     return f"{scenario_id}:lanelet_{ids}"
+
+
+def ego_obstacle_from_drive(result: SimResult):
+    """Ego as a CommonRoad dynamic obstacle in the loaded scenario's coordinates.
+
+    The obstacle is not added to the scenario. Its position is the geometric
+    center, shifted forward from the planner's rear-axle trace.
+    """
+    from commonroad.geometry.obstacle_shapes.rect_obstacle_shape import RectObstacleShape
+    from commonroad.prediction.prediction import TrajectoryPrediction
+    from commonroad.scenario.obstacle import DynamicObstacle, ObstacleType
+    from commonroad.scenario.state import CustomState, InitialState
+    from commonroad.scenario.trajectory import Trajectory
+
+    scenario = result.commonroad_scenario
+    if scenario is None:
+        raise ValueError("this drive has no loaded CommonRoad scenario")
+    if not result.ego_trace:
+        raise ValueError("this drive has no ego trace")
+    scenario_dt = float(scenario.dt)
+    last_step = _time_step(result.ego_trace[-1].t, scenario_dt)
+    poses = [_pose_at(result.ego_trace, step * scenario_dt) for step in range(last_step + 1)]
+    centers = [_ego_center(pose, result.origin_x, result.origin_y) for pose in poses]
+    shape = RectObstacleShape(width=config.EGO_VEHICLE_WIDTH, length=config.EGO_VEHICLE_LENGTH)
+    x0, y0, theta0, speed0 = centers[0]
+    initial = InitialState(
+        time_step=0,
+        position=np.array([x0, y0]),
+        orientation=theta0,
+        velocity=speed0,
+    )
+    prediction = None
+    if len(centers) > 1:
+        states = [
+            CustomState(
+                time_step=step,
+                position=np.array([x, y]),
+                orientation=theta,
+                velocity=speed,
+            )
+            for step, (x, y, theta, speed) in enumerate(centers[1:], start=1)
+        ]
+        prediction = TrajectoryPrediction(Trajectory(1, states), shape)
+    return DynamicObstacle(_fresh_obstacle_id(scenario), ObstacleType.CAR, shape, initial, prediction)
+
+
+def render_loaded_frames(result: SimResult, steps: Optional[Sequence[int]] = None) -> List[np.ndarray]:
+    """Draw the loaded lanelets and the driven ego at each scenario time step.
+
+    ``steps`` selects scenario time steps. The default is every step of the
+    driven trace. The scenario is not modified.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg", force=False)
+    import matplotlib.pyplot as plt
+    from commonroad.scenario.obstacle import DynamicObstacle, StaticObstacle
+    from commonroad.visualization.draw_params import MPDrawParams
+    from commonroad.visualization.mp_renderer import MPRenderer
+
+    scenario = result.commonroad_scenario
+    if scenario is None:
+        raise ValueError("this drive has no loaded CommonRoad scenario")
+    ego = ego_obstacle_from_drive(result)
+    if steps is None:
+        final = ego.initial_state.time_step
+        if ego.prediction is not None:
+            final = int(ego.prediction.final_time_step)
+        steps = list(range(int(ego.initial_state.time_step), final + 1))
+    limits = _playback_limits(ego, steps)
+    params = MPDrawParams()
+    params.dynamic_obstacle.trajectory.draw_trajectory = False
+    params.dynamic_obstacle.history.draw_history = False
+    params.dynamic_obstacle.draw_icon = False
+    params.dynamic_obstacle.draw_signals = False
+    params.dynamic_obstacle.vehicle_shape.occupancy.shape.facecolor = "#1f4e79"
+    params.lanelet_network.draw_ids = list(result.lanelet_ids) or None
+
+    figure, axes = plt.subplots(figsize=(8, 6), dpi=80)
+    renderer = MPRenderer(draw_params=params, ax=axes, plot_limits=limits)
+    frames: List[np.ndarray] = []
+    try:
+        for step in steps:
+            params.time_begin = int(step)
+            params.time_end = int(step)
+            scenario.lanelet_network.draw(renderer, params.lanelet_network)
+            for obstacle in scenario.obstacles:
+                if isinstance(obstacle, DynamicObstacle):
+                    obstacle.draw(renderer, params.dynamic_obstacle)
+                elif isinstance(obstacle, StaticObstacle):
+                    obstacle.draw(renderer, params.static_obstacle)
+            ego.draw(renderer, params.dynamic_obstacle)
+            renderer.render()
+            figure.canvas.draw()
+            frames.append(np.array(figure.canvas.buffer_rgba(), copy=True))
+    finally:
+        plt.close(figure)
+    return frames
+
+
+def write_loaded_gif(result: SimResult, path, *, steps: Optional[Sequence[int]] = None) -> int:
+    """Write one GIF of the loaded scenario and the driven ego. Returns the frame count."""
+    from pathlib import Path
+
+    from PIL import Image
+
+    frames = render_loaded_frames(result, steps)
+    if not frames:
+        raise ValueError("loaded drive produced no frames")
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    images = [Image.fromarray(frame).convert("RGB") for frame in frames]
+    scenario_dt = float(result.commonroad_scenario.dt)
+    images[0].save(
+        output,
+        save_all=True,
+        append_images=images[1:],
+        duration=max(1, int(round(scenario_dt * 1000.0))),
+        loop=0,
+    )
+    return len(images)
+
+
+def _fresh_obstacle_id(scenario) -> int:
+    used = {lanelet.lanelet_id for lanelet in scenario.lanelet_network.lanelets}
+    used.update(obstacle.obstacle_id for obstacle in scenario.obstacles)
+    return max(used, default=0) + 1
+
+
+def _pose_at(trace, t: float):
+    from scripts.closed_loop_sim import PoseSample
+
+    if t <= trace[0].t:
+        return trace[0]
+    if t >= trace[-1].t:
+        return trace[-1]
+    for left, right in zip(trace, trace[1:]):
+        if left.t <= t <= right.t:
+            span = right.t - left.t
+            if span <= 1e-9:
+                return right
+            ratio = (t - left.t) / span
+            turn = math.atan2(math.sin(right.theta - left.theta), math.cos(right.theta - left.theta))
+            return PoseSample(
+                t=t,
+                x=left.x + (right.x - left.x) * ratio,
+                y=left.y + (right.y - left.y) * ratio,
+                theta=left.theta + turn * ratio,
+                v=left.v + (right.v - left.v) * ratio,
+            )
+    return trace[-1]
+
+
+def _ego_center(pose, origin_x: float, origin_y: float):
+    theta = _valid_orientation(pose.theta)
+    shift = config.EGO_VEHICLE_LENGTH / 2.0 - config.EGO_BACK_EDGE_TO_CENTER
+    return (
+        pose.x + origin_x + shift * math.cos(theta),
+        pose.y + origin_y + shift * math.sin(theta),
+        theta,
+        max(0.0, pose.v),
+    )
+
+
+def _playback_limits(ego, steps: Sequence[int]):
+    xs = []
+    ys = []
+    for step in steps:
+        occupancy = ego.occupancy_at_time(int(step))
+        if occupancy is None:
+            continue
+        center = occupancy.center
+        xs.append(float(center.x))
+        ys.append(float(center.y))
+    if not xs:
+        raise ValueError("ego has no occupancy on the requested steps")
+    margin = 25.0
+    return (min(xs) - margin, max(xs) + margin, min(ys) - margin, max(ys) + margin)

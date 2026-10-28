@@ -2892,8 +2892,10 @@ def check_loaded_commonroad_scenario_is_driven():
     from scripts.closed_loop_sim import Actor, _advance_actor
     from scripts.commonroad_drive import (
         _planner_obstacle,
+        ego_obstacle_from_drive,
         load_scenario,
         occupancy_clearance,
+        render_loaded_frames,
         run_loaded_scenario,
         sync_actor,
     )
@@ -3006,6 +3008,25 @@ def check_loaded_commonroad_scenario_is_driven():
         end = chosen.center_vertices[-1]
         assert abs(result.ref_x[-1] - (end[0] - origin[0])) < 1e-3
         assert abs(result.ref_y[-1] - (end[1] - origin[1])) < 1e-3
+        assert abs(result.origin_x - float(origin[0])) < 1e-6
+        assert abs(result.origin_y - float(origin[1])) < 1e-6
+    ego = ego_obstacle_from_drive(result)
+    assert len(scenario.obstacles) == obstacle_count
+    last_step = int(round(result.ego_trace[-1].t / float(scenario.dt)))
+    start_center = ego.occupancy_at_time(0).center
+    end_center = ego.occupancy_at_time(last_step).center
+    assert math.hypot(end_center.x - start_center.x, end_center.y - start_center.y) > 6.0
+    driven = [
+        scenario.lanelet_network.find_lanelet_by_id(lanelet_id) for lanelet_id in result.lanelet_ids
+    ]
+    centerline = LineString(np.vstack([lanelet.center_vertices for lanelet in driven]))
+    assert centerline.distance(Point(start_center.x, start_center.y)) < 2.0
+    assert centerline.distance(Point(end_center.x, end_center.y)) < 2.0
+    frames = render_loaded_frames(result, steps=[0, last_step])
+    assert len(frames) == 2 and frames[0].shape == frames[1].shape and frames[0].size > 0
+    assert not np.array_equal(frames[0], frames[1])
+    assert len(scenario.obstacles) == obstacle_count
+    assert {lanelet.lanelet_id for lanelet in scenario.lanelet_network.lanelets} == lanelet_ids
 
 
 def main():

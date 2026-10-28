@@ -6,15 +6,22 @@ Unlike ``run_lattice_scenario_cases.py``, these cases replan every planning
 cycle and step both ego and dynamic actors forward. They fail if planning
 fails or the executed prefix overlaps an actor.
 
+``loaded_map`` drives a CommonRoad file produced by the Apollo map converter.
+``--animate`` writes that drive with CommonRoad's renderer. The straight-road
+cases stay on the planner fixtures.
+
 Usage:
   python scripts/run_closed_loop_sim.py
   python scripts/run_closed_loop_sim.py open_road follow_leader
+  python scripts/run_closed_loop_sim.py loaded_map --animate
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import sys
+import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -71,16 +78,42 @@ def stopped_leader() -> SimResult:
     return result
 
 
+def loaded_map() -> SimResult:
+    """Drive the longest lanelet in the converted Borregas Ave map."""
+    from apollo_map.to_commonroad import convert_map
+    from scripts.commonroad_drive import load_scenario, run_loaded_scenario
+
+    with tempfile.TemporaryDirectory() as output_dir:
+        scenario, problems = load_scenario(convert_map("borregas_ave", output_dir))
+    result = run_loaded_scenario(scenario, planning_problems=problems, horizon_s=2.0, init_v=5.0)
+    traveled = 0.0
+    for previous, sample in zip(result.ego_trace, result.ego_trace[1:]):
+        traveled += math.hypot(sample.x - previous.x, sample.y - previous.y)
+    if result.ok and traveled < 6.0:
+        result.ok = False
+        result.reason = f"loaded map only traveled {traveled:.1f}m"
+    if result.ok and not result.lanelet_ids:
+        result.ok = False
+        result.reason = "loaded map did not select a lanelet"
+    return result
+
+
 CASES = {
     "open_road": open_road,
     "follow_leader": follow_leader,
     "stopped_leader": stopped_leader,
+    "loaded_map": loaded_map,
 }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Closed-loop lattice simulation")
     parser.add_argument("cases", nargs="*", help="Case names (default: all)")
+    parser.add_argument(
+        "--animate",
+        action="store_true",
+        help="Write a CommonRoad GIF for a loaded-scenario drive",
+    )
     args = parser.parse_args()
     names = args.cases or list(CASES)
     unknown = [name for name in names if name not in CASES]
@@ -94,6 +127,12 @@ def main() -> int:
         status = "PASS" if result.ok else "FAIL"
         print(f"[{status}] {name}")
         print(f"  {result.summary()}")
+        if args.animate and result.commonroad_scenario is not None:
+            from scripts.commonroad_drive import write_loaded_gif
+
+            gif_path = PROJECT_ROOT / "scripts" / "output" / "animations" / f"{name}.gif"
+            frames = write_loaded_gif(result, gif_path)
+            print(f"  commonroad gif: {gif_path} ({frames} frames)")
         if not result.ok:
             failed.append(name)
     print(f"\nTotal: {len(names) - len(failed)}/{len(names)} passed")
