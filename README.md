@@ -1,78 +1,116 @@
 [![GPLv3 License](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-This is a **Python translation for learning** Baidu Apollo's lattice planner (not for a production simulator). After refactoring, all modules should import cleanly for reading and white-box study.
+Python port of Apollo's lattice planner, kept so the planner itself can be tested. The polynomials, costs, trajectory combiner, and 0.1 s constraint checks are the subject. CommonRoad supplies the road and the recorded vehicles. This is not a traffic simulator and not a new planning method.
 
-## QuickStart
-
-### Setup
-
-Create and activate your own virtual environment (venv, conda, etc. — none is bundled with this repo), then:
+## Setup
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The lattice **planning pipeline** in `lattice_planner.py` is the main readable path.
+`commonroad-io` stays on `protobuf` 3.20.2. Do not upgrade protobuf.
 
-### Closed loop
+## CommonRoad scenarios
 
-Driving cases replan every cycle on a lanelet from the public CommonRoad scenario repository. Fetch it with `python scripts/fetch_commonroad_scenarios.py`. The XML stays in gitignored `data/commonroad-scenarios/`. The lattice sampler and costs are unchanged.
-
-- `lanelet_path.py` reads a CommonRoad lanelet: polyline orientation and curvature, and lane width from `Lanelet.interpolate_position`. Obstacle rectangles are CommonRoad `RectOccupancy`. `scripts/lattice_commonroad.py` passes that path into the lattice core. Sampling, costs, and constraint checks stay in the lattice modules.
-- `scripts/official_map_road.py` selects the longest lanelet in `DEU_A9-2_1_T-1`. Actor `x` is station along the centerline and `y` is lateral offset. Other vehicles hold a constant speed. There is no NPC manager.
-- `scripts/closed_loop_sim.py` steps the ego and stores the executed trace.
-- `scripts/commonroad_drive.py` reads a CommonRoad file, measures clearance with occupancy polygons, and draws those lanelets.
-
-### Test against the original C++
-
-Run the regression test suite from the repo root after activating your environment:
+Scenario XML is not in this repository. The fetch script shallow-clones the public [commonroad-scenarios](https://gitlab.lrz.de/tum-cps/commonroad-scenarios) branch `2020a_scenarios` into gitignored `data/commonroad-scenarios/`:
 
 ```bash
-python scripts/verify_imports.py            # every module imports cleanly
-python scripts/run_all_planner_checks.py    # component checks, a minimal plan, and the closed loop
-python scripts/run_lattice_demo_cases.py    # smoke scenarios (open road, stop, backup fallback, ...)
-python scripts/run_lattice_scenario_cases.py  # driving cases replan every cycle
-python scripts/run_closed_loop_sim.py         # empty road, follow, and stopped leader
+python scripts/fetch_commonroad_scenarios.py
 ```
 
-## Formal Verification via SMT (demo)
+Running it again leaves an existing clone in place. That checkout is the public 2020a set (on the order of 18k XML files). The larger catalog on commonroad.in.tum.de asks for a login and is not what this script downloads.
 
-The regression tests above only check a trajectory at fixed time steps (`FLAGS_trajectory_time_resolution`). `verification/` holds a small Z3-based (SMT solver) proof-of-concept that instead checks a trajectory analytically over the *entire* continuous time interval, to catch bound violations that fall between two samples.
+Closed-loop cases that place their own actors use the longest lanelet in `DEU_A9-2_1_T-1`. An actor's `x` is station along that centerline and `y` is lateral offset. Those actors hold a constant speed. Recorded vehicles in a loaded file are read with `state_at_time` and `occupancy_at_time`. Nothing here builds lanelets or generates traffic.
 
-`verification/verify_constraint_checker1d.py` targets `common/constraint_checker1d.py`'s `IsValidLongitudinalTrajectory`, which samples a closed-form polynomial curve (`QuinticPolynomialCurve1d` / `QuarticPolynomialCurve1d`) every 0.1s and checks velocity/acceleration/jerk bounds only at those points. The script:
+## What to run
 
-1. Generates random candidate curves within the planner's own start/end/duration ranges.
-2. Keeps only the ones the real checker already marks `valid`.
-3. Encodes each curve's velocity/acceleration/jerk (the polynomial's exact derivatives, as Z3 rationals matching Python's floats bit-for-bit) as an SMT formula, and asks Z3 whether a bound violation exists anywhere on `[0, duration]` — not just at the sampled points.
-4. A `sat` result is a genuine counterexample: a trajectory the sampled checker calls safe that actually leaves the feasible envelope between two samples.
-
-Run it from the repo root (`z3-solver` is already in `requirements.txt`):
+From the repo root, after the dataset is present:
 
 ```bash
-python3 verification/verify_constraint_checker1d.py [num_random] [seed]
+python scripts/run_all_planner_checks.py
 ```
 
-`num_random` (default 2000) is how many random candidates to try per curve type; `seed` (default 0) makes runs reproducible. Sample output:
+That runs, in order:
 
+| Command | What it checks |
+|---------|----------------|
+| `scripts/run_lattice_component_checks.py` | Polynomials, backup, ST graph, collision, one loaded scenario drive |
+| `scripts/run_minimal_lattice_plan.py` | One lattice cycle on a straight lanelet, no obstacles |
+| `scripts/run_closed_loop_sim.py` | Open road, follow a slower leader, stop behind a stopped leader, two seconds on the A9 lanelet |
+| `scripts/run_lattice_known_failures.py` | Four recorded defects. Passes while each signature is still present |
+
+The same pieces one at a time:
+
+```bash
+python scripts/verify_imports.py
+python scripts/run_lattice_component_checks.py
+python scripts/run_minimal_lattice_plan.py
+python scripts/run_closed_loop_sim.py
+python scripts/run_lattice_known_failures.py
 ```
+
+Placed-actor cases on the A9 lanelet, tagged `lattice`, `stress`, and `sim`:
+
+```bash
+python scripts/run_lattice_scenario_cases.py --list
+python scripts/run_lattice_scenario_cases.py --tag lattice
+python scripts/run_lattice_scenario_cases.py
+python scripts/run_lattice_demo_cases.py
+```
+
+`stress` cases are informational and are not a failure gate. `--animate` writes a GIF under `scripts/output/animations/`. `python scripts/run_closed_loop_sim.py --animate` draws the lanelet with CommonRoad's renderer.
+
+A discovery sweep over fetched files is not a pass/fail gate. It writes `scripts/output/lattice_sweep/report.jsonl` (gitignored) and separates numeric blow-ups, negative-speed assertions, commits that leave the ego, acceleration outside [-6, 4] m/s², collisions, and backup-only cycles:
+
+```bash
+python scripts/run_lattice_dataset_sweep.py --limit 20
+python scripts/run_lattice_dataset_sweep.py
+```
+
+The default selection is recorded scenarios with at most 8 dynamic obstacles and a 1 s horizon.
+
+## Recorded defects
+
+`run_lattice_known_failures.py` exits 0 while these signatures still match. They are measurements of this planner. When a change removes one, set that row's expected kind to `contained` in `scripts/run_lattice_known_failures.py`.
+
+| Scenario | Kind | What is still true |
+|----------|------|--------------------|
+| `USA_Peach-3_1_T-1` | `numeric_blowup` | The backup trajectory's committed point is outside the 1e5 m guard |
+| `ESP_Monzon-7_5_T-1` | `negative_speed_assert` | A negative Frenet speed raises `AssertionError` instead of a failed plan |
+| `ZAM_Tjunction-1_266_T-1` | `left_road` | Within 1 s a committed point jumps away from the ego |
+| `FRA_MoissyCramayel-1_1_T-1` | `accel_bound` | A finished 1 s trace decelerates faster than -6 m/s² and is still accepted |
+
+## SMT checks
+
+`verification/` uses Z3 to ask whether a bound violation exists anywhere on a continuous interval, not only at the 0.1 s samples the checker looks at. A `sat` result is a counterexample: the sampled checker says valid, and the polynomial is outside a bound between samples. These misses are left in the checker on purpose.
+
+`common/constraint_checker1d.py` walks `while t < ParamLength(): t += 0.1`. The last sliver before the end is never evaluated, so a jerk or acceleration spike there is invisible to the checker. Duration is almost never an exact multiple of 0.1 s.
+
+```bash
+python verification/verify_constraint_checker1d.py [num_random] [seed]
+python verification/verify_lateral_constraint1d.py 200 1
+```
+
+`num_random` (default 2000) is how many random curves to try per family. `seed` (default 0) keeps a run repeatable. A longitudinal example the checker accepts, with jerk past -4 m/s³ at t=1.84375 s inside a curve that ends at 1.8694 s:
+
+```text
 tested=4000 checker_said_valid=38 counterexamples=1
 [quartic] start=[0.0, 30.93, 2.39] end=[30.57, -3.38] T=1.8694 -> checker says VALID, but at t=1.843750: v=30.6592 a=-3.2740 j=-4.0280
 ```
 
-This already found a real, structural bug: the checker's `while t < ParamLength(): ... t += 0.1` loop never evaluates the trajectory at its true end time, so a jerk violation confined to the last (<0.1s) sliver before the end can slip through undetected. Since a trajectory's duration is essentially never an exact multiple of the 0.1s sampling step, this isn't a rare edge case.
-
-`verification/verify_lateral_constraint1d.py` applies the same continuous-vs-sampled query to `IsValidLateralTrajectory`. That checker uses the identical `while t < ParamLength()` loop on the composed lateral acceleration `l''(s) s'(t)^2 + l'(s) s''(t)` and its own jerk approximation `l'''(s) s'''(t)`. Pairs the sampled checker already calls valid are handed to Z3. A `sat` result is again a real miss, not a different formula. With the lattice end-condition ranges and durations that leave a short tail after the last 0.1s sample:
+The lateral script uses the same loop on lateral acceleration. One miss sits between the sample at 0.5 s and the unchecked end at 0.5536 s, with lateral acceleration past ±4 m/s²:
 
 ```bash
-python3 verification/verify_lateral_constraint1d.py 200 1
+python verification/verify_lateral_constraint1d.py 200 1
 ```
 
-```
+```text
 tested=400 checker_said_valid=43 counterexamples=3
 [quartic] T=0.5536 S=40 -> checker says VALID, but at t=0.531250: a=-4.3781 j=0.2919
 ```
 
-`t=0.53125` sits between the samples at 0.5s and the unchecked end at 0.5536s. Lateral acceleration there is past the ±4 m/s² bound. The sampled checker never looks at that point.
+`verification/verify_constraint_checker.py` asks the same question for `ConstraintChecker.ValidTrajectory` on the Cartesian trajectory the planner actually accepts. The reference line in that proof is perfectly straight, so the Frenet-to-Cartesian formulas stay closed form. Curved reference lines are outside that proof. Longitudinal jerk there is a difference between two samples, and that script does not model it.
 
-### Notice
-Notably, the goal of this project is not to build a functional planner in a distinct simulator to do experiments, but to learn the algorithms and data structures within it. Therefore, we are translating the C++ functions in the Lattice algorithm into their corresponding Python frameworks as much as possible. Due to the introduction of CyberRT, the analysis of the program has also caused confusion. We are consolidating the protobuf message objects used by this planner into Python dataclasses to clearly demonstrate how the planner manipulates data.
+`FRA_MoissyCramayel-1_1_T-1` is the closed-loop version of this sampling gap: the executed trace decelerates at about -8.9 m/s² while the bound is -6 m/s², and the 0.1 s checker still accepts the plan.
