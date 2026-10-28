@@ -1,12 +1,10 @@
 """
 Prediction querier submodule
 """
-from typing import List, Dict
+from typing import List
 from logging import Logger
-from bisect import bisect_left
 from math import cos, sin
 from path_matcher import PathMatcher
-from common.obstacle import Obstacle
 from protoclass.path_point import PathPoint
 
 class PredictionQuerier:
@@ -14,7 +12,7 @@ class PredictionQuerier:
     PredictionQuerier is a class that provides an interface to query obstacle prediction results.
     """
 
-    def __init__(self, obstacles: List[Obstacle], reference_line: List[PathPoint]) -> None:
+    def __init__(self, obstacles, reference_line: List[PathPoint]) -> None:
         """
         Constructor
 
@@ -23,18 +21,18 @@ class PredictionQuerier:
         """
 
         self.reference_line = reference_line
-        self.id_obstacle_map: Dict[str, Obstacle] = {}
-        self.obstacles: List[Obstacle] = []
+        self.id_obstacle_map = {}
+        self.obstacles = []
         self.logger = Logger("PredictionQuerier")
 
         for obstacle in obstacles:
-            if obstacle.Id() not in self.id_obstacle_map:
-                self.id_obstacle_map[obstacle.Id()] = obstacle
+            if obstacle.id not in self.id_obstacle_map:
+                self.id_obstacle_map[obstacle.id] = obstacle
                 self.obstacles.append(obstacle)
             else:
-                self.logger.warning(f"Duplicated obstacle found [{obstacle.Id()}]")
+                self.logger.warning(f"Duplicated obstacle found [{obstacle.id}]")
 
-    def GetObstacles(self) -> List[Obstacle]:
+    def GetObstacles(self):
         """
         Get list of obstacles.
 
@@ -54,18 +52,14 @@ class PredictionQuerier:
         :rtype: float
         """
         assert obstacle_id in self.id_obstacle_map, f"Obstacle with id {obstacle_id} not found"
-        trajectory = self.id_obstacle_map[obstacle_id].Trajectory()
-        num_traj_point = len(trajectory.trajectory_point)
-        if num_traj_point < 2:
+        mover = self.id_obstacle_map[obstacle_id]
+        if not mover.moving():
             return 0.0
-
-        if t < trajectory.trajectory_point[0].relative_time or t > trajectory.trajectory_point[num_traj_point - 1].relative_time:
+        if t < mover.poses[0].t or t > mover.poses[-1].t:
             return 0.0
-
-        matched_index = bisect_left([p.relative_time for p in trajectory.trajectory_point], t)
-        matched_it = trajectory.trajectory_point[matched_index]
-        v: float = matched_it.v
-        theta: float = matched_it.path_point.theta
+        pose = mover.pose_at(t)
+        v = pose.v
+        theta = pose.theta
         v_x: float = v * cos(theta)
         v_y: float = v * sin(theta)
 
