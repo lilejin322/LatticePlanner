@@ -39,7 +39,8 @@ That runs, in order:
 | `scripts/run_lattice_component_checks.py` | Polynomials, backup, ST graph, collision, one cycle on a loaded scenario |
 | `scripts/run_minimal_lattice_plan.py` | One lattice cycle on a straight lanelet, no obstacles |
 | `scripts/run_lattice_cycle_checks.py` | Cruise and stop samples, cost order, fallback, the next cycle's init |
-| `scripts/run_lattice_known_failures.py` | Four recorded defects. Passes while each signature is still present |
+| `scripts/run_lattice_known_failures.py` | Four recorded defects on fetched scenarios. Passes while each signature is still present |
+| `scripts/run_lattice_synthetic_failures.py` | Three straight-road defects. Passes while each signature is still present |
 | `verification/pinned_sampling_gaps.py` | Two fixed curves the 0.1 s checker still misses |
 
 The same pieces one at a time:
@@ -50,6 +51,7 @@ python scripts/run_lattice_component_checks.py
 python scripts/run_minimal_lattice_plan.py
 python scripts/run_lattice_cycle_checks.py
 python scripts/run_lattice_known_failures.py
+python scripts/run_lattice_synthetic_failures.py
 python verification/pinned_sampling_gaps.py
 ```
 
@@ -74,6 +76,14 @@ The default selection is recorded scenarios with at most 8 dynamic obstacles and
 | `ESP_Monzon-7_5_T-1` | `negative_speed_assert` | A negative Frenet speed raises `AssertionError` instead of a failed plan |
 | `ZAM_Tjunction-1_266_T-1` | `left_road` | The first cycle stays on the ego. At 0.7 s the backup trajectory's committed point jumps away from that cycle's init |
 | `FRA_MoissyCramayel-1_1_T-1` | `accel_bound` | Replanning from each committed point, a returned backup changes speed by about -8.9 m/s² over 0.1 s. That trajectory's sample accelerations stay inside [-6, 4] m/s² |
+
+`run_lattice_synthetic_failures.py` is the same kind of record for inputs that do not need a fetched file. A straight lanelet, one call to `PlanOnLanelet`.
+
+| Case | Kind | What is still true |
+|------|------|--------------------|
+| `stopped_heading` | `fallback_blowup` | Speed 0 and heading 1 rad have a finite Frenet state. Backup still returns a point near y = 2.14×10⁹ m with speed about 2143 m/s, and the cartesian checker rejects the speed |
+| `reverse_heading` | `negative_speed_assert` | Heading π at 1 m/s makes Frenet speed negative and raises `AssertionError` |
+| `backup_stop_jerk` | `backup_jerk_blind` | `ConstantDecelerationTrajectory1d` reports jerk 0 across the stop, so the 1d checker accepts a −4 m/s² curve. On an 8 m stopped car the combined samples change acceleration from −4 to 0 in one 0.1 s step, jerk 40 m/s³, and that trajectory is still returned |
 
 ## SMT checks
 

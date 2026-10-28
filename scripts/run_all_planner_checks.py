@@ -15,6 +15,7 @@ SCRIPTS = [
     "run_minimal_lattice_plan.py",
     "run_lattice_cycle_checks.py",
     "run_lattice_known_failures.py",
+    "run_lattice_synthetic_failures.py",
 ]
 
 
