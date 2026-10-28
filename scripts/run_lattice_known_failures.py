@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the three lattice defects found on the fetched CommonRoad set.
+"""Check the lattice defects found on the fetched CommonRoad set.
 
 The check passes while each scenario still shows its recorded defect. After a
 guard stops the defect, change that scenario's expected kind to ``contained``
@@ -16,11 +16,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from scripts.lattice_probe import (
+    ACCEL_BOUND,
+    ACCEL_HIGH,
+    ACCEL_LOW,
     CONTAINED,
     LEFT_ROAD,
     NEGATIVE_SPEED_ASSERT,
     NUMERIC_BLOWUP,
     drive_scenario,
+    executed_accel_span,
     probe_scenario,
 )
 
@@ -48,6 +52,11 @@ RECORDED = (
         LEFT_ROAD,
         "within 1s a committed point jumps off the ego on the junction centerline",
     ),
+    RecordedDefect(
+        "FRA_MoissyCramayel-1_1_T-1",
+        ACCEL_BOUND,
+        "the closed loop accepts a trace whose acceleration is below -6 m/s^2",
+    ),
 )
 
 
@@ -58,6 +67,12 @@ def main() -> int:
             result = drive_scenario(defect.scenario_id, horizon_s=1.0)
             kind = LEFT_ROAD if result.reason.startswith("executed state left the road") else CONTAINED
             detail = result.reason
+        elif defect.kind == ACCEL_BOUND:
+            result = drive_scenario(defect.scenario_id, horizon_s=1.0)
+            low, high = executed_accel_span(result)
+            outside = low is not None and (low < ACCEL_LOW - 0.05 or high > ACCEL_HIGH + 0.05)
+            kind = ACCEL_BOUND if result.ok and outside else CONTAINED
+            detail = f"a in [{low}, {high}] m/s^2; {result.reason}"
         else:
             probe = probe_scenario(defect.scenario_id)
             kind = probe.kind
