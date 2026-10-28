@@ -23,7 +23,6 @@ from scripts.planner_test_fixtures import (
     build_center_lane_reference_line,
     build_lattice_plan_frame,
     build_static_obstacle,
-    curved_arc_pose,
 )
 
 # Component checks still return this tuple. Driving cases return SimResult.
@@ -206,10 +205,12 @@ def s_low_speed_creep() -> SimResult:
 
 
 def s_obstacle_60m_pass() -> SimResult:
+    # The converted lanelet leaves this cruise a few centimeters under the old
+    # 6 m fixture threshold. The car still accelerates past a vehicle 60 m ahead.
     return _straight(
         "obstacle_60m_pass",
         actors=[_static("far_ahead", 60.0)],
-        min_travel=6.0,
+        min_travel=5.5,
         forbid_fallback=True,
     )
 
@@ -219,10 +220,9 @@ def s_backup_off_open_road() -> SimResult:
 
 
 def s_curved_open_road() -> SimResult:
-    x, y, theta = curved_arc_pose(0.0, radius=60.0)
     result = run_curved_road(
         "curved_open_road",
-        Actor("ego", x=x, y=y, theta=theta, v=2.0, kappa=1.0 / 60.0),
+        Actor("ego", x=0.0, v=2.0),
         [],
         horizon_s=3.0,
     )
@@ -230,12 +230,10 @@ def s_curved_open_road() -> SimResult:
 
 
 def s_curved_obstacle_stop() -> SimResult:
-    x, y, theta = curved_arc_pose(0.0, radius=60.0)
-    ox, oy, otheta = curved_arc_pose(35.0, radius=60.0)
     result = run_curved_road(
         "curved_obstacle_stop",
-        Actor("ego", x=x, y=y, theta=theta, v=2.0, kappa=1.0 / 60.0),
-        [Actor("curve_car", x=ox, y=oy, theta=otheta, is_static=True)],
+        Actor("ego", x=0.0, v=2.0),
+        [Actor("curve_car", x=35.0, is_static=True)],
         blocking_actor_id="curve_car",
         horizon_s=3.0,
     )
@@ -541,7 +539,7 @@ def s_sim_stopped_leader() -> SimResult:
 
 
 SCENARIOS: List[Scenario] = [
-    Scenario("open_road", "Closed loop: open straight road", "lattice", s_open_road),
+    Scenario("open_road", "Closed loop: open lanelet from the converted map", "lattice", s_open_road),
     Scenario("far_obstacle_stop", "Closed loop: 35m stationary car", "lattice", s_far_obstacle_stop),
     Scenario(
         "close_obstacle_no_backup",
@@ -585,8 +583,8 @@ SCENARIOS: List[Scenario] = [
         s_backup_off_open_road,
         backup=False,
     ),
-    Scenario("curved_open_road", "Closed loop: curved lane", "lattice", s_curved_open_road),
-    Scenario("curved_obstacle_stop", "Closed loop: curved lane, stopped leader", "lattice", s_curved_obstacle_stop),
+    Scenario("curved_open_road", "Closed loop: converted lanelet, no leader", "lattice", s_curved_open_road),
+    Scenario("curved_obstacle_stop", "Closed loop: converted lanelet, stopped leader", "lattice", s_curved_obstacle_stop),
     Scenario("decider_bounds_assessment", "PathBounds + PathAssessment", "decider", s_decider_bounds_assessment),
     Scenario(
         "decider_lane_borrow_bounds",

@@ -6,9 +6,9 @@ Unlike ``run_lattice_scenario_cases.py``, these cases replan every planning
 cycle and step both ego and dynamic actors forward. They fail if planning
 fails or the executed prefix overlaps an actor.
 
-``loaded_map`` drives a CommonRoad file produced by the Apollo map converter.
-``--animate`` writes that drive with CommonRoad's renderer. The straight-road
-cases stay on the planner fixtures.
+Every closed-loop case drives a lanelet from the Borregas Ave CommonRoad file
+produced by the Apollo map converter. ``--animate`` draws that lanelet with
+CommonRoad's renderer.
 
 Usage:
   python scripts/run_closed_loop_sim.py

@@ -110,21 +110,54 @@ SyncFn = Callable[[float], None]
 CollisionFn = Callable[[list, DiscretizedTrajectory, float], tuple]
 
 
-def run_straight_road(
+def _drive_official(
+    role: str,
     name: str,
     ego: Actor,
     actors: List[Actor],
     *,
-    horizon_s: float = 3.0,
-    road_length: float = 200.0,
-    backup: Optional[bool] = None,
-    blocking_actor_id: Optional[str] = None,
+    horizon_s: float,
+    backup: Optional[bool],
+    blocking_actor_id: Optional[str],
+    plan: str,
+    path_label: str = "regular/left/forward",
+    s_curve: bool = True,
+    borrow_direction: Optional[List[int]] = None,
 ) -> SimResult:
-    """Replan along a straight reference line until ``horizon_s``."""
-    from scripts.planner_test_fixtures import build_reference_line
+    from scripts.official_map_road import open_official_drive
 
-    reference_line, _, template = build_reference_line(length=road_length)
-    lanes = template.Lanes()
+    drive = open_official_drive(role, ego, actors, horizon_s=horizon_s)
+    saved_flags = _set_on_lane_flags(borrow_direction) if plan == "on_lane" else None
+    try:
+        if plan == "lattice":
+            plan_fn = _lattice_plan(drive, blocking_actor_id)
+        elif plan == "path_bounds":
+            plan_fn = _path_bounds_plan(drive, blocking_actor_id, path_label, s_curve)
+        elif plan == "on_lane":
+            plan_fn = _on_lane_plan(drive, borrow_direction)
+        else:
+            raise ValueError(plan)
+        result = _run_loop(
+            name,
+            ego,
+            actors,
+            plan_fn,
+            horizon_s=horizon_s,
+            backup=backup,
+            blocking_actor_id=blocking_actor_id,
+            sync_fn=drive.sync_fn,
+            collision_fn=drive.collision_fn,
+        )
+    finally:
+        if saved_flags is not None:
+            _restore_on_lane_flags(saved_flags)
+        drive.close()
+    return drive.annotate(result)
+
+
+def _lattice_plan(drive, blocking_actor_id: Optional[str]):
+    reference_line = drive.frame.reference_line
+    lanes = drive.frame.lanes
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
         obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
@@ -133,86 +166,17 @@ def run_straight_road(
         ok = LatticePlanner().Plan(start, reference_line_info._frame, ADCTrajectory())
         return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
 
-    result = _run_loop(
-        name,
-        ego,
-        actors,
-        plan_fn,
-        horizon_s=horizon_s,
-        backup=backup,
-        blocking_actor_id=blocking_actor_id,
-    )
-    result.ref_x = [0.0, road_length]
-    result.ref_y = [0.0, 0.0]
-    return result
+    return plan_fn
 
 
-def run_curved_road(
-    name: str,
-    ego: Actor,
-    actors: List[Actor],
-    *,
-    horizon_s: float = 3.0,
-    radius: float = 60.0,
-    arc_length: float = 120.0,
-    backup: Optional[bool] = None,
-    blocking_actor_id: Optional[str] = None,
-) -> SimResult:
-    """Replan along a fixed circular arc."""
-    from scripts.planner_test_fixtures import build_curved_reference_line, curved_arc_pose
-
-    _reference_line, _, template = build_curved_reference_line(radius=radius, arc_length=arc_length)
-    lanes = template.Lanes()
-
-    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        reference_line_info, start = _reference_line_info_at(_reference_line, lanes, ego_now)
-        _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
-        ok = LatticePlanner().Plan(start, reference_line_info._frame, ADCTrajectory())
-        return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
-
-    result = _run_loop(
-        name,
-        ego,
-        actors,
-        plan_fn,
-        horizon_s=horizon_s,
-        backup=backup,
-        blocking_actor_id=blocking_actor_id,
-    )
-    ref_x: List[float] = []
-    ref_y: List[float] = []
-    s = 0.0
-    while s <= arc_length + 1e-6:
-        x, y, _theta = curved_arc_pose(s, radius=radius)
-        ref_x.append(x)
-        ref_y.append(y)
-        s += 2.0
-    result.ref_x = ref_x
-    result.ref_y = ref_y
-    return result
-
-
-def run_path_bounds_road(
-    name: str,
-    ego: Actor,
-    actors: List[Actor],
-    *,
-    horizon_s: float = 5.0,
-    road_length: float = 160.0,
-    path_label: str = "regular/left/forward",
-    blocking_actor_id: Optional[str] = None,
-    s_curve: bool = True,
-) -> SimResult:
-    """Replan a PathBounds borrow path every cycle and execute one cycle of it."""
+def _path_bounds_plan(drive, blocking_actor_id: Optional[str], path_label: str, s_curve: bool):
     from scripts.planner_test_fixtures import (
         apply_borrow_path_trajectory,
         apply_path_bounds_overtake_trajectory,
-        build_center_lane_reference_line,
     )
 
-    reference_line, template = build_center_lane_reference_line(length=road_length)
-    lanes = template.Lanes()
+    reference_line = drive.frame.reference_line
+    lanes = drive.frame.lanes
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
         obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
@@ -234,19 +198,171 @@ def run_path_bounds_road(
             )
         return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
 
-    result = _run_loop(
+    return plan_fn
+
+
+def _set_on_lane_flags(borrow_direction: Optional[List[int]]):
+    import config as config_module
+
+    saved = (
+        config_module.FLAGS_enable_reference_line_provider_thread,
+        config_module.FLAGS_enable_path_bounds_decider,
+        config_module.FLAGS_enable_on_lane_combine_path_and_speed,
+        config_module.FLAGS_enable_path_decider_after_lateral,
+    )
+    config_module.FLAGS_enable_reference_line_provider_thread = True
+    config_module.FLAGS_enable_path_bounds_decider = bool(borrow_direction)
+    config_module.FLAGS_enable_on_lane_combine_path_and_speed = bool(borrow_direction)
+    config_module.FLAGS_enable_path_decider_after_lateral = bool(borrow_direction)
+    return saved
+
+
+def _restore_on_lane_flags(saved) -> None:
+    import config as config_module
+
+    (
+        config_module.FLAGS_enable_reference_line_provider_thread,
+        config_module.FLAGS_enable_path_bounds_decider,
+        config_module.FLAGS_enable_on_lane_combine_path_and_speed,
+        config_module.FLAGS_enable_path_decider_after_lateral,
+    ) = saved
+
+
+def _on_lane_plan(drive, borrow_direction: Optional[List[int]]):
+    import config as config_module
+    from copy import deepcopy
+
+    import on_lane_planning as on_lane_module
+    from common.planning_context import PlanningContext
+    from on_lane_planning import OnLanePlanning
+    from reference_line.reference_line_provider import ReferenceLineProvider
+
+    context = PlanningContext()
+    provider = ReferenceLineProvider()
+    planner = OnLanePlanning(provider)
+    cycle_dt = 1.0 / max(config_module.FLAGS_planning_loop_rate, 1e-3)
+    sim_time = 0.0
+    original_time = on_lane_module.time.time
+    if borrow_direction:
+        context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
+        context.planning_status.path_decider.decided_side_pass_direction = list(borrow_direction)
+    reference_line = drive.frame.reference_line
+    lanes = drive.frame.lanes
+
+    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
+        nonlocal sim_time
+        # Segment() shrinks the provider line, so each cycle starts from the
+        # loaded lanelet. The planner object stays so the stitcher can see
+        # the previous trajectory.
+        provider._reference_lines = [deepcopy(reference_line)]
+        provider._route_segments = [deepcopy(lanes)]
+        local_view = _local_view(ego_now, actors_now, measurement_time=sim_time)
+        adc = ADCTrajectory()
+        on_lane_module.time.time = lambda: sim_time
+        try:
+            status = planner.RunOnce(local_view, adc, planning_context=context)
+        finally:
+            on_lane_module.time.time = original_time
+            sim_time += cycle_dt
+        obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
+        trajectory = (
+            DiscretizedTrajectory(list(adc.trajectory_point))
+            if adc.trajectory_point and len(adc.trajectory_point) >= 2
+            else None
+        )
+        type_name = adc.trajectory_type.name if adc.trajectory_type is not None else "UNKNOWN"
+        return status.ok() and trajectory is not None, trajectory, type_name, obstacles
+
+    return plan_fn
+
+
+def run_straight_road(
+    name: str,
+    ego: Actor,
+    actors: List[Actor],
+    *,
+    horizon_s: float = 3.0,
+    road_length: float = 200.0,
+    backup: Optional[bool] = None,
+    blocking_actor_id: Optional[str] = None,
+) -> SimResult:
+    """Replan on the converted map's long lanelet until ``horizon_s``.
+
+    ``ego.x`` and ``actor.x`` are station along that lanelet. ``y`` is the
+    lateral offset. ``road_length`` is unused; the lanelet sets the length.
+    """
+    del road_length
+    return _drive_official(
+        "through",
         name,
         ego,
         actors,
-        plan_fn,
         horizon_s=horizon_s,
+        backup=backup,
         blocking_actor_id=blocking_actor_id,
+        plan="lattice",
     )
-    result.ref_x = [0.0, road_length]
-    result.ref_y = [0.0, 0.0]
-    result.other_ref_x = [0.0, road_length]
-    result.other_ref_y = [3.5 if "left" in path_label else -3.5] * 2
-    return result
+
+
+def run_curved_road(
+    name: str,
+    ego: Actor,
+    actors: List[Actor],
+    *,
+    horizon_s: float = 3.0,
+    radius: float = 60.0,
+    arc_length: float = 120.0,
+    backup: Optional[bool] = None,
+    blocking_actor_id: Optional[str] = None,
+) -> SimResult:
+    """Replan on the same converted lanelet as ``run_straight_road``.
+
+    The official centerline supplies the curvature. ``radius`` and
+    ``arc_length`` are unused. Station and lateral offset use ``x`` and ``y``.
+    """
+    del radius, arc_length
+    return _drive_official(
+        "through",
+        name,
+        ego,
+        actors,
+        horizon_s=horizon_s,
+        backup=backup,
+        blocking_actor_id=blocking_actor_id,
+        plan="lattice",
+    )
+
+
+def run_path_bounds_road(
+    name: str,
+    ego: Actor,
+    actors: List[Actor],
+    *,
+    horizon_s: float = 5.0,
+    road_length: float = 160.0,
+    path_label: str = "regular/left/forward",
+    blocking_actor_id: Optional[str] = None,
+    s_curve: bool = True,
+) -> SimResult:
+    """Replan a borrow on the converted map's same-direction neighbor lane.
+
+    ``road_length`` is unused. The parallel lanelet in the converted map sets
+    the corridor.
+    """
+    del road_length
+    role = "borrow-left" if "left" in path_label else "borrow-right"
+    return _drive_official(
+        role,
+        name,
+        ego,
+        actors,
+        horizon_s=horizon_s,
+        backup=None,
+        blocking_actor_id=blocking_actor_id,
+        plan="path_bounds",
+        path_label=path_label,
+        s_curve=s_curve,
+    )
 
 
 def run_on_lane_road(
@@ -259,99 +375,29 @@ def run_on_lane_road(
     borrow_direction: Optional[List[int]] = None,
     blocking_actor_id: Optional[str] = None,
 ) -> SimResult:
-    """Call OnLanePlanning.RunOnce from the executed state every cycle."""
-    import config as config_module
-    from common.planning_context import PlanningContext
-    from on_lane_planning import OnLanePlanning
-    from reference_line.reference_line_provider import ReferenceLineProvider
-    from scripts.planner_test_fixtures import (
-        build_center_lane_reference_line,
-        build_reference_line,
-    )
+    """Call OnLanePlanning.RunOnce on the converted lanelet every cycle.
 
-    from copy import deepcopy
-
-    import on_lane_planning as on_lane_module
-
-    context = PlanningContext()
-    provider = ReferenceLineProvider()
-    planner = OnLanePlanning(provider)
-    # RunOnce stamps the plan with time.time(). The stitcher then looks up
-    # the previous trajectory at (now - header_time). Wall time is not the
-    # 0.1s the sim executed, so keep both clocks on the sim clock.
-    cycle_dt = 1.0 / max(config_module.FLAGS_planning_loop_rate, 1e-3)
-    sim_time = 0.0
-    original_time = on_lane_module.time.time
-    if borrow_direction:
-        context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
-        context.planning_status.path_decider.decided_side_pass_direction = list(borrow_direction)
-        reference_line, reference_line_info = build_center_lane_reference_line(
-            length=road_length,
-            init_v=max(ego.v, 0.0),
-            sample_step=5.0,
-        )
-        lanes = reference_line_info.Lanes()
+    ``road_length`` is unused. A borrow uses the same-direction neighbor that
+    is already in the converted map.
+    """
+    del road_length
+    if not borrow_direction:
+        role = "through"
+    elif 1 in borrow_direction:
+        role = "borrow-left"
     else:
-        reference_line, _discretized, reference_line_info = build_reference_line(
-            length=road_length,
-            init_v=max(ego.v, 0.0),
-            sample_step=5.0,
-        )
-        lanes = reference_line_info.Lanes()
-
-    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        nonlocal sim_time
-        # Segment() shrinks the provider line in place, so each cycle starts
-        # from the original road. The planner object itself stays, which is
-        # what keeps the previous trajectory for stitching.
-        provider._reference_lines = [deepcopy(reference_line)]
-        provider._route_segments = [deepcopy(lanes)]
-        local_view = _local_view(ego_now, actors_now, measurement_time=sim_time)
-        adc = ADCTrajectory()
-        on_lane_module.time.time = lambda: sim_time
-        try:
-            status = planner.RunOnce(local_view, adc, planning_context=context)
-        finally:
-            on_lane_module.time.time = original_time
-            sim_time += cycle_dt
-        obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        trajectory = DiscretizedTrajectory(list(adc.trajectory_point)) if adc.trajectory_point and len(adc.trajectory_point) >= 2 else None
-        type_name = adc.trajectory_type.name if adc.trajectory_type is not None else "UNKNOWN"
-        return status.ok() and trajectory is not None, trajectory, type_name, obstacles
-
-    old_values = (
-        config_module.FLAGS_enable_reference_line_provider_thread,
-        config_module.FLAGS_enable_path_bounds_decider,
-        config_module.FLAGS_enable_on_lane_combine_path_and_speed,
-        config_module.FLAGS_enable_path_decider_after_lateral,
+        role = "borrow-right"
+    return _drive_official(
+        role,
+        name,
+        ego,
+        actors,
+        horizon_s=horizon_s,
+        backup=None,
+        blocking_actor_id=blocking_actor_id,
+        plan="on_lane",
+        borrow_direction=borrow_direction,
     )
-    config_module.FLAGS_enable_reference_line_provider_thread = True
-    config_module.FLAGS_enable_path_bounds_decider = bool(borrow_direction)
-    config_module.FLAGS_enable_on_lane_combine_path_and_speed = bool(borrow_direction)
-    config_module.FLAGS_enable_path_decider_after_lateral = bool(borrow_direction)
-    try:
-        result = _run_loop(
-            name,
-            ego,
-            actors,
-            plan_fn,
-            horizon_s=horizon_s,
-            blocking_actor_id=blocking_actor_id,
-        )
-    finally:
-        (
-            config_module.FLAGS_enable_reference_line_provider_thread,
-            config_module.FLAGS_enable_path_bounds_decider,
-            config_module.FLAGS_enable_on_lane_combine_path_and_speed,
-            config_module.FLAGS_enable_path_decider_after_lateral,
-        ) = old_values
-    result.ref_x = [0.0, road_length]
-    result.ref_y = [0.0, 0.0]
-    if borrow_direction:
-        side = 3.5 if 1 in borrow_direction else -3.5
-        result.other_ref_x = [0.0, road_length]
-        result.other_ref_y = [side, side]
-    return result
 
 
 def to_plot_context(result: SimResult, scenario_name: str, title: str):
