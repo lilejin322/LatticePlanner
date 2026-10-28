@@ -475,7 +475,9 @@ def BuildLatticeLongitudinalSpeedData(
 def _borrow_target_l(d_bounds, label: str, obstacle_sl) -> float:
     """Clear the obstacle, and stay inside the corridor away from the road edge."""
     half = config_module.EGO_VEHICLE_WIDTH * 0.5
-    side_buffer = 0.5
+    # Half a meter left the moving-leader box gap at 0.37 m. One meter of
+    # side clearance stays inside the borrow corridor and off the road edge.
+    side_buffer = 1.0
     if "left" in label:
         lo, hi = max(d_bounds, key=lambda item: item[0])
         target = lo + 0.35 * (hi - lo)
