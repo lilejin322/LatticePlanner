@@ -8,7 +8,6 @@ from bisect import bisect_left
 from collections import UserList
 from common.geometry_utils import NormalizeAngle, value_or_zero, lerp
 from protoclass.path_point import PathPoint
-from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.trajectory_point import TrajectoryPoint
 
 logger = Logger("DiscretizedTrajectory")
@@ -27,19 +26,9 @@ class DiscretizedTrajectory(UserList):
         self.logger = Logger("DiscretizedTrajectory")
         assert 0 <= len(args) <= 1, "Invalid input"
         if len(args) == 1:
-            if isinstance(args[0], ADCTrajectory):
-                """
-                param ADCTrajectory args[0]: the obj to be append()
-                """
-                # Create a DiscretizedTrajectory based on protobuf message
-                self.extend(args[0].trajectory_point)
-            elif isinstance(args[0], (list, UserList)):
-                """
-                param list | UserList args[0]: the list to be extend()
-                """
-                assert args[0], "Input list is empty"
-                assert all(isinstance(p, TrajectoryPoint) for p in args[0]), "Input list contains non-TrajectoryPoint object"
-                self.extend(args[0])
+            assert args[0], "Input list is empty"
+            assert all(isinstance(p, TrajectoryPoint) for p in args[0]), "Input list contains non-TrajectoryPoint object"
+            self.extend(args[0])
 
     def StartPoint(self) -> TrajectoryPoint:
         """
@@ -142,7 +131,6 @@ class DiscretizedTrajectory(UserList):
         tp.v = lerp(value_or_zero(tp0.v), t0, value_or_zero(tp1.v), t1, t)
         tp.a = lerp(value_or_zero(tp0.a), t0, value_or_zero(tp1.a), t1, t)
         tp.relative_time = t
-        tp.steer = self.slerp(value_or_zero(tp0.steer), t0, value_or_zero(tp1.steer), t1, t)
 
         path_point: PathPoint = tp.path_point
         path_point.x = lerp(value_or_zero(pp0.x), t0, value_or_zero(pp1.x), t1, t)
@@ -150,7 +138,6 @@ class DiscretizedTrajectory(UserList):
         path_point.theta = self.slerp(value_or_zero(pp0.theta), t0, value_or_zero(pp1.theta), t1, t)
         path_point.kappa = lerp(value_or_zero(pp0.kappa), t0, value_or_zero(pp1.kappa), t1, t)
         path_point.dkappa = lerp(value_or_zero(pp0.dkappa), t0, value_or_zero(pp1.dkappa), t1, t)
-        path_point.ddkappa = lerp(value_or_zero(pp0.ddkappa), t0, value_or_zero(pp1.ddkappa), t1, t)
         path_point.s = lerp(value_or_zero(pp0.s), t0, value_or_zero(pp1.s), t1, t)
 
         return tp

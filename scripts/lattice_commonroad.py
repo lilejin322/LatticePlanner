@@ -49,12 +49,10 @@ def plan_on_lanelet(
         path_point=PathPoint(
             x=ego.x,
             y=ego.y,
-            z=0.0,
             theta=ego.theta,
             kappa=ego.kappa,
             s=0.0,
             dkappa=0.0,
-            ddkappa=0.0,
         ),
         v=max(0.0, ego.v),
         a=ego.a,

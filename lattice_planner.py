@@ -11,7 +11,7 @@ from behavior.collision_checker import CollisionChecker
 from behavior.path_time_graph import PathTimeGraph
 from behavior.prediction_querier import PredictionQuerier
 from common.constraint_checker import ConstraintChecker
-from protoclass.adc_trajectory import ADCTrajectory
+from protoclass.adc_trajectory import TrajectoryType
 from protoclass.path_point import PathPoint
 from protoclass.planning_target import PlanningTarget
 from protoclass.trajectory_point import TrajectoryPoint
@@ -158,7 +158,7 @@ class LatticePlanner:
 
             num_lattice_traj += 1
             chosen = combined_trajectory
-            chosen_type = ADCTrajectory.TrajectoryType.NORMAL
+            chosen_type = TrajectoryType.NORMAL
             break
 
         self.logger.debug(f"Trajectory_Evaluation_Time = {time.time() - current_time}")
@@ -179,6 +179,6 @@ class LatticePlanner:
                 trajectory1d_generator,
             )
             trajectory = backup_generator.GenerateTrajectory(reference_line)
-            return True, trajectory, ADCTrajectory.TrajectoryType.PATH_FALLBACK
+            return True, trajectory, TrajectoryType.PATH_FALLBACK
 
-        return False, None, ADCTrajectory.TrajectoryType.UNKNOWN
+        return False, None, TrajectoryType.UNKNOWN

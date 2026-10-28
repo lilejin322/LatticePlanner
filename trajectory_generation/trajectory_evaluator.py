@@ -12,7 +12,6 @@ import numpy as np
 from path_matcher import PathMatcher
 from common.curve1d.piecewise_acceleration_trajectory1d import PiecewiseAccelerationTrajectory1d
 from trajectory_generation.piecewise_braking_trajectory_generator import PiecewiseBrakingTrajectoryGenerator
-from protoclass.speed_point import SpeedPoint
 
 class TrajectoryEvaluator:
     """
@@ -383,22 +382,3 @@ class TrajectoryEvaluator:
                 t += config_module.FLAGS_trajectory_time_resolution
         
         return reference_s_dot
-    
-    def InterpolateDenseStPoints(self, st_points: List[SpeedPoint], t: float) -> Tuple[bool, float]:
-        """
-        Interpolate dense st points
-
-        :param List[SpeedPoint] st_points: the speed points
-        :param float t: the time
-        :returns: a tuple of state and traj_s
-        :rtype: Tuple[bool, float]
-        """
-
-        assert len(st_points) > 1, "st_points size must be greater than 1"
-        if t < st_points[0].t or t > st_points[-1].t:
-            self.logger.error("AutoTuning InterpolateDenseStPoints Error")
-            return False, None
-        for i in range(1, len(st_points)):
-            if t <= st_points[i].t:
-                return True, st_points[i].t
-        return False, None

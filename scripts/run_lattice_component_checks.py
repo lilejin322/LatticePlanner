@@ -90,7 +90,6 @@ def check_discretized_trajectory_uses_proto_scalar_defaults():
     point = trajectory.Evaluate(0.5)
     assert point.v == 0.0
     assert point.a == 0.0
-    assert point.steer == 0.0
     assert point.path_point.x == 0.0
     assert point.path_point.y == 0.0
     assert point.path_point.theta == 0.0
@@ -153,13 +152,13 @@ def check_constraint_checker_dynamic_speed_bound():
 
     trajectory = DiscretizedTrajectory([
         TrajectoryPoint(
-            path_point=PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0),
+            path_point=PathPoint(x=0.0, y=0.0, theta=0.0, kappa=0.0, s=0.0),
             v=2.0,
             a=0.0,
             relative_time=0.0,
         ),
         TrajectoryPoint(
-            path_point=PathPoint(x=1.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=1.0),
+            path_point=PathPoint(x=1.0, y=0.0, theta=0.0, kappa=0.0, s=1.0),
             v=2.0,
             a=0.0,
             relative_time=0.1,
@@ -182,7 +181,6 @@ def check_constraint_checker_matches_cpp_non_increasing_time():
                 kappa=0.0,
                 s=0.0,
                 dkappa=0.0,
-                ddkappa=0.0,
             ),
             v=1.0,
             a=0.0,
@@ -321,7 +319,7 @@ def check_lattice_main_path_without_backup():
     try:
         points, lane_width = _build_reference_line()
         start_point = TrajectoryPoint(
-            path_point=PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
+            path_point=PathPoint(x=0.0, y=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0),
             v=1.0,
             a=0.0,
             relative_time=0.0,

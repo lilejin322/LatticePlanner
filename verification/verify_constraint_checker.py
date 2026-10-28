@@ -112,10 +112,10 @@ def _straight_reference_line() -> list[PathPoint]:
     """
 
     return [
-        PathPoint(x=0.0, y=0.0, z=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0, ddkappa=0.0),
+        PathPoint(x=0.0, y=0.0, theta=0.0, kappa=0.0, s=0.0, dkappa=0.0),
         PathPoint(
-            x=REFERENCE_LINE_LENGTH, y=0.0, z=0.0, theta=0.0, kappa=0.0,
-            s=REFERENCE_LINE_LENGTH, dkappa=0.0, ddkappa=0.0,
+            x=REFERENCE_LINE_LENGTH, y=0.0, theta=0.0, kappa=0.0,
+            s=REFERENCE_LINE_LENGTH, dkappa=0.0,
         ),
     ]
 
