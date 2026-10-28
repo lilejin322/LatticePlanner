@@ -367,13 +367,13 @@ def _actors_from_scenario(scenario, origin):
 
 
 def _planner_obstacle(actor: Actor, obstacle, t0: float, origin, scenario_dt: float):
-    from lattice_motion import Mover, Pose
+    from lattice_motion import obstacle_from_actor, obstacle_from_samples
 
     if actor.is_static:
-        return _obstacle_from_actor(actor)
+        return obstacle_from_actor(actor, obstacle.obstacle_id)
     sample_dt = config.FLAGS_trajectory_time_resolution
     horizon = config.FLAGS_trajectory_time_length
-    poses = []
+    samples = []
     relative = 0.0
     while relative <= horizon + 1e-9:
         state, held = _state_at(obstacle, _time_step(t0 + relative, scenario_dt))
@@ -381,11 +381,11 @@ def _planner_obstacle(actor: Actor, obstacle, t0: float, origin, scenario_dt: fl
         if pose is None:
             break
         x, y, theta, speed = pose
-        poses.append(Pose(relative, x, y, theta, 0.0 if held else speed))
+        samples.append((relative, x, y, theta, 0.0 if held else speed))
         relative += sample_dt
-    if len(poses) < 2:
-        return _obstacle_from_actor(actor)
-    return Mover(actor.actor_id, actor.length, actor.width, poses)
+    if len(samples) < 2:
+        return obstacle_from_actor(actor, obstacle.obstacle_id)
+    return obstacle_from_samples(obstacle.obstacle_id, actor.length, actor.width, samples)
 
 
 def _box_size(obstacle) -> Tuple[float, float]:

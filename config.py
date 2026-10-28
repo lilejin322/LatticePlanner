@@ -7,21 +7,11 @@ EGO_VEHICLE_LENGTH = 4.933
 EGO_VEHICLE_WIDTH = 2.11
 EGO_BACK_EDGE_TO_CENTER = 1.043
 FRONT_EDGE_TO_CENTER = 3.89
-BACK_EDGE_TO_CENTER = 1.043
-LEFT_EDGE_TO_CENTER = 1.055
-RIGHT_EDGE_TO_CENTER = 1.055
 FLAGS_half_vehicle_width = EGO_VEHICLE_WIDTH / 2.0
-MinSafeTurnRadius = 1.0
 
 # Reference line / trajectory publishing.
 FLAGS_default_reference_line_width = 4.0
-FLAGS_default_lane_width = 3.048
-FLAGS_planning_upper_speed_limit = 20.0  # planning.conf overrides 31.3.
 FLAGS_trajectory_time_length = 8.0
-FLAGS_trajectory_time_min_interval = 0.02
-FLAGS_trajectory_time_max_interval = 0.1
-FLAGS_trajectory_time_high_density_period = 1.0
-FLAGS_trajectory_point_num_for_debug = 10
 
 # Dynamic constraints.
 FLAGS_speed_lower_bound = -0.1
@@ -41,8 +31,6 @@ FLAGS_static_obstacle_nudge_l_buffer = 0.3
 FLAGS_nonstatic_obstacle_nudge_l_buffer = 0.4
 FLAGS_max_stop_distance_obstacle = 10.0
 FLAGS_min_stop_distance_obstacle = 6.0
-FLAGS_destination_obstacle_id = "DEST"
-FLAGS_virtual_stop_wall_height = 2.0
 
 # Lattice planner core.
 FLAGS_numerical_epsilon = 1e-6
@@ -92,14 +80,6 @@ FLAGS_bound_buffer = 0.1
 FLAGS_nudge_buffer = 0.3
 FLAGS_enable_osqp_debug = False
 
-# Speed limits.
-FLAGS_speed_bump_speed_limit = 4.4704
-FLAGS_default_city_road_speed_limit = 15.67
-FLAGS_default_highway_speed_limit = 29.06
-
-# Still read by obstacle setup and the closed-loop cycle.
-FLAGS_use_navigation_mode = False
-FLAGS_use_multi_thread_to_add_obstacles = False
-FLAGS_enable_lattice_path_assessment = False
+# Closed-loop cycle.
 FLAGS_planning_loop_rate = 10.0
 FLAGS_enable_lateral_jerk_check = False

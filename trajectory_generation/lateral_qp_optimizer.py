@@ -2,7 +2,6 @@ from abc import abstractmethod
 from typing import List, Tuple
 import config as config_module
 from common.curve1d.piecewise_jerk_trajectory1d import PiecewiseJerkTrajectory1d
-from protoclass.frenet_frame_point import FrenetFramePoint
 
 class LateralQPOptimizer:
     """
@@ -54,23 +53,3 @@ class LateralQPOptimizer:
             j: float = (self._opt_d_pprime[i] - self._opt_d_pprime[i -1]) / self._delta_s
             optimal_trajectory.AppendSegment(j, self._delta_s)
         return optimal_trajectory
-
-    def GetFrenetFramePath(self) -> List[FrenetFramePoint]:
-        """
-        Get frenet frame path
-
-        :returns: frenet frame path
-        :rtype: List[FrenetFramePoint]
-        """
-
-        frenet_frame_path: List[FrenetFramePoint] = []
-        accumulated_s: float = 0.0
-        for i in range(len(self._opt_d)):
-            frenet_frame_point: FrenetFramePoint = FrenetFramePoint()
-            frenet_frame_point.s = accumulated_s
-            frenet_frame_point.l = self._opt_d[i]
-            frenet_frame_point.dl = self._opt_d_prime[i]
-            frenet_frame_point.ddl = self._opt_d_pprime[i]
-            frenet_frame_path.append(frenet_frame_point)
-            accumulated_s += self._delta_s
-        return frenet_frame_path
