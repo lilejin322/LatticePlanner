@@ -407,6 +407,20 @@ def BuildLatticeLongitudinalSpeedData(
     if obstacles is None and reference_line_info.path_decision is not None:
         obstacles = list(reference_line_info.path_decision.obstacles.values())
     obstacles = list(obstacles or [])
+    # The lateral path may already be outside an obstacle. Drop those from
+    # the ST graph so the lattice cost ranks speed along the path that will
+    # actually be driven, and does not brake for a car the path has cleared.
+    obstacles = [
+        obstacle
+        for obstacle in obstacles
+        if not _obstacle_cleared_by_path(reference_line_info.path_data, obstacle)
+    ]
+    if not obstacles and init_s[2] < 0.0:
+        # Nothing remains on this path. Sampling the next bundle from a
+        # negative acceleration (the previous 0.1s prefix) makes the
+        # evaluator keep shedding speed. Keep the measured speed and clear
+        # that acceleration; the generator and evaluator are unchanged.
+        init_s = [init_s[0], init_s[1], 0.0]
     querier = PredictionQuerier(obstacles, ref_points)
     path_time_graph = PathTimeGraph(
         querier.GetObstacles(),
@@ -433,29 +447,140 @@ def BuildLatticeLongitudinalSpeedData(
     if not valid:
         return BuildCruiseSpeedData(reference_line_info, cruise_speed=cruise)
 
-    block_s = _nearest_blocking_s(
-        obstacles,
-        init_s[0],
-        reference_line_info.path_data,
+    # Rank with the lattice evaluator. The lateral curve is held at the
+    # current offset so every pair shares the same lateral cost and the
+    # order is the longitudinal cost (cruise, jerk, collision).
+    from common.curve1d.quintic_polynomial_curve1d import QuinticPolynomialCurve1d
+    from trajectory_generation.trajectory_evaluator import TrajectoryEvaluator
+
+    lat_hold = QuinticPolynomialCurve1d(
+        [init_d[0], 0.0, 0.0],
+        [init_d[0], 0.0, 0.0],
+        max(config_module.FLAGS_speed_lon_decision_horizon, 1.0),
     )
+    evaluator = TrajectoryEvaluator(
+        init_s,
+        reference_line_info.planning_target,
+        valid,
+        [lat_hold],
+        path_time_graph,
+        ref_points,
+    )
+    if not evaluator.has_more_trajectory_pairs():
+        return BuildCruiseSpeedData(reference_line_info, cruise_speed=cruise)
+    best_lon, _best_lat = evaluator.next_top_trajectory_pair()
+    return BuildSpeedDataFromLonTrajectory(best_lon, init_s[0])
 
-    def _score(curve) -> float:
-        # Closed loop only executes the next fraction of a second, so rank
-        # curves by that prefix instead of where they end several seconds later.
-        horizon = min(1.0, curve.ParamLength())
-        if horizon <= 1e-6:
-            return 1.0e6
-        end_s = curve.Evaluate(0, horizon)
-        samples = [i * 0.1 for i in range(int(horizon / 0.1) + 1)]
-        speed_error = sum(abs(curve.Evaluate(1, t) - cruise) for t in samples) / len(samples)
-        if block_s is None:
-            return speed_error
-        if end_s > block_s:
-            return 1000.0 + (end_s - block_s)
-        return (block_s - end_s) * 0.1 + speed_error
 
-    best = min(valid, key=_score)
-    return BuildSpeedDataFromLonTrajectory(best, init_s[0])
+def _borrow_target_l(d_bounds, label: str, obstacle_sl) -> float:
+    """Clear the obstacle, and stay inside the corridor away from the road edge."""
+    half = config_module.EGO_VEHICLE_WIDTH * 0.5
+    side_buffer = 0.5
+    if "left" in label:
+        lo, hi = max(d_bounds, key=lambda item: item[0])
+        target = lo + 0.35 * (hi - lo)
+        if obstacle_sl is not None and obstacle_sl.end_l is not None:
+            target = max(target, obstacle_sl.end_l + half + side_buffer)
+        return min(max(target, lo), hi)
+    if "right" in label:
+        lo, hi = min(d_bounds, key=lambda item: item[1])
+        target = hi - 0.35 * (hi - lo)
+        if obstacle_sl is not None and obstacle_sl.start_l is not None:
+            target = min(target, obstacle_sl.start_l - half - side_buffer)
+        return min(max(target, lo), hi)
+    lo, hi = d_bounds[len(d_bounds) // 2]
+    return 0.5 * (lo + hi)
+
+
+def _borrow_reference(reference_line_info, points, d_bounds, label: str):
+    """Road-fixed lateral reference, trimmed to the maneuver.
+
+    The pass offset is fixed in s: ramp in over a speed-scaled distance,
+    hold through the obstacle, then ramp back. Replanning reads the same
+    l(s), so a 0.1s step cannot restart the shift from the current offset.
+    """
+    start_s = points[0].s
+    obstacles = []
+    if reference_line_info.path_decision is not None:
+        obstacles = list(reference_line_info.path_decision.obstacles.values())
+    span = _nearest_in_lane_obstacle(obstacles, start_s)
+    obstacle_sl = None if span is None else span[2]
+    target = _borrow_target_l(d_bounds, label, obstacle_sl)
+    planning_point = reference_line_info._adc_planning_point
+    speed = 0.0
+    if planning_point is not None and planning_point.v:
+        speed = max(0.0, float(planning_point.v))
+    if speed < 0.5:
+        speed = reference_line_info.GetCruiseSpeed() or config_module.FLAGS_default_cruise_speed
+        speed = max(float(speed or 0.0), 0.5)
+    ramp = max(speed * max(1.5, abs(target) / 1.0), 8.0)
+    if span is None:
+        s_pass = start_s + ramp
+        s_clear = s_pass
+    else:
+        s_pass, s_clear = span[0], span[1]
+    s_begin = s_pass - ramp
+    s_return = s_clear + ramp
+    reach_s = min(
+        points[-1].s,
+        max(s_return, s_clear + config_module.EGO_VEHICLE_LENGTH + 2.0),
+    )
+    kept_points = []
+    kept_bounds = []
+    ref_d = []
+    for pt, bounds in zip(points, d_bounds):
+        if pt.s > reach_s + 1e-6:
+            break
+        if pt.s <= s_begin or s_pass <= s_begin:
+            lateral = 0.0
+        elif pt.s < s_pass:
+            lateral = target * (pt.s - s_begin) / (s_pass - s_begin)
+        elif pt.s <= s_clear:
+            lateral = target
+        elif pt.s < s_return and s_return > s_clear:
+            lateral = target * (1.0 - (pt.s - s_clear) / (s_return - s_clear))
+        else:
+            lateral = 0.0
+        lo, hi = bounds
+        kept_points.append(pt)
+        kept_bounds.append(bounds)
+        ref_d.append(min(max(lateral, lo), hi))
+    if len(kept_points) < 2:
+        kept_points = list(points[:2])
+        kept_bounds = list(d_bounds[:2])
+        ref_d = [min(max(0.0, lo), hi) for lo, hi in kept_bounds]
+    return kept_points, kept_bounds, ref_d
+
+
+def _obstacle_cleared_by_path(path_data, obstacle) -> bool:
+    if obstacle is None or obstacle.IsVirtual():
+        return False
+    sl = obstacle.PerceptionSLBoundary()
+    if sl is None:
+        return False
+    return _path_clears_obstacle(path_data, sl)
+
+
+def _nearest_in_lane_obstacle(obstacles, ego_s: float):
+    """Nearest obstacle still overlapping the lane, as (start_s, end_s, sl)."""
+    half_width = config_module.EGO_VEHICLE_WIDTH * 0.5
+    nearest = None
+    for obstacle in obstacles:
+        if obstacle.IsVirtual():
+            continue
+        sl = obstacle.PerceptionSLBoundary()
+        if sl is None or sl.start_s is None or sl.end_s is None:
+            continue
+        if sl.end_l is None or sl.start_l is None:
+            continue
+        if sl.end_s < ego_s:
+            continue
+        if sl.end_l < -half_width or sl.start_l > half_width:
+            continue
+        span = (sl.start_s, sl.end_s, sl)
+        if nearest is None or span[0] < nearest[0]:
+            nearest = span
+    return nearest
 
 
 def _path_clears_obstacle(path_data, sl) -> bool:
@@ -471,26 +596,6 @@ def _path_clears_obstacle(path_data, sl) -> bool:
     point = frenet_path.EvaluateByS(sl.start_s)
     margin = config_module.EGO_VEHICLE_WIDTH * 0.5
     return point.l > (sl.end_l or 0.0) + margin or point.l < (sl.start_l or 0.0) - margin
-
-
-def _nearest_blocking_s(obstacles, ego_s: float, path_data=None) -> Optional[float]:
-    half_width = config_module.EGO_VEHICLE_WIDTH * 0.5
-    nearest = None
-    for obstacle in obstacles:
-        if obstacle.IsVirtual():
-            continue
-        sl = obstacle.PerceptionSLBoundary()
-        if sl is None or sl.start_s is None or sl.end_l is None or sl.start_l is None:
-            continue
-        if sl.end_s < ego_s:
-            continue
-        if _path_clears_obstacle(path_data, sl):
-            continue
-        if sl.end_l < -half_width or sl.start_l > half_width:
-            continue
-        stop_s = sl.start_s - config_module.FLAGS_min_stop_distance_obstacle
-        nearest = stop_s if nearest is None else min(nearest, stop_s)
-    return nearest
 
 
 def BuildSpeedDataFromLonTrajectory(lon_trajectory, start_ref_s: float) -> SpeedData:
@@ -606,11 +711,10 @@ def BuildOvertakePathDataFromPathBoundary(
 ) -> Optional[PathData]:
     """Solve a lateral QP inside the borrow corridor.
 
-    Hard bounds are the PathBounds tube. The objective tracks the pass side
-    of that tube over a short lookahead, and the last knot is pinned there
-    so a 0.1s execution step cannot stay on a flat start. Replanning from
-    the executed heading continues the maneuver. This replaces the previous
-    hand-drawn smoothstep S-curve.
+    Hard bounds are the PathBounds tube. The reference is a road-fixed
+    pass offset: ramp in over a speed-scaled distance, hold through the
+    obstacle, then ramp back. It is not pinned to the outer road edge, and
+    replanning reads the same l(s) instead of restarting the shift.
     """
     points = list(boundary)
     if len(points) < 2:
@@ -621,7 +725,6 @@ def BuildOvertakePathDataFromPathBoundary(
         return None
     label = boundary.label or "regular/self"
     d_bounds = []
-    ref_d = []
     for pt in points:
         lo = float(pt.l_lower.l)
         hi = float(pt.l_upper.l)
@@ -631,23 +734,9 @@ def BuildOvertakePathDataFromPathBoundary(
             mid = 0.5 * (lo + hi)
             lo, hi = mid - 0.025, mid + 0.025
         d_bounds.append((lo, hi))
-        preferred = _pass_l_from_boundary_point(pt, label)
-        ref_d.append(min(max(preferred, lo), hi))
-
-    # A full-corridor QP postpones the borrow, so a 0.1s execution step never
-    # leaves the flat start. Keep a short lookahead and pin the last knot to
-    # the corridor's pass side so the immediate path has to move.
-    lookahead = max(delta_s * 2.0, 6.0)
-    keep = 1
-    for index, pt in enumerate(points):
-        if pt.s - points[0].s <= lookahead + 1e-6:
-            keep = index + 1
-    d_bounds = d_bounds[:keep]
-    ref_d = ref_d[:keep]
-    points = points[:keep]
-    end_l = ref_d[-1]
-    pinned_bounds = list(d_bounds)
-    pinned_bounds[-1] = (end_l, end_l)
+    points, d_bounds, ref_d = _borrow_reference(
+        reference_line_info, points, d_bounds, label
+    )
     loose_bounds = list(d_bounds)
 
     adc = reference_line_info.AdcSlBoundary()
@@ -669,26 +758,22 @@ def BuildOvertakePathDataFromPathBoundary(
     optimizer = LateralOSQPOptimizer()
     old_weight = config_module.FLAGS_weight_lateral_obstacle_distance
     old_jerk = config_module.FLAGS_lateral_third_order_derivative_max
-    # Offset weight 1 loses the race against a 0.1s execution step: each replan
-    # spreads the borrow over the whole corridor, so the vehicle only climbs a
-    # few centimeters per cycle and hits the obstacle-side wall. A stronger
-    # tracking weight makes the QP commit to the pass side early.
+    # The ramp above is the lateral schedule. A tracking weight of 1 loses
+    # to the smoothness terms, so the path stays near the centerline and the
+    # next cycle repeats that. Follow the ramp.
     config_module.FLAGS_weight_lateral_obstacle_distance = max(old_weight, 100.0)
     solved = False
     try:
         # The default jerk limit can make a sudden borrow corridor infeasible.
         # OSQP then returns a finite but wildly infeasible primal; reject that
         # and retry with a looser jerk limit until the path stays in the tube.
-        for bounds in (pinned_bounds, loose_bounds):
-            if solved:
+        for jerk_limit in (old_jerk, 0.5, 1.0, 2.0, 10.0):
+            config_module.FLAGS_lateral_third_order_derivative_max = jerk_limit
+            if not optimizer.Optimize([d0, dl0, 0.0], delta_s, loose_bounds, ref_d):
+                continue
+            if _lateral_solution_inside_bounds(optimizer._opt_d, loose_bounds):
+                solved = True
                 break
-            for jerk_limit in (old_jerk, 0.5, 1.0, 2.0, 10.0):
-                config_module.FLAGS_lateral_third_order_derivative_max = jerk_limit
-                if not optimizer.Optimize([d0, dl0, 0.0], delta_s, bounds, ref_d):
-                    continue
-                if _lateral_solution_inside_bounds(optimizer._opt_d, bounds):
-                    solved = True
-                    break
         if not solved and optimizer._opt_d and len(optimizer._opt_d) == len(loose_bounds):
             optimizer._opt_d = [
                 min(max(value, lo), hi)
