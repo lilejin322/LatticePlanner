@@ -2,7 +2,7 @@
 
 The lanelet construction follows EVITA's ``map_converter.py``
 (https://github.com/fabiocavaleri/EVITA). Maps are read with this repo's
-descriptor-based loader instead of generated ``map_*_pb2`` modules.
+descriptor-based loader.
 """
 
 from __future__ import annotations
