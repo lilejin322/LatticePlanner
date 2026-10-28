@@ -77,12 +77,10 @@ def path_from_lanelet(lanelet: Lanelet, speed_limit: float) -> LaneletPath:
             PathPoint(
                 x=float(xy[0]),
                 y=float(xy[1]),
-                z=0.0,
                 theta=float(heading),
                 kappa=float(kappa),
                 s=float(station),
                 dkappa=dkappa,
-                ddkappa=0.0,
             )
         )
     return LaneletPath(lanelet, points, speed_limit)

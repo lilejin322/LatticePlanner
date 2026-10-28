@@ -88,7 +88,6 @@ class TrajectoryCombiner:
             trajectory_point.path_point.theta = theta
             trajectory_point.path_point.kappa = kappa
             trajectory_point.path_point.dkappa = 0.0
-            trajectory_point.path_point.ddkappa = 0.0
             trajectory_point.v = v
             trajectory_point.a = a
             trajectory_point.relative_time = t_param + init_relative_time

@@ -61,9 +61,8 @@ class PathMatcher:
         theta: float = PathMatcher.slerp(p0.theta, p0.s, p1.theta, p1.s, s)
         kappa: float = (1 - weight) * (p0.kappa or 0.0) + weight * (p1.kappa or 0.0)
         dkappa: float = (1 - weight) * (p0.dkappa or 0.0) + weight * (p1.dkappa or 0.0)
-        ddkappa: float = (1 - weight) * (p0.ddkappa or 0.0) + weight * (p1.ddkappa or 0.0)
 
-        return PathPoint(x=x, y=y, z=0.0, theta=theta, kappa=kappa, s=s, dkappa=dkappa, ddkappa=ddkappa)
+        return PathPoint(x=x, y=y, theta=theta, kappa=kappa, s=s, dkappa=dkappa)
 
     @staticmethod
     def FindProjectionPoint(p0: PathPoint, p1: PathPoint, x: float, y: float) -> PathPoint:

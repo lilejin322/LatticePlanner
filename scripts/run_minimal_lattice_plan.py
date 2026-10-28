@@ -20,12 +20,10 @@ def main() -> int:
         path_point=PathPoint(
             x=0.0,
             y=0.0,
-            z=0.0,
             theta=0.0,
             kappa=0.0,
             s=0.0,
             dkappa=0.0,
-            ddkappa=0.0,
         ),
         v=0.1,
         a=0.0,

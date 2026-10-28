@@ -131,7 +131,6 @@ class DiscretizedTrajectory(UserList):
         tp.v = lerp(value_or_zero(tp0.v), t0, value_or_zero(tp1.v), t1, t)
         tp.a = lerp(value_or_zero(tp0.a), t0, value_or_zero(tp1.a), t1, t)
         tp.relative_time = t
-        tp.steer = self.slerp(value_or_zero(tp0.steer), t0, value_or_zero(tp1.steer), t1, t)
 
         path_point: PathPoint = tp.path_point
         path_point.x = lerp(value_or_zero(pp0.x), t0, value_or_zero(pp1.x), t1, t)
@@ -139,7 +138,6 @@ class DiscretizedTrajectory(UserList):
         path_point.theta = self.slerp(value_or_zero(pp0.theta), t0, value_or_zero(pp1.theta), t1, t)
         path_point.kappa = lerp(value_or_zero(pp0.kappa), t0, value_or_zero(pp1.kappa), t1, t)
         path_point.dkappa = lerp(value_or_zero(pp0.dkappa), t0, value_or_zero(pp1.dkappa), t1, t)
-        path_point.ddkappa = lerp(value_or_zero(pp0.ddkappa), t0, value_or_zero(pp1.ddkappa), t1, t)
         path_point.s = lerp(value_or_zero(pp0.s), t0, value_or_zero(pp1.s), t1, t)
 
         return tp
