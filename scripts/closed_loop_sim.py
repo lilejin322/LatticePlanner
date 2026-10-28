@@ -1,10 +1,14 @@
 """
 Closed-loop lattice / on-lane simulation.
 
-Each cycle rebuilds the world from the executed ego state and the actors'
-current poses, calls the planner once, and commits only the next planning
-cycle (1 / FLAGS_planning_loop_rate). The stored trace is that executed
-history. Animation plays the trace; it does not play one open-loop plan.
+The road is a lanelet from the converted Borregas Ave map. See
+``scripts/official_map_road.py``. Each cycle plans once from the executed ego
+state and commits only the next planning cycle. Other vehicles hold a constant
+speed along the centerline; this is not a traffic simulator.
+
+``x`` on an actor is station along that centerline and ``y`` is lateral
+offset, positive to the left. ``replay`` means the road driver owns the pose,
+so the loop does not integrate the actor a second time.
 """
 
 from __future__ import annotations
@@ -26,8 +30,9 @@ from protoclass.trajectory_point import TrajectoryPoint
 class Actor:
     """One vehicle in the simulated world. ``actor_id`` is the planning id.
 
-    ``replay`` is set for an actor whose pose is copied from an existing
-    trajectory. The loop does not integrate that actor forward.
+    On a closed-loop drive, ``x`` is station along the lanelet and ``y`` is
+    lateral offset. Speed is constant. ``replay`` keeps the loop from
+    integrating the actor again after the road driver has set its pose.
     """
 
     actor_id: str
@@ -315,21 +320,18 @@ def run_curved_road(
     backup: Optional[bool] = None,
     blocking_actor_id: Optional[str] = None,
 ) -> SimResult:
-    """Replan on the same converted lanelet as ``run_straight_road``.
+    """Same converted lanelet as ``run_straight_road``.
 
-    The official centerline supplies the curvature. ``radius`` and
-    ``arc_length`` are unused. Station and lateral offset use ``x`` and ``y``.
+    Older cases still call this name. ``radius`` and ``arc_length`` are ignored.
     """
     del radius, arc_length
-    return _drive_official(
-        "through",
+    return run_straight_road(
         name,
         ego,
         actors,
         horizon_s=horizon_s,
         backup=backup,
         blocking_actor_id=blocking_actor_id,
-        plan="lattice",
     )
 
 

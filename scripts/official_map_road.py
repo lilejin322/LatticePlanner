@@ -3,6 +3,7 @@
 The geometry is the Borregas Ave CommonRoad file written by the existing
 converter. Lanelets are not created here. An actor's ``x`` is station along
 the chosen centerline and ``y`` is the lateral offset, positive to the left.
+Speed stays constant. This module does not manage traffic.
 """
 
 from __future__ import annotations

@@ -19,9 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import math
 import sys
-import tempfile
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -79,16 +77,14 @@ def stopped_leader() -> SimResult:
 
 
 def loaded_map() -> SimResult:
-    """Drive the longest lanelet in the converted Borregas Ave map."""
-    from apollo_map.to_commonroad import convert_map
-    from scripts.commonroad_drive import load_scenario, run_loaded_scenario
-
-    with tempfile.TemporaryDirectory() as output_dir:
-        scenario, problems = load_scenario(convert_map("borregas_ave", output_dir))
-    result = run_loaded_scenario(scenario, planning_problems=problems, horizon_s=2.0, init_v=5.0)
-    traveled = 0.0
-    for previous, sample in zip(result.ego_trace, result.ego_trace[1:]):
-        traveled += math.hypot(sample.x - previous.x, sample.y - previous.y)
+    """Two seconds on the same Borregas lanelet as ``open_road``."""
+    result = run_straight_road(
+        "loaded_map",
+        Actor("ego", x=0.0, v=5.0),
+        [],
+        horizon_s=2.0,
+    )
+    traveled = result.ego_x1 - result.ego_x0
     if result.ok and traveled < 6.0:
         result.ok = False
         result.reason = f"loaded map only traveled {traveled:.1f}m"
