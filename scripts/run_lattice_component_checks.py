@@ -2795,6 +2795,20 @@ def check_fem_pos_deviation_smoother_matches_cpp_osqp_settings():
     )
 
 
+def check_apollo_map_borregas_ave_loads():
+    """The vendored ApolloAppleSilicon loader decodes a bundled binary map."""
+    from shapely.geometry import Point
+
+    from apollo_map import load_map
+
+    service = load_map("borregas_ave")
+    assert service.lane_table, "borregas_ave base_map.bin produced no lanes"
+    lane_id = next(iter(service.lane_table))
+    line = service.get_lane_central_curve_by_id(lane_id)
+    nearest = service.get_nearest_lane(Point(line.coords[0]))
+    assert nearest in service.lane_table
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -2894,6 +2908,7 @@ def main():
     check_discrete_points_smoother_propagates_solve_failure()
     check_fem_pos_deviation_smoother_never_sets_polish()
     check_fem_pos_deviation_smoother_matches_cpp_osqp_settings()
+    check_apollo_map_borregas_ave_loads()
     print("lattice component checks succeeded")
 
 
