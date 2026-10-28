@@ -3,12 +3,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import copy, deepcopy
 from enum import Enum
 from logging import Logger
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 import config as config_module
 from common.box2d import Box2d
 from common.discretized_trajectory import DiscretizedTrajectory
-from common.hd_map import HDMapUtil
-from common.lane_info import Id, LaneInfo
 from common.obstacle import Obstacle
 from common.path import AngleDiff, PathOverlap
 from common.path_boundary import PathBoundary
@@ -451,16 +449,15 @@ class ReferenceLineInfo:
 
         return self._cruise_speed if self._cruise_speed > 0.0 else config_module.FLAGS_default_cruise_speed
 
-    def LocateLaneInfo(self, s: float) -> LaneInfo:
+    def LocateLaneInfo(self, s: float):
         """
         Locate the lane info based on the s
 
         :param float s: The s value
         :returns: The lane info
-        :rtype: LaneInfo
         """
 
-        lanes: List[LaneInfo] = self._reference_line.GetLaneFromS(s)
+        lanes = self._reference_line.GetLaneFromS(s)
         if not lanes:
             logger.warning(f"cannot get any lane using s: {s}.")
             return None
@@ -852,15 +849,15 @@ class ReferenceLineInfo:
 
         return self._lanes
     
-    def TargetLaneId(self) -> List[Id]:
+    def TargetLaneId(self) -> List[Any]:
         """
         Get the target lane id
 
         :returns: The target lane id
-        :rtype: List[str]
+        :rtype: List[Any]
         """
 
-        lane_ids: List[Id] = []
+        lane_ids: List[Any] = []
         for lane_seg in self._lanes:
             lane_ids.append(lane_seg.lane.id)
         return lane_ids

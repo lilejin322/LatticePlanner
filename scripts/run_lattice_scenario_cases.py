@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Lattice scenario suite. Driving cases replan every cycle and the animation
-plays that executed trace. Decider cases are single-call checks.
+plays that executed trace.
 
 Usage:
   .venv/bin/python scripts/run_lattice_scenario_cases.py --list
@@ -142,7 +142,7 @@ def main() -> int:
     parser.add_argument("--list", action="store_true", help="List the cases")
     parser.add_argument(
         "--tag",
-        choices=["lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "sim", "all"],
+        choices=["lattice", "stress", "sim", "all"],
         default="all",
         help="Filter by category",
     )
@@ -199,7 +199,7 @@ def main() -> int:
         if args.cases:
             print(f"Filter: cases={', '.join(args.cases)}")
         print()
-        categories = ("lattice", "decider", "on_lane", "stress", "overtake", "lane_change", "sim")
+        categories = ("lattice", "stress", "sim")
         for cat in categories:
             items = [s for s in selected if s.category == cat]
             if not items:

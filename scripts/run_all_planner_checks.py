@@ -12,7 +12,6 @@ PYTHON = sys.executable
 
 SCRIPTS = [
     "run_lattice_component_checks.py",
-    "run_extended_planner_checks.py",
     "run_minimal_lattice_plan.py",
     "run_closed_loop_sim.py",
 ]

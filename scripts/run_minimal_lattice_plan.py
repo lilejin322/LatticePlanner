@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a minimal Apollo-style lattice planning smoke test."""
+"""Run a minimal lattice planning smoke test on a straight centerline."""
 
 from pathlib import Path
 import sys
@@ -9,51 +9,19 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 from lattice_planner import LatticePlanner
 from common.frame import Frame
-from common.hd_map import HDMap, HDMapUtil
-from common.path import Path as MapPath
-from reference_line import ReferenceLine
 from reference_line.reference_line_info import ReferenceLineInfo
 from common.route_segments import RouteSegments
-from common.lane_types import LaneSegment
 from protoclass.adc_trajectory import ADCTrajectory
-from protoclass.lane import Curve, CurveSegment, Lane, LaneSampleAssociation, LineSegment
 from protoclass.path_point import PathPoint
-from protoclass.point_enu import PointENU
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
 import config as config_module
+from scripts.lattice_commonroad import _reference_line
 
 
-def build_reference_line(length: float = 100.0) -> tuple[ReferenceLine, RouteSegments]:
-    lane = Lane(
-        id=Lane.Id("minimal_lane"),
-        central_curve=Curve(
-            segment=[
-                CurveSegment(
-                    curve_type=LineSegment(
-                        point=[PointENU(x=0.0, y=0.0), PointENU(x=length, y=0.0)]
-                    )
-                )
-            ]
-        ),
-        length=length,
-        speed_limit=10.0,
-        left_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
-        right_sample=[LaneSampleAssociation(s=0.0, width=2.0)],
-        left_road_sample=[LaneSampleAssociation(s=0.0, width=3.0)],
-        right_road_sample=[LaneSampleAssociation(s=0.0, width=3.0)],
-        type=Lane.LaneType.CITY_DRIVING,
-    )
-    hdmap = HDMap()
-    lane_info = hdmap.AddLane(lane)
-    HDMapUtil.SetBaseMap(hdmap)
-
-    route_segments = RouteSegments()
-    route_segments.SetIsOnSegment(True)
-    route_segments.SetId("minimal_mock")
-    route_segments.append(LaneSegment(lane_info, 0.0, length - 1.0))
-
-    return ReferenceLine(MapPath(route_segments)), route_segments
+def build_reference_line(length: float = 100.0):
+    center = [(float(index), 0.0) for index in range(int(length) + 1)]
+    return _reference_line(center, 2.0, 2.0), RouteSegments()
 
 
 def main() -> int:

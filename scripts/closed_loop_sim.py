@@ -1,5 +1,5 @@
 """
-Closed-loop lattice / on-lane simulation.
+Closed-loop lattice simulation.
 
 The road is a lanelet from the converted Borregas Ave map. See
 ``scripts/official_map_road.py``. Each cycle plans once from the executed ego
@@ -20,8 +20,6 @@ from typing import Callable, Dict, List, Optional
 import config
 from behavior.collision_checker import CollisionChecker
 from common.discretized_trajectory import DiscretizedTrajectory
-from lattice_planner import LatticePlanner
-from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.path_point import PathPoint
 from protoclass.trajectory_point import TrajectoryPoint
 
@@ -116,7 +114,6 @@ CollisionFn = Callable[[list, DiscretizedTrajectory, float], tuple]
 
 
 def _drive_official(
-    role: str,
     name: str,
     ego: Actor,
     actors: List[Actor],
@@ -124,24 +121,12 @@ def _drive_official(
     horizon_s: float,
     backup: Optional[bool],
     blocking_actor_id: Optional[str],
-    plan: str,
-    path_label: str = "regular/left/forward",
-    s_curve: bool = True,
-    borrow_direction: Optional[List[int]] = None,
 ) -> SimResult:
     from scripts.official_map_road import open_official_drive
 
-    drive = open_official_drive(role, ego, actors, horizon_s=horizon_s)
-    saved_flags = _set_on_lane_flags(borrow_direction) if plan == "on_lane" else None
+    drive = open_official_drive("through", ego, actors, horizon_s=horizon_s)
     try:
-        if plan == "lattice":
-            plan_fn = _lattice_plan(drive, blocking_actor_id)
-        elif plan == "path_bounds":
-            plan_fn = _path_bounds_plan(drive, blocking_actor_id, path_label, s_curve)
-        elif plan == "on_lane":
-            plan_fn = _on_lane_plan(drive, borrow_direction)
-        else:
-            raise ValueError(plan)
+        plan_fn = _lattice_plan(drive, blocking_actor_id)
         result = _run_loop(
             name,
             ego,
@@ -154,8 +139,6 @@ def _drive_official(
             collision_fn=drive.collision_fn,
         )
     finally:
-        if saved_flags is not None:
-            _restore_on_lane_flags(saved_flags)
         drive.close()
     return drive.annotate(result)
 
@@ -179,113 +162,6 @@ def _lattice_plan(drive, blocking_actor_id: Optional[str]):
     return plan_fn
 
 
-def _path_bounds_plan(drive, blocking_actor_id: Optional[str], path_label: str, s_curve: bool):
-    from scripts.planner_test_fixtures import (
-        apply_borrow_path_trajectory,
-        apply_path_bounds_overtake_trajectory,
-    )
-
-    reference_line = drive.frame.reference_line
-    lanes = drive.frame.lanes
-
-    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        reference_line_info, start = _reference_line_info_at(reference_line, lanes, ego_now)
-        _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
-        obstacle_x = actors_now[0].x if actors_now else ego_now.x + 30.0
-        if s_curve:
-            ok, _detail = apply_path_bounds_overtake_trajectory(
-                reference_line_info,
-                start,
-                path_label,
-                obstacle_x=obstacle_x,
-            )
-        else:
-            ok, _detail = apply_borrow_path_trajectory(
-                reference_line_info,
-                start,
-                path_label,
-            )
-        return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
-
-    return plan_fn
-
-
-def _set_on_lane_flags(borrow_direction: Optional[List[int]]):
-    import config as config_module
-
-    saved = (
-        config_module.FLAGS_enable_reference_line_provider_thread,
-        config_module.FLAGS_enable_path_bounds_decider,
-        config_module.FLAGS_enable_on_lane_combine_path_and_speed,
-        config_module.FLAGS_enable_path_decider_after_lateral,
-    )
-    config_module.FLAGS_enable_reference_line_provider_thread = True
-    config_module.FLAGS_enable_path_bounds_decider = bool(borrow_direction)
-    config_module.FLAGS_enable_on_lane_combine_path_and_speed = bool(borrow_direction)
-    config_module.FLAGS_enable_path_decider_after_lateral = bool(borrow_direction)
-    return saved
-
-
-def _restore_on_lane_flags(saved) -> None:
-    import config as config_module
-
-    (
-        config_module.FLAGS_enable_reference_line_provider_thread,
-        config_module.FLAGS_enable_path_bounds_decider,
-        config_module.FLAGS_enable_on_lane_combine_path_and_speed,
-        config_module.FLAGS_enable_path_decider_after_lateral,
-    ) = saved
-
-
-def _on_lane_plan(drive, borrow_direction: Optional[List[int]]):
-    import config as config_module
-    from copy import deepcopy
-
-    import on_lane_planning as on_lane_module
-    from common.planning_context import PlanningContext
-    from on_lane_planning import OnLanePlanning
-    from reference_line.reference_line_provider import ReferenceLineProvider
-
-    context = PlanningContext()
-    provider = ReferenceLineProvider()
-    planner = OnLanePlanning(provider)
-    cycle_dt = 1.0 / max(config_module.FLAGS_planning_loop_rate, 1e-3)
-    sim_time = 0.0
-    original_time = on_lane_module.time.time
-    if borrow_direction:
-        context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
-        context.planning_status.path_decider.decided_side_pass_direction = list(borrow_direction)
-    reference_line = drive.frame.reference_line
-    lanes = drive.frame.lanes
-
-    def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        nonlocal sim_time
-        # Segment() shrinks the provider line, so each cycle starts from the
-        # loaded lanelet. The planner object stays so the stitcher can see
-        # the previous trajectory.
-        provider._reference_lines = [deepcopy(reference_line)]
-        provider._route_segments = [deepcopy(lanes)]
-        local_view = _local_view(ego_now, actors_now, measurement_time=sim_time)
-        adc = ADCTrajectory()
-        on_lane_module.time.time = lambda: sim_time
-        try:
-            status = planner.RunOnce(local_view, adc, planning_context=context)
-        finally:
-            on_lane_module.time.time = original_time
-            sim_time += cycle_dt
-        obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        trajectory = (
-            DiscretizedTrajectory(list(adc.trajectory_point))
-            if adc.trajectory_point and len(adc.trajectory_point) >= 2
-            else None
-        )
-        type_name = adc.trajectory_type.name if adc.trajectory_type is not None else "UNKNOWN"
-        return status.ok() and trajectory is not None, trajectory, type_name, obstacles
-
-    return plan_fn
-
-
 def run_straight_road(
     name: str,
     ego: Actor,
@@ -303,14 +179,12 @@ def run_straight_road(
     """
     del road_length
     return _drive_official(
-        "through",
         name,
         ego,
         actors,
         horizon_s=horizon_s,
         backup=backup,
         blocking_actor_id=blocking_actor_id,
-        plan="lattice",
     )
 
 
@@ -337,73 +211,6 @@ def run_curved_road(
         horizon_s=horizon_s,
         backup=backup,
         blocking_actor_id=blocking_actor_id,
-    )
-
-
-def run_path_bounds_road(
-    name: str,
-    ego: Actor,
-    actors: List[Actor],
-    *,
-    horizon_s: float = 5.0,
-    road_length: float = 160.0,
-    path_label: str = "regular/left/forward",
-    blocking_actor_id: Optional[str] = None,
-    s_curve: bool = True,
-) -> SimResult:
-    """Replan a borrow on the converted map's same-direction neighbor lane.
-
-    ``road_length`` is unused. The parallel lanelet in the converted map sets
-    the corridor.
-    """
-    del road_length
-    role = "borrow-left" if "left" in path_label else "borrow-right"
-    return _drive_official(
-        role,
-        name,
-        ego,
-        actors,
-        horizon_s=horizon_s,
-        backup=None,
-        blocking_actor_id=blocking_actor_id,
-        plan="path_bounds",
-        path_label=path_label,
-        s_curve=s_curve,
-    )
-
-
-def run_on_lane_road(
-    name: str,
-    ego: Actor,
-    actors: List[Actor],
-    *,
-    horizon_s: float = 3.0,
-    road_length: float = 200.0,
-    borrow_direction: Optional[List[int]] = None,
-    blocking_actor_id: Optional[str] = None,
-) -> SimResult:
-    """Call OnLanePlanning.RunOnce on the converted lanelet every cycle.
-
-    ``road_length`` is unused. A borrow uses the same-direction neighbor that
-    is already in the converted map.
-    """
-    del road_length
-    if not borrow_direction:
-        role = "through"
-    elif 1 in borrow_direction:
-        role = "borrow-left"
-    else:
-        role = "borrow-right"
-    return _drive_official(
-        role,
-        name,
-        ego,
-        actors,
-        horizon_s=horizon_s,
-        backup=None,
-        blocking_actor_id=blocking_actor_id,
-        plan="on_lane",
-        borrow_direction=borrow_direction,
     )
 
 
@@ -604,85 +411,6 @@ def _run_loop(
     )
 
 
-def _local_view(ego, actors, measurement_time: float = 0.0):
-    from common.frame import LocalView
-    from protoclass.adc_trajectory import Point3D
-    from protoclass.chassis import Chassis
-    from protoclass.header import Header
-    from protoclass.localization_estimate import LocalizationEstimate
-    from protoclass.point_enu import PointENU
-    from protoclass.pose import Pose
-    from protoclass.prediction_obstacles import PredictionObstacle, PredictionObstacles
-
-    predictions = []
-    for actor in actors:
-        obstacle = _obstacle_from_actor(actor)
-        trajectories = []
-        predicted = obstacle.Trajectory()
-        if predicted is not None and predicted.trajectory_point:
-            trajectories.append(predicted)
-        predictions.append(
-            PredictionObstacle(
-                perception_obstacle=obstacle.Perception(),
-                trajectory=trajectories,
-                is_static=obstacle.IsStatic(),
-            )
-        )
-    return LocalView(
-        localization_estimate=LocalizationEstimate(
-            pose=Pose(
-                position=PointENU(x=ego.x, y=ego.y, z=0.0),
-                heading=ego.theta,
-                # Vehicle frame: y is forward, z is yaw rate.
-                linear_acceleration=Point3D(x=0.0, y=ego.a, z=0.0),
-                angular_velocity=Point3D(x=0.0, y=0.0, z=ego.v * ego.kappa),
-            ),
-            measurement_time=measurement_time,
-        ),
-        chassis=Chassis(
-            speed_mps=max(0.0, ego.v),
-            header=Header(timestamp_sec=measurement_time),
-            driving_mode=Chassis.DrivingMode.COMPLETE_AUTO_DRIVE,
-        ),
-        prediction_obstacles=PredictionObstacles(prediction_obstacle=predictions),
-    )
-
-
-def _reference_line_info_at(reference_line, lanes, ego_now: Actor):
-    """Place a fresh ReferenceLineInfo on a cached road, and the frame that owns it.
-
-    The road geometry is shared, not copied. A sampled curve's map path is
-    expensive to deepcopy, and the lattice plan only reads it.
-    """
-    from common.frame import Frame
-    from protoclass.vehicle_state import VehicleState
-    from reference_line.reference_line_info import ReferenceLineInfo
-
-    start = TrajectoryPoint(
-        path_point=PathPoint(
-            x=ego_now.x,
-            y=ego_now.y,
-            z=0.0,
-            theta=ego_now.theta,
-            kappa=ego_now.kappa,
-            s=0.0,
-            dkappa=0.0,
-            ddkappa=0.0,
-        ),
-        v=max(0.0, ego_now.v),
-        a=ego_now.a,
-        relative_time=0.0,
-    )
-    vehicle_state = VehicleState(x=ego_now.x, y=ego_now.y, heading=ego_now.theta)
-    reference_line_info = ReferenceLineInfo(
-        vehicle_state, start, reference_line, lanes, share_map=True
-    )
-    frame = Frame(0)
-    frame._reference_line_info = [reference_line_info]
-    reference_line_info._frame = frame
-    return reference_line_info, reference_line_info._adc_planning_point
-
-
 def _bind_obstacles(reference_line_info, obstacles, blocking_actor_id: Optional[str]) -> None:
     reference_line_info.Init(obstacles, 10.0)
     if blocking_actor_id is not None:
@@ -717,13 +445,6 @@ def _rect_corners(x: float, y: float, theta: float, length: float, width: float)
     xs.append(xs[0])
     ys.append(ys[0])
     return xs, ys
-
-
-def _trajectory_type_name(reference_line_info) -> str:
-    traj_type = getattr(reference_line_info, "trajectory_type", None)
-    if traj_type is None:
-        return "UNKNOWN"
-    return traj_type.name
 
 
 def _as_discretized(trajectory):

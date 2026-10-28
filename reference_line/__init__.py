@@ -23,9 +23,7 @@ from protoclass.point_enu import PointENU
 import config as config_module
 from protoclass.sl_boundary import SLPoint
 from common.path import Path as MapPath
-from common.lane_info import LaneInfo
 from common.lane_types import InterpolatedIndex, RoadType, SpeedLimit, LaneSegment
-from common.hd_map import HDMapUtil
 from protoclass.lane import LaneBoundaryType
 
 # Backward-compatible re-exports for older import paths.
@@ -908,13 +906,13 @@ class ReferenceLine:
             boundary_type_at(lane.right_boundary),
         )
 
-    def GetLaneFromS(self, s: float) -> List[LaneInfo]:
+    def GetLaneFromS(self, s: float) -> List[Any]:
         """
         Get lane from s
 
         :param float s: s
         :returns: List of lane info
-        :rtype: List[LaneInfo]
+        :rtype: List[Any]
         """
 
         ref_point = self.GetReferencePoint(s)

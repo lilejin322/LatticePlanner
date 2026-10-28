@@ -1,28 +1,19 @@
 """
-Lattice / OnLane scenario definitions (shared by run_lattice_scenario_cases.py and the demo).
+Lattice scenario definitions shared by the scenario runner and the demo.
 
 Driving scenarios run closed-loop: replan every cycle from the executed state.
-Decider cases stay single-call checks of the path stack; they do not publish a
-driven trajectory.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Union
 
 from scripts.closed_loop_sim import (
     Actor,
     SimResult,
     run_curved_road,
-    run_on_lane_road,
-    run_path_bounds_road,
     run_straight_road,
-)
-from scripts.planner_test_fixtures import (
-    build_center_lane_reference_line,
-    build_lattice_plan_frame,
-    build_static_obstacle,
 )
 
 # Component checks still return this tuple. Driving cases return SimResult.
@@ -33,7 +24,7 @@ BuilderResult = Union[SimResult, Tuple]
 class Scenario:
     name: str
     description: str
-    category: str  # lattice | decider | on_lane | stress | overtake | lane_change | sim
+    category: str  # lattice | stress | sim
     builder: Callable[[], BuilderResult]
     expect_ok: bool = True
     backup: Optional[bool] = None
@@ -240,107 +231,6 @@ def s_curved_obstacle_stop() -> SimResult:
     return result
 
 
-# --- decider layer ---
-
-
-def s_decider_bounds_assessment() -> BuilderResult:
-    from common.path_assessment_decider import PathAssessmentDecider
-    from common.path_bounds_decider import (
-        BuildCandidatePathsFromBoundaries,
-        PathBoundsDecider,
-    )
-
-    frame, rli, start = build_lattice_plan_frame()
-    if not PathBoundsDecider().Process(None, rli, None).ok():
-        return None, None, None, False, None, "decider produced no path"
-    candidates = BuildCandidatePathsFromBoundaries(rli)
-    rli.SetCandidatePathData(candidates)
-    if not PathAssessmentDecider().Process(None, rli, None).ok() or rli.path_data is None:
-        return None, None, None, False, None, "decider produced no path"
-    extra = f"path_label={rli.path_data.path_label!r} n_candidates={len(candidates)}"
-    return None, None, None, True, None, extra
-
-
-def s_decider_lane_borrow_bounds() -> BuilderResult:
-    from common.path_bounds_decider import PathBoundsDecider
-    from common.planning_context import PlanningContext
-
-    obs = build_static_obstacle("borrow_block", 35.0)
-    _, rli = build_center_lane_reference_line()
-    rli.Init([obs], 10.0)
-    rli.SetBlockingObstacle("borrow_block")
-    rli.set_is_path_lane_borrow(True)
-    ctx = PlanningContext()
-    ctx.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
-    ctx.planning_status.path_decider.decided_side_pass_direction = [1, 2]
-    ok = PathBoundsDecider().Process(None, rli, ctx).ok()
-    labels = [b.label for b in rli.GetCandidatePathBoundaries()]
-    ok = ok and "regular/left/forward" in labels and "regular/right/forward" in labels
-    extra = f"bounds_ok={ok} labels={labels}"
-    return None, None, None, ok, None, extra
-
-
-def s_decider_boundary_combine() -> BuilderResult:
-    from common.discretized_trajectory import DiscretizedTrajectory
-    from common.path_assessment_decider import PathAssessmentDecider
-    from common.path_bounds_decider import (
-        BuildCandidatePathsFromBoundaries,
-        PathBoundsDecider,
-    )
-    from common.planning_util import BuildCruiseSpeedData
-
-    frame, rli, start = build_lattice_plan_frame()
-    PathBoundsDecider().Process(None, rli, None)
-    cands = BuildCandidatePathsFromBoundaries(rli)
-    rli.SetCandidatePathData(cands)
-    if not PathAssessmentDecider().Process(None, rli, None).ok():
-        return None, rli, None, False, None, "decider_skip"
-    rli.SetSpeedData(BuildCruiseSpeedData(rli))
-    traj = DiscretizedTrajectory()
-    combined = rli.CombinePathAndSpeedProfile(0.0, start.path_point.s, traj)
-    extra = f"combine_ok={combined} traj_pts={len(traj)} label={rli.path_data.path_label!r}"
-    return None, None, None, combined, None, extra
-
-
-def s_decider_cruise_speed_data() -> BuilderResult:
-    from common.planning_util import BuildCruiseSpeedData
-
-    frame, rli, start = build_lattice_plan_frame()
-    rli.SetLatticeCruiseSpeed(6.0)
-    speed = BuildCruiseSpeedData(rli)
-    ok = len(speed) >= 2 and all(pt.v == 6.0 for pt in speed)
-    extra = f"speed_pts={len(speed)} v0={speed[0].v} s_end={speed[-1].s:.1f}"
-    return None, None, None, ok, None, extra
-
-
-
-# --- OnLane (closed loop) ---
-
-
-def s_on_lane_open_road() -> SimResult:
-    result = run_on_lane_road(
-        "on_lane_open_road",
-        Actor("ego", x=0.0, v=1.0),
-        [],
-        horizon_s=3.0,
-    )
-    return _finish(result, min_travel=2.0, forbid_fallback=True)
-
-
-def s_on_lane_overtake_path_bounds() -> SimResult:
-    # Same borrow stack OnLanePlanning runs before lattice, stepped in closed loop.
-    # Full RunOnce each cycle also rebuilds the reference-line window and is too
-    # heavy to repeat for the whole horizon; the open-road OnLane case covers RunOnce.
-    result = run_path_bounds_road(
-        "on_lane_overtake_path_bounds",
-        Actor("ego", x=0.0, v=5.0),
-        [_static("lead_1", 30.0)],
-        horizon_s=5.0,
-        path_label="regular/left/forward",
-        blocking_actor_id="lead_1",
-    )
-    return _finish(result, min_abs_y=1.0)
-
 
 # --- stress: short closed-loop probes, informational ---
 
@@ -387,128 +277,6 @@ def s_stress_init_speed_sweep() -> SimResult:
         collided = collided or result.collided
     return _sweep_summary(rows, collided)
 
-
-# --- Overtake: closed-loop PathBounds or lattice, no hand-drawn S-curve ---
-
-
-def _borrow(
-    name: str,
-    leader_x: float,
-    path_label: str,
-    *,
-    ego_v: float = 5.0,
-    s_curve: bool = True,
-    actors=None,
-    horizon_s: float = 5.0,
-) -> SimResult:
-    if actors is None:
-        actors = [_static("lead_1", leader_x)]
-    result = run_path_bounds_road(
-        name,
-        Actor("ego", x=0.0, v=ego_v),
-        list(actors),
-        horizon_s=horizon_s,
-        path_label=path_label,
-        blocking_actor_id=actors[0].actor_id,
-        s_curve=s_curve,
-    )
-    return result
-
-
-def s_overtake_path_bounds_left() -> SimResult:
-    return _finish(
-        _borrow("overtake_path_bounds_left", 30.0, "regular/left/forward"),
-        min_abs_y=1.0,
-    )
-
-
-def s_overtake_path_bounds_right() -> SimResult:
-    return _finish(
-        _borrow("overtake_path_bounds_right", 30.0, "regular/right/forward"),
-        min_abs_y=1.0,
-    )
-
-
-def s_overtake_s_curve_pass() -> SimResult:
-    """Same borrow stack as the left overtake; the trace is whatever the replanner executes."""
-    return _finish(
-        _borrow("overtake_s_curve_pass", 30.0, "regular/left/forward", ego_v=6.0),
-        min_abs_y=1.0,
-    )
-
-
-def s_overtake_lattice_follow_no_pass() -> SimResult:
-    return _finish(
-        _straight(
-            "overtake_lattice_follow_no_pass",
-            ego_v=5.0,
-            actors=[_static("slow_leader", 30.0)],
-            blocking="slow_leader",
-            horizon_s=4.0,
-        ),
-        max_abs_y=1.0,
-    )
-
-
-def s_overtake_borrow_offset_not_s_curve() -> SimResult:
-    """Constant-offset borrow candidate, replanned every cycle (not an S-curve)."""
-    return _borrow(
-        "overtake_borrow_constant_offset",
-        30.0,
-        "regular/left/forward",
-        s_curve=False,
-    )
-
-
-def s_overtake_two_leaders_s_curve() -> SimResult:
-    return _finish(
-        _borrow(
-            "overtake_two_leaders",
-            22.0,
-            "regular/left/forward",
-            ego_v=6.0,
-            actors=[_static("lead_1", 22.0), _static("lead_2", 55.0)],
-        ),
-        min_abs_y=1.0,
-    )
-
-
-def s_overtake_far_leader_s_curve() -> SimResult:
-    # The nudge starts about 10m before the leader, so the horizon has to
-    # reach that station before a lateral offset shows up.
-    return _finish(
-        _borrow(
-            "overtake_far_leader",
-            45.0,
-            "regular/left/forward",
-            ego_v=6.0,
-            horizon_s=8.0,
-        ),
-        min_abs_y=1.0,
-    )
-
-
-def s_overtake_stack_combine() -> SimResult:
-    return _finish(
-        _borrow("overtake_stack_combine", 30.0, "regular/left/forward", ego_v=5.0),
-        min_abs_y=1.0,
-    )
-
-
-# --- lane change: closed-loop borrow around a moving leader ---
-
-
-def s_lane_change_overtake_slow_npc() -> SimResult:
-    """Moving leader, replanned borrow corridor + lateral QP each cycle."""
-    result = run_path_bounds_road(
-        "lane_change_overtake_slow_npc",
-        Actor("ego", x=0.0, v=8.0),
-        [Actor("npc_slow", x=22.0, v=3.0)],
-        horizon_s=4.0,
-        path_label="regular/left/forward",
-        blocking_actor_id="npc_slow",
-    )
-    return _finish(result, min_abs_y=1.0)
 
 
 # --- explicit closed-loop regressions ---
@@ -585,22 +353,6 @@ SCENARIOS: List[Scenario] = [
     ),
     Scenario("curved_open_road", "Closed loop: converted lanelet, no leader", "lattice", s_curved_open_road),
     Scenario("curved_obstacle_stop", "Closed loop: converted lanelet, stopped leader", "lattice", s_curved_obstacle_stop),
-    Scenario("decider_bounds_assessment", "PathBounds + PathAssessment", "decider", s_decider_bounds_assessment),
-    Scenario(
-        "decider_lane_borrow_bounds",
-        "Lane-borrow PathBounds boundaries",
-        "decider",
-        s_decider_lane_borrow_bounds,
-    ),
-    Scenario("decider_boundary_combine", "Path + cruise speed Combine", "decider", s_decider_boundary_combine),
-    Scenario("decider_cruise_speed_data", "BuildCruiseSpeedData", "decider", s_decider_cruise_speed_data),
-    Scenario("on_lane_open_road", "Closed loop: OnLanePlanning every cycle", "on_lane", s_on_lane_open_road),
-    Scenario(
-        "on_lane_overtake_path_bounds",
-        "Closed loop: OnLane PathBounds borrow",
-        "on_lane",
-        s_on_lane_overtake_path_bounds,
-    ),
     Scenario(
         "stress_obstacle_distance_sweep",
         "Closed-loop obstacle distance sweep",
@@ -614,61 +366,6 @@ SCENARIOS: List[Scenario] = [
         "stress",
         s_stress_init_speed_sweep,
         informational=True,
-    ),
-    Scenario(
-        "overtake_path_bounds_left",
-        "Closed loop: PathBounds left borrow",
-        "overtake",
-        s_overtake_path_bounds_left,
-    ),
-    Scenario(
-        "overtake_path_bounds_right",
-        "Closed loop: PathBounds right borrow",
-        "overtake",
-        s_overtake_path_bounds_right,
-    ),
-    Scenario(
-        "overtake_s_curve_pass",
-        "Closed loop: left borrow replanned every cycle",
-        "overtake",
-        s_overtake_s_curve_pass,
-    ),
-    Scenario(
-        "overtake_lattice_follow_no_pass",
-        "Closed loop: lattice follows, does not swerve around",
-        "overtake",
-        s_overtake_lattice_follow_no_pass,
-    ),
-    Scenario(
-        "overtake_borrow_constant_offset",
-        "Closed loop: constant-offset borrow candidate",
-        "overtake",
-        s_overtake_borrow_offset_not_s_curve,
-        informational=True,
-    ),
-    Scenario(
-        "overtake_two_leaders_s_curve",
-        "Closed loop: left borrow around the first of two leaders",
-        "overtake",
-        s_overtake_two_leaders_s_curve,
-    ),
-    Scenario(
-        "overtake_far_leader_s_curve",
-        "Closed loop: left borrow around a leader at 45m",
-        "overtake",
-        s_overtake_far_leader_s_curve,
-    ),
-    Scenario(
-        "overtake_stack_combine",
-        "Closed loop: PathBounds + Combine, replanned every cycle",
-        "overtake",
-        s_overtake_stack_combine,
-    ),
-    Scenario(
-        "lane_change_overtake_slow_npc",
-        "Closed loop: lateral QP borrow around a slower moving leader",
-        "lane_change",
-        s_lane_change_overtake_slow_npc,
     ),
     Scenario("sim_open_road_replan", "Closed loop: empty road, replan every cycle", "sim", s_sim_open_road),
     Scenario(

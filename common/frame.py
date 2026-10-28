@@ -8,8 +8,6 @@ from typing import Any, Dict, List, Optional
 import config as config_module
 from common.box2d import Box2d
 from common.discretized_path import DiscretizedPath
-from common.hd_map import HDMapUtil
-from common.lane_info import LaneInfo
 from common.line_segment2d import LineSegment2d
 from common.obstacle import Obstacle
 from common.planning_context import PlanningContext
@@ -17,28 +15,18 @@ from common.polygon2d import Polygon2d
 from common.route_segments import RouteSegments
 from common.status import Status
 from common.vec2d import Vec2d
-from common.vehicle_state_provider import VehicleStateProvider
 from protoclass.adc_trajectory import ADCTrajectory, Point3D
-from protoclass.chassis import Chassis
 from protoclass.debug import Debug
 from protoclass.header import ErrorCode, Header
-from protoclass.lane_waypoint import LaneWaypoint
-from protoclass.localization_estimate import LocalizationEstimate
-from protoclass.planning_command import PlanningCommand
-from protoclass.planning_internal import MapMsg
 from protoclass.planning_status import LaneFollowCommand, ReroutingStatus
 from protoclass.point_enu import PointENU
 from protoclass.pose import Pose
 from protoclass.prediction_obstacles import PredictionObstacles
-from protoclass.routing import RoutingResponse
 from protoclass.sl_boundary import SLPoint
-from protoclass.stories import Stories
-from protoclass.traffic_light_detection import TrafficLight, TrafficLightDetection
 from protoclass.trajectory_point import TrajectoryPoint
 from protoclass.vehicle_state import VehicleState
 from reference_line import ReferenceLine
 from reference_line.reference_line_info import ReferenceLineInfo
-from reference_line.reference_line_provider import ReferenceLineProvider
 from reference_line.reference_point import ReferencePoint
 
 logger = Logger("Frame")
@@ -156,15 +144,15 @@ class LocalView:
     """
 
     prediction_obstacles: Optional[PredictionObstacles] = None
-    chassis: Optional[Chassis] = None
-    localization_estimate: Optional[LocalizationEstimate] = None
-    traffic_light: Optional[TrafficLightDetection] = None
-    relative_map: Optional[MapMsg] = None
+    chassis: Optional[Any] = None
+    localization_estimate: Optional[Any] = None
+    traffic_light: Optional[Any] = None
+    relative_map: Optional[Any] = None
     pad_msg: Optional[PadMessage] = None
-    stories: Optional[Stories] = None
-    planning_command: Optional[PlanningCommand] = None
-    routing: Optional[RoutingResponse] = None
-    end_lane_way_point: Optional[LaneWaypoint] = None
+    stories: Optional[Any] = None
+    planning_command: Optional[Any] = None
+    routing: Optional[Any] = None
+    end_lane_way_point: Optional[Any] = None
     perception_road_edge: Optional[PerceptionEdgeInfo] = None
 
 class Frame:
@@ -196,14 +184,14 @@ class Frame:
             :param LocalView local_view: Local view
             :param TrajectoryPoint planning_start_point: Planning start point
             :param VehicleState vehicle_state: Vehicle state
-            :param ReferenceLineProvider reference_line_provider: Reference line provider
+            :param reference_line_provider: Reference line provider
             """
 
             sequence_num: int = args[0]
             local_view: LocalView = args[1]
             planning_start_point: TrajectoryPoint = args[2]
             vehicle_state: VehicleState = args[3]
-            reference_line_provider: ReferenceLineProvider = args[4]
+            reference_line_provider = args[4]
             self._sequence_num = sequence_num
             self._local_view = local_view
             self._planning_start_point = planning_start_point
@@ -232,12 +220,12 @@ class Frame:
         self._drive_reference_line_info: ReferenceLineInfo = None
         """the reference line info that the vehicle finally choose to drive on"""
         self._obstacles: Dict[str, Obstacle] = {}
-        self._traffic_lights: Dict[str, TrafficLight] = {}
+        self._traffic_lights: Dict[str, Any] = {}
         self._current_frame_planned_trajectory = None
         """current frame published trajectory"""
         self._current_frame_planned_path = None
         """current frame path for future possible speed fallback"""
-        self._future_route_waypoints: List[LaneWaypoint] = []
+        self._future_route_waypoints: List[Any] = []
         self._open_space_info: OpenSpaceInfo = None
         self._hdmap = None
         self._planning_context = planning_context or PlanningContext()
@@ -260,8 +248,8 @@ class Frame:
 
         return self._planning_start_point
 
-    def Init(self, vehicle_state_provider: VehicleStateProvider, reference_lines: List[ReferenceLine], segments: List[RouteSegments], 
-             future_route_waypoints: List[LaneWaypoint], ego_info: EgoInfo) -> Status:
+    def Init(self, vehicle_state_provider, reference_lines: List[ReferenceLine], segments: List[RouteSegments],
+             future_route_waypoints: List[Any], ego_info: EgoInfo) -> Status:
         """
         Init frame
         TODO(QiL): refactor this to avoid redundant nullptr checks in scenarios.
@@ -345,7 +333,7 @@ class Frame:
                 logger.error("Failed to init reference line")
         return has_valid_reference_line
 
-    def InitFrameData(self, vehicle_state_provider: VehicleStateProvider, ego_info: EgoInfo) -> Status:
+    def InitFrameData(self, vehicle_state_provider, ego_info: EgoInfo) -> Status:
         """
         Init frame data
 
@@ -355,9 +343,7 @@ class Frame:
         :rtype: Status
         """
 
-        self._hdmap = HDMapUtil.BaseMapPtr()
-        assert self.hdmap is not None, "HDMap is null"
-
+        self._hdmap = None
         self._vehicle_state = vehicle_state_provider.vehicle_state
         if not util.IsVehicleStateValid(self._vehicle_state):
             logger.error("Adc init point is not set")
@@ -387,7 +373,7 @@ class Frame:
 
         return Status.OK()
 
-    def InitForOpenSpace(self, vehicle_state_provider: VehicleStateProvider, ego_info: EgoInfo) -> Status:
+    def InitForOpenSpace(self, vehicle_state_provider, ego_info: EgoInfo) -> Status:
         """
         Init for open space
 
@@ -688,7 +674,7 @@ class Frame:
             if self._hdmap is None:
                 logger.error("Invalid HD Map.")
                 return None
-            lane: LaneInfo = None
+            lane = None
             if self._reference_line_provider is None:
                 lane = self._hdmap.GetLaneById(lane_id)
             else:
@@ -870,25 +856,6 @@ class Frame:
 
         return self._is_near_destination
 
-    def ApplyTrafficRules(self, traffic_decider=None, planning_context=None) -> None:
-        """Run traffic rules and populate planning_target.stop_point for lattice."""
-        from traffic_rules.traffic_decider import TrafficDecider
-
-        decider = traffic_decider or TrafficDecider(planning_context)
-        decider.Init(planning_context=planning_context)
-        for ref_info in self._reference_line_info:
-            decider.Execute(self, ref_info)
-
-    def ApplyPathDecider(self, path_decider=None, planning_context=None) -> None:
-        """Run path decider for static obstacle nudge/stop decisions."""
-        from common.path_decider import PathDecider
-
-        for ref_info in self._reference_line_info:
-            if ref_info.path_data is None:
-                continue
-            decider = path_decider or PathDecider(ref_info)
-            decider.Execute(ref_info, planning_context)
-
     def UpdateReferenceLinePriority(self, id_to_priority: Dict[str, int]) -> None:
         """
         Adjust reference line priority according to actual road conditions
@@ -935,19 +902,15 @@ class Frame:
 
         return self._open_space_info
 
-    def GetSignal(self, traffic_light_id: str) -> TrafficLight:
+    def GetSignal(self, traffic_light_id: str):
         """
         Get signal
 
         :param str traffic_light_id: Traffic light id
-        :returns: Signal
-        :rtype: TrafficLight
+        :returns: Signal stored for this cycle, or None
         """
 
-        result = self._traffic_lights.get(traffic_light_id)
-        if result is None:
-            return TrafficLight(id=traffic_light_id, color=TrafficLight.Color.UNKNOWN, confidence=0.0, tracking_time=0.0)
-        return result
+        return self._traffic_lights.get(traffic_light_id)
 
     def GetPadMsgDrivingAction(self) -> DrivingAction:
         """

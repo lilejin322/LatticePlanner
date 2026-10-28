@@ -19,7 +19,7 @@ The lattice **planning pipeline** in `lattice_planner.py` is the main readable p
 Driving cases replan every cycle on lanelets from `apollo_map/to_commonroad.py`. The lattice sampler and costs are unchanged.
 
 - `scripts/lattice_commonroad.py` runs the lattice core on a lanelet centerline. Sampling, costs, and constraint checks stay in the lattice modules.
-- `scripts/official_map_road.py` selects the Borregas Ave lanelet. Actor `x` is station along the centerline and `y` is lateral offset. Other vehicles hold a constant speed. There is no NPC manager. Borrow still registers the neighbor lanelet for path bounds.
+- `scripts/official_map_road.py` selects the longest Borregas Ave lanelet. Actor `x` is station along the centerline and `y` is lateral offset. Other vehicles hold a constant speed. There is no NPC manager.
 - `scripts/closed_loop_sim.py` steps the ego and stores the executed trace.
 - `scripts/commonroad_drive.py` reads a CommonRoad file, measures clearance with occupancy polygons, and draws those lanelets.
 
@@ -29,7 +29,7 @@ Run the regression test suite from the repo root after activating your environme
 
 ```bash
 python scripts/verify_imports.py            # every module imports cleanly
-python scripts/run_all_planner_checks.py    # component + extended unit checks
+python scripts/run_all_planner_checks.py    # component checks, a minimal plan, and the closed loop
 python scripts/run_lattice_demo_cases.py    # smoke scenarios (open road, stop, backup fallback, ...)
 python scripts/run_lattice_scenario_cases.py  # driving cases replan every cycle
 python scripts/run_closed_loop_sim.py         # empty road, follow, and stopped leader

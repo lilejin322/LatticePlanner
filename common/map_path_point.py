@@ -1,8 +1,7 @@
 from common.vec2d import Vec2d
-from typing import List
+from typing import Any, List
 from dataclasses import dataclass, field
 from common.lane_types import LaneSegment
-from common.lane_info import LaneInfo
 
 
 def _coord(value, name: str) -> float:
@@ -15,7 +14,7 @@ class LaneWaypoint:
     LaneWaypoint class
     """
 
-    lane: LaneInfo = None
+    lane: Any = None
     s: float = 0.0
     l: float = 0.0
 
@@ -143,11 +142,11 @@ class MapPathPoint(Vec2d):
         return MapPathPoint.GetPointsFromLane(segment.lane, segment.start_s, segment.end_s)
 
     @staticmethod
-    def GetPointsFromLane(lane: LaneInfo, start_s: float, end_s: float) -> List['MapPathPoint']:
+    def GetPointsFromLane(lane: Any, start_s: float, end_s: float) -> List['MapPathPoint']:
         """
         get points from lane
 
-        :param LaneInfo lane: lane to get points from
+        :param lane: lane to get points from
         :param float start_s: start s
         :param float end_s: end s
         :returns: points from lane

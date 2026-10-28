@@ -20,11 +20,8 @@ import config
 from scripts.closed_loop_sim import (
     Actor,
     SimResult,
-    _bind_obstacles,
     _obstacle_from_actor,
-    _reference_line_info_at,
     _run_loop,
-    _trajectory_type_name,
 )
 
 _SAMPLE_STEP_M = 1.0
@@ -84,20 +81,27 @@ def run_loaded_scenario(
         for actor in actors:
             sync_actor(actor, linked[actor.actor_id], t, origin, scenario_dt)
 
+    left_width = float(np.median([pair[0] for pair in widths]))
+    right_width = float(np.median([pair[1] for pair in widths]))
+    from scripts.lattice_commonroad import _reference_line, plan_on_centerline
+
+    reference_line = _reference_line(local_center, left_width, right_width)
+
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
         obstacles = [
             _planner_obstacle(actor, linked[actor.actor_id], clock["t"], origin, scenario_dt)
             for actor in actors_now
         ]
-        reference_line_info, planning_start = _reference_line_info_at(
-            reference_line, lanes, ego_now
+        ok, trajectory, type_name, _bound = plan_on_centerline(
+            local_center,
+            ego_now,
+            actors_now,
+            left_width=left_width,
+            right_width=right_width,
+            reference_line=reference_line,
+            obstacles=obstacles,
         )
-        _bind_obstacles(reference_line_info, obstacles, None)
-        from lattice_planner import LatticePlanner
-        from protoclass.adc_trajectory import ADCTrajectory
-
-        ok = LatticePlanner().Plan(planning_start, reference_line_info._frame, ADCTrajectory())
-        return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
+        return ok, trajectory, type_name, obstacles
 
     def collision_fn(_obstacles, executed, t: float):
         return occupancy_clearance(
@@ -108,24 +112,15 @@ def run_loaded_scenario(
             origin=origin,
         )
 
-    from common.hd_map import HDMapUtil
-
-    previous_map = HDMapUtil.BaseMap()
-    try:
-        reference_line, lanes = _planner_reference(
-            chain[0].lanelet_id, local_center, samples, widths, total
-        )
-        result = _run_loop(
-            _run_name(scenario, chain),
-            start,
-            actors,
-            plan_fn,
-            horizon_s=horizon_s,
-            sync_fn=sync_fn,
-            collision_fn=collision_fn,
-        )
-    finally:
-        HDMapUtil.SetBaseMap(previous_map)
+    result = _run_loop(
+        _run_name(scenario, chain),
+        start,
+        actors,
+        plan_fn,
+        horizon_s=horizon_s,
+        sync_fn=sync_fn,
+        collision_fn=collision_fn,
+    )
     result.ref_x = [float(point[0]) for point in local_center]
     result.ref_y = [float(point[1]) for point in local_center]
     result.lanelet_ids = [lanelet.lanelet_id for lanelet in chain]
@@ -332,48 +327,6 @@ def _points_at(points: np.ndarray, stations: np.ndarray) -> np.ndarray:
             np.interp(stations, station, points[:, 1]),
         )
     )
-
-
-def _planner_reference(lanelet_id: int, local_center, stations, widths, total):
-    from common.hd_map import HDMap
-    from common.lane_types import LaneSegment
-    from common.path import Path as MapPath
-    from common.route_segments import RouteSegments
-    from protoclass.lane import Curve, CurveSegment, Lane, LaneSampleAssociation, LineSegment
-    from protoclass.point_enu import PointENU
-    from reference_line import ReferenceLine
-
-    points = [PointENU(x=float(point[0]), y=float(point[1])) for point in local_center]
-    left_sample = []
-    right_sample = []
-    for station, (left_width, right_width) in zip(stations, widths):
-        left_sample.append(LaneSampleAssociation(s=float(station), width=max(float(left_width), 1e-3)))
-        right_sample.append(LaneSampleAssociation(s=float(station), width=max(float(right_width), 1e-3)))
-    road_left = [LaneSampleAssociation(s=sample.s, width=sample.width) for sample in left_sample]
-    road_right = [LaneSampleAssociation(s=sample.s, width=sample.width) for sample in right_sample]
-    lane = Lane(
-        id=Lane.Id(f"cr_{lanelet_id}"),
-        central_curve=Curve(segment=[CurveSegment(curve_type=LineSegment(point=points))]),
-        length=float(total),
-        speed_limit=config.FLAGS_default_cruise_speed,
-        left_sample=left_sample,
-        right_sample=right_sample,
-        left_road_sample=road_left,
-        right_road_sample=road_right,
-        type=Lane.LaneType.CITY_DRIVING,
-    )
-    from common.hd_map import HDMapUtil
-
-    hdmap = HDMap()
-    lane_info = hdmap.AddLane(lane)
-    HDMapUtil.SetBaseMap(hdmap)
-    end_s = float(lane_info.total_length)
-    end_s = end_s - 1.0 if end_s > 2.0 else end_s * 0.5
-    route = RouteSegments()
-    route.SetIsOnSegment(True)
-    route.SetId(f"cr_{lanelet_id}")
-    route.append(LaneSegment(lane_info, 0.0, end_s))
-    return ReferenceLine(MapPath(route)), route
 
 
 def _ego_start(origin, planning_problems, init_v, local_center, *, use_planning_state: bool) -> Actor:

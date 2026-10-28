@@ -2,9 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import List
-
-from common.lane_info import LaneInfo
+from typing import Any, List
 
 __all__ = [
     "InterpolatedIndex",
@@ -38,7 +36,7 @@ class SpeedLimit:
 
 @dataclass
 class LaneSegment:
-    lane: LaneInfo = None
+    lane: Any = None
     start_s: float = 0.0
     end_s: float = 0.0
 
