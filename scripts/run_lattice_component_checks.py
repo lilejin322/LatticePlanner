@@ -2809,6 +2809,24 @@ def check_apollo_map_borregas_ave_loads():
     assert nearest in service.lane_table
 
 
+def check_apollo_map_exports_commonroad_lanelets():
+    """Apollo base_map.bin becomes a CommonRoad file with one lanelet per lane."""
+    import tempfile
+
+    from commonroad.common.file_reader import CommonRoadFileReader
+
+    from apollo_map import load_map
+    from apollo_map.to_commonroad import convert_map
+
+    service = load_map("borregas_ave", load_only=True)
+    with tempfile.TemporaryDirectory() as output_dir:
+        xml_path = convert_map("borregas_ave", output_dir)
+        scenario, _planning = CommonRoadFileReader(str(xml_path)).open()
+    assert len(scenario.lanelet_network.lanelets) == len(service.lane_table)
+    assert scenario.lanelet_network.traffic_lights
+    assert scenario.lanelet_network.traffic_signs
+
+
 def main():
     check_lattice_trajectory_extrapolation()
     check_backup_generator()
@@ -2909,6 +2927,7 @@ def main():
     check_fem_pos_deviation_smoother_never_sets_polish()
     check_fem_pos_deviation_smoother_matches_cpp_osqp_settings()
     check_apollo_map_borregas_ave_loads()
+    check_apollo_map_exports_commonroad_lanelets()
     print("lattice component checks succeeded")
 
 

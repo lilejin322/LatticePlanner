@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .map.map_service import MapService
 from .map.types import LaneMarking, LaneSignalOverlap, LaneStopLine, PositionEstimate
+from .to_commonroad import convert_map
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 DEFAULT_DESCRIPTOR = PACKAGE_ROOT / "message" / "common_msgs_v9.desc"
@@ -21,6 +22,7 @@ __all__ = [
     "LaneSignalOverlap",
     "LaneStopLine",
     "MapService",
+    "convert_map",
     "PositionEstimate",
     "load_map",
     "map_file",
