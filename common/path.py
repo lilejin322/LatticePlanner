@@ -852,8 +852,16 @@ class Path:
         assert self._num_points >= 2, "num_points is less than 2"
         min_distance: float = float("inf")
 
-        start_interpolation_index: int = self.GetIndexFromS(hueristic_start_s).id
-        end_interpolation_index: int = int(min(self._num_segments, self.GetIndexFromS(hueristic_end_s).id + 1))
+        # GetIndexFromS past the path end returns the last point, which is not a
+        # segment. A short official lanelet still receives predictions beyond it.
+        start_interpolation_index: int = min(
+            self.GetIndexFromS(hueristic_start_s).id, self._num_segments - 1
+        )
+        end_interpolation_index: int = int(
+            min(self._num_segments, self.GetIndexFromS(hueristic_end_s).id + 1)
+        )
+        if end_interpolation_index <= start_interpolation_index:
+            end_interpolation_index = start_interpolation_index + 1
         min_index: int = start_interpolation_index
         for i in range(start_interpolation_index, end_interpolation_index):
             distance: float = self._segments[i].DistanceSquareTo(point)

@@ -11,7 +11,7 @@
 | `run_lattice_scenario_cases.py` | Scenario tests: lattice / decider / on_lane / stress / overtake / lane_change, plus the closed-loop `sim` tag. Use `--list` for the current count |
 | `run_lattice_demo_cases.py` | Short demo (6 cases, a subset of the full scenario set) |
 | `run_minimal_lattice_plan.py` | Minimal end-to-end smoke test (one reference line plus `LatticePlanner.Plan`) |
-| `run_closed_loop_sim.py` | **Closed-loop simulation**: replan every cycle and advance ego and dynamic actors. Includes the loaded CommonRoad map |
+| `run_closed_loop_sim.py` | **Closed-loop simulation** on the converted Borregas Ave lanelets: replan every cycle and advance ego and dynamic actors |
 | `run_overtake_animations.py` | **Overtake** tests plus animation (shortcut for `--tag overtake --animate`) |
 | `run_all_scenario_animations.py` | GIFs for every scenario, including overtake |
 | `run_all_planner_checks.py` | Run the regression scripts in order (no animation) |
