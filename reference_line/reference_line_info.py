@@ -78,15 +78,25 @@ class ReferenceLineInfo:
         YIELD_SIGN = 7
         JUNCTION = 8
 
-    def __init__(self, vehicle_state: VehicleState=None, adc_planning_point: TrajectoryPoint=None, reference_line: ReferenceLine=None, segments: RouteSegments=None):
+    def __init__(self, vehicle_state: VehicleState=None, adc_planning_point: TrajectoryPoint=None, reference_line: ReferenceLine=None, segments: RouteSegments=None, share_map: bool=False):
         """
         Constructor
+
+        ``share_map`` keeps the caller's reference line and route segments
+        instead of deep-copying them. The closed-loop sim builds one road
+        and reuses it every cycle; copying a sampled curve is most of the
+        cycle cost. Callers that shrink the line or add speed limits must
+        leave this off so those edits stay on their own copy.
         """
 
         self._vehicle_state = deepcopy(vehicle_state)
         self._adc_planning_point = deepcopy(adc_planning_point)
-        self._reference_line = deepcopy(reference_line)
-        self._lanes: RouteSegments = deepcopy(segments)
+        if share_map:
+            self._reference_line = reference_line
+            self._lanes: RouteSegments = segments
+        else:
+            self._reference_line = deepcopy(reference_line)
+            self._lanes = deepcopy(segments)
         # this is the number that measures the goodness of this reference line.
         # The lower the better.
         self._cost: float = 0.0

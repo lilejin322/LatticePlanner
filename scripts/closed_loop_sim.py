@@ -260,7 +260,17 @@ def run_on_lane_road(
 
     from copy import deepcopy
 
+    import on_lane_planning as on_lane_module
+
     context = PlanningContext()
+    provider = ReferenceLineProvider()
+    planner = OnLanePlanning(provider)
+    # RunOnce stamps the plan with time.time(). The stitcher then looks up
+    # the previous trajectory at (now - header_time). Wall time is not the
+    # 0.1s the sim executed, so keep both clocks on the sim clock.
+    cycle_dt = 1.0 / max(config_module.FLAGS_planning_loop_rate, 1e-3)
+    sim_time = 0.0
+    original_time = on_lane_module.time.time
     if borrow_direction:
         context.planning_status.path_decider.is_in_path_lane_borrow_scenario = True
         context.planning_status.path_decider.decided_side_pass_direction = list(borrow_direction)
@@ -279,13 +289,20 @@ def run_on_lane_road(
         lanes = reference_line_info.Lanes()
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        provider = ReferenceLineProvider()
+        nonlocal sim_time
+        # Segment() shrinks the provider line in place, so each cycle starts
+        # from the original road. The planner object itself stays, which is
+        # what keeps the previous trajectory for stitching.
         provider._reference_lines = [deepcopy(reference_line)]
         provider._route_segments = [deepcopy(lanes)]
-        local_view = _local_view(ego_now, actors_now)
-        planner = OnLanePlanning(provider)
+        local_view = _local_view(ego_now, actors_now, measurement_time=sim_time)
         adc = ADCTrajectory()
-        status = planner.RunOnce(local_view, adc, planning_context=context)
+        on_lane_module.time.time = lambda: sim_time
+        try:
+            status = planner.RunOnce(local_view, adc, planning_context=context)
+        finally:
+            on_lane_module.time.time = original_time
+            sim_time += cycle_dt
         obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
         trajectory = DiscretizedTrajectory(list(adc.trajectory_point)) if adc.trajectory_point and len(adc.trajectory_point) >= 2 else None
         type_name = adc.trajectory_type.name if adc.trajectory_type is not None else "UNKNOWN"
@@ -514,8 +531,9 @@ def _run_loop(
     )
 
 
-def _local_view(ego, actors):
+def _local_view(ego, actors, measurement_time: float = 0.0):
     from common.frame import LocalView
+    from protoclass.adc_trajectory import Point3D
     from protoclass.chassis import Chassis
     from protoclass.header import Header
     from protoclass.localization_estimate import LocalizationEstimate
@@ -542,16 +560,27 @@ def _local_view(ego, actors):
             pose=Pose(
                 position=PointENU(x=ego.x, y=ego.y, z=0.0),
                 heading=ego.theta,
+                # Vehicle frame: y is forward, z is yaw rate.
+                linear_acceleration=Point3D(x=0.0, y=ego.a, z=0.0),
+                angular_velocity=Point3D(x=0.0, y=0.0, z=ego.v * ego.kappa),
             ),
-            measurement_time=0.0,
+            measurement_time=measurement_time,
         ),
-        chassis=Chassis(speed_mps=max(0.0, ego.v), header=Header(timestamp_sec=0.0)),
+        chassis=Chassis(
+            speed_mps=max(0.0, ego.v),
+            header=Header(timestamp_sec=measurement_time),
+            driving_mode=Chassis.DrivingMode.COMPLETE_AUTO_DRIVE,
+        ),
         prediction_obstacles=PredictionObstacles(prediction_obstacle=predictions),
     )
 
 
 def _reference_line_info_at(reference_line, lanes, ego_now: Actor):
-    """Place a fresh ReferenceLineInfo on a cached road, and the frame that owns it."""
+    """Place a fresh ReferenceLineInfo on a cached road, and the frame that owns it.
+
+    The road geometry is shared, not copied. A sampled curve's map path is
+    expensive to deepcopy, and the lattice plan only reads it.
+    """
     from common.frame import Frame
     from protoclass.vehicle_state import VehicleState
     from reference_line.reference_line_info import ReferenceLineInfo
@@ -572,7 +601,9 @@ def _reference_line_info_at(reference_line, lanes, ego_now: Actor):
         relative_time=0.0,
     )
     vehicle_state = VehicleState(x=ego_now.x, y=ego_now.y, heading=ego_now.theta)
-    reference_line_info = ReferenceLineInfo(vehicle_state, start, reference_line, lanes)
+    reference_line_info = ReferenceLineInfo(
+        vehicle_state, start, reference_line, lanes, share_map=True
+    )
     frame = Frame(0)
     frame._reference_line_info = [reference_line_info]
     reference_line_info._frame = frame
