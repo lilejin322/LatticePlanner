@@ -29,7 +29,7 @@ python scripts/run_lattice_scenario_cases.py --tag sim
 # Run every scenario
 python scripts/run_lattice_scenario_cases.py
 
-# Lattice core only (18 cases, including the curved lane)
+# Lattice core only (18 cases on the converted Borregas lanelet)
 python scripts/run_lattice_scenario_cases.py --tag lattice
 
 # One case, or several
@@ -75,7 +75,7 @@ python scripts/run_overtake_animations.py
 
 Lattice alone can only follow and stop behind a blocking vehicle. An overtake goes through OnLane, the PathBoundsDecider borrow, PathAssessment, and an S-shaped l(s), matching the C++ lane-follow task chain.
 
-**`--animate`** plays the ego rectangle, the driven trail, obstacles, and the reference line on the XY map at **0.1s** per frame. The default output is `scripts/output/animations/<scenario>.gif`. `--animate-frames` also writes `scripts/output/frames/<scenario>/frame_0000.png`, and so on.
+**`--animate`** on the scenario runner plays the executed trace with matplotlib at **0.1s** per frame. The default output is `scripts/output/animations/<scenario>.gif`. `--animate-frames` also writes `scripts/output/frames/<scenario>/frame_0000.png`, and so on. `python scripts/run_closed_loop_sim.py --animate` draws the same drive with the CommonRoad renderer on the loaded lanelets.
 
 ```bash
 # Run the full regression

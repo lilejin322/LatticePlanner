@@ -14,6 +14,15 @@ pip install -r requirements.txt
 
 The lattice **planning pipeline** in `lattice_planner.py` is the main readable path.
 
+### Closed loop
+
+Driving cases replan every cycle on lanelets from `apollo_map/to_commonroad.py`. The lattice sampler and costs are unchanged.
+
+- `scripts/lattice_commonroad.py` runs the lattice core on a lanelet centerline. Sampling, costs, and constraint checks stay in the lattice modules.
+- `scripts/official_map_road.py` selects the Borregas Ave lanelet. Actor `x` is station along the centerline and `y` is lateral offset. Other vehicles hold a constant speed. There is no NPC manager. Borrow still registers the neighbor lanelet for path bounds.
+- `scripts/closed_loop_sim.py` steps the ego and stores the executed trace.
+- `scripts/commonroad_drive.py` reads a CommonRoad file, measures clearance with occupancy polygons, and draws those lanelets.
+
 ### Test against the original C++
 
 Run the regression test suite from the repo root after activating your environment:

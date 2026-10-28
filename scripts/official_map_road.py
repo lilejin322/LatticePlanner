@@ -3,6 +3,7 @@
 The geometry is the Borregas Ave CommonRoad file written by the existing
 converter. Lanelets are not created here. An actor's ``x`` is station along
 the chosen centerline and ``y`` is the lateral offset, positive to the left.
+Speed stays constant. This module does not manage traffic.
 """
 
 from __future__ import annotations
@@ -42,6 +43,8 @@ class OfficialFrame:
     lanelet_ids: List[int]
     neighbor_xy: Optional[np.ndarray]
     length: float
+    left_width: float = 1.75
+    right_width: float = 1.75
 
 
 @dataclass
@@ -64,7 +67,8 @@ class OfficialDrive:
     def close(self) -> None:
         from common.hd_map import HDMapUtil
 
-        HDMapUtil.SetBaseMap(self.previous_map)
+        if self.frame.hdmap is not None:
+            HDMapUtil.SetBaseMap(self.previous_map)
 
     def annotate(self, result):
         frame = self.frame
@@ -105,7 +109,8 @@ def open_official_drive(
 
     frame = official_frame(role)
     previous = HDMapUtil.BaseMap()
-    HDMapUtil.SetBaseMap(frame.hdmap)
+    if frame.hdmap is not None:
+        HDMapUtil.SetBaseMap(frame.hdmap)
     placed = []
     for actor in actors:
         placed.append(
@@ -263,6 +268,8 @@ def _build_frame(scenario, lanelet, neighbor, side: Optional[str]) -> OfficialFr
     center = center_world - origin
     left_width = _distance_samples(center_world, lanelet.left_vertices)
     right_width = _distance_samples(center_world, lanelet.right_vertices)
+    left_half = float(np.median(left_width))
+    right_half = float(np.median(right_width))
     road_left = list(left_width)
     road_right = list(right_width)
     neighbor_local = None
@@ -329,6 +336,8 @@ def _build_frame(scenario, lanelet, neighbor, side: Optional[str]) -> OfficialFr
         lanelet_ids=lanelet_ids,
         neighbor_xy=neighbor_local,
         length=float(stations[-1]),
+        left_width=left_half,
+        right_width=right_half,
     )
 
 
