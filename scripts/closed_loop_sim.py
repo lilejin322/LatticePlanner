@@ -161,15 +161,20 @@ def _drive_official(
 
 
 def _lattice_plan(drive, blocking_actor_id: Optional[str]):
-    reference_line = drive.frame.reference_line
-    lanes = drive.frame.lanes
+    from scripts.lattice_commonroad import _reference_line, plan_on_centerline
+
+    reference_line = _reference_line(
+        drive.frame.center, drive.frame.left_width, drive.frame.right_width
+    )
 
     def plan_fn(ego_now: Actor, actors_now: List[Actor]):
-        obstacles = [_obstacle_from_actor(actor) for actor in actors_now]
-        reference_line_info, start = _reference_line_info_at(reference_line, lanes, ego_now)
-        _bind_obstacles(reference_line_info, obstacles, blocking_actor_id)
-        ok = LatticePlanner().Plan(start, reference_line_info._frame, ADCTrajectory())
-        return ok, reference_line_info.trajectory, _trajectory_type_name(reference_line_info), obstacles
+        return plan_on_centerline(
+            drive.frame.center,
+            ego_now,
+            actors_now,
+            blocking_actor_id,
+            reference_line=reference_line,
+        )
 
     return plan_fn
 
