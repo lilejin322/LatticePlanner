@@ -8,7 +8,6 @@ from bisect import bisect_left
 from collections import UserList
 from common.geometry_utils import NormalizeAngle, value_or_zero, lerp
 from protoclass.path_point import PathPoint
-from protoclass.adc_trajectory import ADCTrajectory
 from protoclass.trajectory_point import TrajectoryPoint
 
 logger = Logger("DiscretizedTrajectory")
@@ -27,19 +26,9 @@ class DiscretizedTrajectory(UserList):
         self.logger = Logger("DiscretizedTrajectory")
         assert 0 <= len(args) <= 1, "Invalid input"
         if len(args) == 1:
-            if isinstance(args[0], ADCTrajectory):
-                """
-                param ADCTrajectory args[0]: the obj to be append()
-                """
-                # Create a DiscretizedTrajectory based on protobuf message
-                self.extend(args[0].trajectory_point)
-            elif isinstance(args[0], (list, UserList)):
-                """
-                param list | UserList args[0]: the list to be extend()
-                """
-                assert args[0], "Input list is empty"
-                assert all(isinstance(p, TrajectoryPoint) for p in args[0]), "Input list contains non-TrajectoryPoint object"
-                self.extend(args[0])
+            assert args[0], "Input list is empty"
+            assert all(isinstance(p, TrajectoryPoint) for p in args[0]), "Input list contains non-TrajectoryPoint object"
+            self.extend(args[0])
 
     def StartPoint(self) -> TrajectoryPoint:
         """

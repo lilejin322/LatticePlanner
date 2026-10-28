@@ -4,7 +4,6 @@ Trajectory Point submodule
 from dataclasses import dataclass, field
 from typing import Optional
 from protoclass.path_point import PathPoint
-from protoclass.gaussian_info import GaussianInfo
 
 @dataclass
 class TrajectoryPoint:
@@ -24,5 +23,3 @@ class TrajectoryPoint:
     da: Optional[float] = None
     # The angle between vehicle front wheel and vehicle longitudinal axis
     steer: Optional[float] = None
-    # Gaussian probability information
-    gaussian_info: Optional[GaussianInfo] = field(default_factory=GaussianInfo)
