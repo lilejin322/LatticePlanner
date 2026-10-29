@@ -21,7 +21,15 @@ SCRIPTS = [
 
 COMMANDS = [
     PROJECT_ROOT / "scripts" / script for script in SCRIPTS
-] + [PROJECT_ROOT / "verification" / "pinned_sampling_gaps.py"]
+] + [
+    PROJECT_ROOT / "verification" / name
+    for name in (
+        "pinned_sampling_gaps.py",
+        "verify_backup_jerk.py",
+        "verify_extrapolation.py",
+        "verify_cartesian_jerk.py",
+    )
+]
 
 
 def main() -> int:

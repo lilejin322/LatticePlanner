@@ -42,6 +42,9 @@ That runs, in order:
 | `scripts/run_lattice_known_failures.py` | Four recorded defects on fetched scenarios. Passes while each signature is still present |
 | `scripts/run_lattice_synthetic_failures.py` | Three straight-road defects. Passes while each signature is still present |
 | `verification/pinned_sampling_gaps.py` | Two fixed curves the 0.1 s checker still misses |
+| `verification/verify_backup_jerk.py` | Backup deceleration reports jerk 0 across its stop |
+| `verification/verify_extrapolation.py` | A 1d-valid quartic exceeds the speed bound after it ends |
+| `verification/verify_cartesian_jerk.py` | The Cartesian 0.1 s jerk difference misses the pinned spike |
 
 The same pieces one at a time:
 
@@ -53,6 +56,9 @@ python scripts/run_lattice_cycle_checks.py
 python scripts/run_lattice_known_failures.py
 python scripts/run_lattice_synthetic_failures.py
 python verification/pinned_sampling_gaps.py
+python verification/verify_backup_jerk.py
+python verification/verify_extrapolation.py
+python verification/verify_cartesian_jerk.py
 ```
 
 `scripts/run_closed_loop_sim.py` and `scripts/run_lattice_scenario_cases.py` still replan on the A9 lanelet and score how far the ego traveled. They are not part of the gate above. `--animate` writes a GIF under `scripts/output/animations/`.
@@ -116,6 +122,10 @@ tested=400 checker_said_valid=43 counterexamples=3
 [quartic] T=0.5536 S=40 -> checker says VALID, but at t=0.531250: a=-4.3781 j=0.2919
 ```
 
-`verification/verify_constraint_checker.py` asks the same question for `ConstraintChecker.ValidTrajectory` on the Cartesian trajectory the planner actually accepts. The reference line in that proof is perfectly straight, so the Frenet-to-Cartesian formulas stay closed form. Curved reference lines are outside that proof. Longitudinal jerk there is a difference between two samples, and that script does not model it.
+`verification/verify_constraint_checker.py` asks the same question for `ConstraintChecker.ValidTrajectory` on the Cartesian trajectory the planner actually accepts. The reference line in that proof is perfectly straight, so the Frenet-to-Cartesian formulas stay closed form. Curved reference lines are outside that proof. Longitudinal jerk there is a difference between two samples. `verify_cartesian_jerk.py` proves the difference from 1.8 s to 1.9 s stays inside [-4, 2] for the pinned quartic, while the jerk at 1.84375 s is -4.0306 m/s³. The curve is wrapped the way the planner wraps it, so acceleration is frozen after the duration.
+
+`verify_backup_jerk.py` is not a polynomial search. For every backup deceleration except -0.1 m/s², and every initial speed in (0, 40] m/s, the stop falls in some 0.1 s sample interval whose finite-difference jerk is |a|/0.1 and exceeds +2 m/s³. The curve reports jerk 0 at every sample, so the 1d checker accepts it.
+
+`verify_extrapolation.py` uses a quartic the 1d checker accepts on [0, 2). Constant-acceleration extrapolation reaches 59 m/s at the 8 s combiner horizon. The speed bound is 40 m/s.
 
 `verification/pinned_sampling_gaps.py` replays the two curves above and passes while the checker still misses them. `FRA_MoissyCramayel-1_1_T-1` is the same kind of hole on a trajectory the planner returned: the speed change between the planning init and the committed point is about -8.9 m/s², while the accelerations stored on the 0.1 s samples stay inside [-6, 4].
