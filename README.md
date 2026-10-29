@@ -2,7 +2,7 @@
 
 Python port of Apollo's lattice planner, kept so the planner itself can be tested. The polynomials, costs, trajectory combiner, and 0.1 s constraint checks are the subject. CommonRoad supplies the road and the recorded vehicles. This is not a traffic simulator and not a new planning method.
 
-The work stops at the defect list. A plain account is in [docs/说明.md](docs/说明.md).
+The work stops at the defect list. A plain account is in [docs/NOTES.md](docs/NOTES.md).
 
 ## Setup
 
