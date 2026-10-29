@@ -34,9 +34,10 @@ result):
   - Only the direct-value checks (lon_v, lon_a, kappa, lat_a) are modeled.
     ConstraintChecker.ValidTrajectory's lon_jerk/lat_jerk checks are a finite
     difference between two adjacent discrete samples, not a continuous
-    function of one variable -- extending this technique there requires
-    differentiating through the sqrt(1+d'^2) term via the chain rule, which is
-    saved for a follow-up rather than rushed here.
+    function of one variable. verify_cartesian_jerk.py proves that difference
+    stays inside the jerk bound for the pinned quartic while the instantaneous
+    jerk does not, on a straight line with zero lateral offset. A nonzero
+    lateral offset still requires differentiating through sqrt(1+d'^2).
 
 Run: python3 verification/verify_constraint_checker.py
 """
